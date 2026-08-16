@@ -30,9 +30,14 @@ const PAD_MIN_RELEASE_SEC = 2.0;
 const PAD_DETUNE_CENTS = 4; // ±4セントのランダムデチューンで厚みを出す
 
 // 各レイヤーの1音あたりのピーク振幅。レイヤーゲイン(=設定値)の手前に掛ける。
+//
+// ここは compose 側のベロシティ（伴奏0.3前後・ベース0.5）と設定側の音量が
+// さらに掛かるため、控えめにしすぎると伴奏が聴こえなくなる。
+// 実測でメロディー比 伴奏 -7dB / ベース -6dB / パッド -18dB を狙った値。
 const MELODY_PEAK = 0.30;
-const ACCOMP_PEAK = 0.26;
-const PAD_PEAK = 0.10; // パッドは非常に控えめ。和音の音数でさらに割る
+const ACCOMP_PEAK = 0.34;
+const BASS_PEAK = 0.26;
+const PAD_PEAK = 0.24; // 和音の音数でさらに割るので、単音換算ではこれでも控えめ
 
 // 倍音構成。decay は基音のリリースに対する倍率で、倍音ほど速く減衰させる。
 const PARTIALS = {
@@ -227,7 +232,9 @@ export function createEngine(audioCtx, settings) {
     // コードが変わるまで引きずるサステインペダル相当の長いリリース
     const releaseSec = Math.max(dur * RELEASE_RATIO, MIN_RELEASE_SEC);
     const stopAt = t0 + releaseSec + TAIL_SEC;
-    const peak = (layer === 'melody' ? MELODY_PEAK : ACCOMP_PEAK) * v;
+    const layerPeak =
+      layer === 'melody' ? MELODY_PEAK : layer === 'bass' ? BASS_PEAK : ACCOMP_PEAK;
+    const peak = layerPeak * v;
     // 実際のピアノ同様、強く弾いた音ほど倍音が出る
     const velBright = 0.6 + 0.4 * v;
     const f0 = midiToFreq(Number(midi));
