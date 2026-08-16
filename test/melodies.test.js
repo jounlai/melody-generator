@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHORD_VOCAB, splitBars, fitsBar, chordIndex } from '../src/theory.js';
-import { distinctDurations, analyzeFragment } from '../tools/analyze.js';
+import { distinctDurations, analyzeFragment, hasSoar } from '../tools/analyze.js';
 import { containsFormula } from '../tools/generate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -283,6 +283,23 @@ test('トニックで終わる断片が200件以上ある(着地感のある終�
 test('sigh タグの断片が100件以上ある(「泣ける」の中核要素)', () => {
   const sighs = withTag('sigh');
   assert.ok(sighs.length >= 100, `sigh が ${sighs.length} 件しかない`);
+});
+
+test('soar タグの断片が200件以上ある(「感動する瞬間」の形)', () => {
+  const soars = withTag('soar');
+  assert.ok(soars.length >= 200, `soar が ${soars.length} 件しかない`);
+  // タグの中身が定義どおりか（頂点へ4度以上の上行、直後は2度以内の下降、頂点は1回）
+  for (const m of soars) {
+    const degs = m.notes.map((n) => n.deg);
+    assert.ok(hasSoar(degs), `${m.id}: soar タグだが形が違う (${degs.join(',')})`);
+  }
+});
+
+test('クライマックス用に、高く舞い上がる断片が120件以上ある', () => {
+  const climax = melodies.filter(
+    (m) => m.peakDeg >= 12 && m.peakCount === 1 && m.tags.includes('soar'),
+  );
+  assert.ok(climax.length >= 120, `頂点12以上の舞い上がりが ${climax.length} 件しかない`);
 });
 
 test('inner-motif タグの断片が50件以上ある', () => {

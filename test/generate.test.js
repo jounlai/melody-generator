@@ -9,9 +9,12 @@ import {
   containsFormula,
   CORPUS_FORMULAS,
   CADENCES,
+  SOARS,
   FORMULAS,
   PATTERNS,
+  ROUTE_RATES,
 } from '../tools/generate.js';
+import { analyzeFragment } from '../tools/analyze.js';
 
 const SEEDS = [1, 7, 42, 99, 123, 2024, 31337, 555, 8080, 64738];
 
@@ -160,6 +163,48 @@ test('CADENCES はコーパスの終止形で、下降で着地する形が主',
   assert.ok(CADENCES.length >= 10, `終止形が少ない: ${CADENCES.length}`);
   const down = CADENCES.filter((c) => c.steps[c.steps.length - 1] < 0);
   assert.ok(down.length * 2 >= CADENCES.length, `下降で終わる終止形が少ない: ${down.length}`);
+});
+
+test('SOARS はコーパスの舞い上がり型で、跳んでから降りる形になっている', () => {
+  assert.equal(SOARS.length, PATTERNS.soars.length);
+  assert.ok(SOARS.length >= 20, `舞い上がりの型が少ない: ${SOARS.length}`);
+  for (const s of SOARS) {
+    assert.equal(s.steps[0], 0, `先頭が0でない: ${s.id}`);
+    // 4度以上(度数差3以上)の上行跳躍を必ず含む
+    const leaps = s.steps.filter((v, i) => i > 0 && v - s.steps[i - 1] >= 3);
+    assert.ok(leaps.length >= 1, `上行跳躍が無い: ${s.id}`);
+    // 頂点のあとに下降がある
+    const peak = Math.max(...s.steps);
+    const at = s.steps.indexOf(peak);
+    assert.ok(at > 0 && at < s.steps.length - 1, `頂点の位置が端: ${s.id}`);
+    assert.ok(s.steps[at + 1] < peak, `頂点から降りていない: ${s.id}`);
+  }
+});
+
+test('舞い上がりの経路が1割ほどあり、soar タグの断片を作る', () => {
+  const rng = makeRng(20260817);
+  let soarRoute = 0;
+  let tagged = 0;
+  let high = 0;
+  const total = 2000;
+  for (let i = 0; i < total; i++) {
+    const cand = generateCandidate(rng);
+    if (cand.route === 'soar') soarRoute++;
+    const meta = analyzeFragment(cand.notes);
+    if (!meta.tags.includes('soar')) continue;
+    tagged++;
+    if (meta.peakDeg >= 12 && meta.peakCount === 1) high++;
+  }
+  // ROUTE_RATES.soar は 0.1。抽選なので幅を見る。
+  assert.ok(
+    Math.abs(soarRoute / total - ROUTE_RATES.soar) < 0.03,
+    `舞い上がり経路の割合がずれている: ${(100 * soarRoute / total).toFixed(1)}%`,
+  );
+  // 経路以外(旋律型・輪郭)からも自然に出るので、タグは経路より多くなる。
+  assert.ok(tagged >= soarRoute, `soar タグが経路より少ない: ${tagged} < ${soarRoute}`);
+  assert.ok(tagged >= total * 0.1, `soar タグの断片が少ない: ${tagged}/${total}`);
+  // クライマックス用に、高いところまで届く舞い上がりが要る。
+  assert.ok(high >= total * 0.04, `高い舞い上がりが少ない: ${high}/${total}`);
 });
 
 test('containsFormula は相対形でコーパスの型を見つける', () => {

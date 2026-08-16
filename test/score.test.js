@@ -7,6 +7,7 @@ import {
   detectTags,
   tensionOf,
   analyzeFragment,
+  hasSoar,
   stepRatioOf,
   thirdRatioOf,
   leapRatioOf,
@@ -199,7 +200,45 @@ test('analyzeFragment は最高音の重複を peakCount に数える', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6c. 音程の分布（名旋律57曲のコーパス実測値への較正）
+// 6b-2. soar（舞い上がり）: 4度以上跳んで頂点に届き、そこから順次で降りる
+//       Can't Help Falling in Love / Hey Jude の "better" の形。
+// ---------------------------------------------------------------------------
+
+test('hasSoar は跳び上がって頂点に届き降り始める形だけを拾う', () => {
+  assert.equal(hasSoar([5, 8, 7, 6]), true); // 4度上行 -> 順次下降
+  assert.equal(hasSoar([5, 6, 10, 9, 8]), true); // 5度上行でも成立
+  assert.equal(hasSoar([5, 7, 6]), false); // 3度では跳躍が足りない
+  assert.equal(hasSoar([5, 8, 4]), false); // 頂点の直後が3度以上の下降
+  assert.equal(hasSoar([5, 8, 9]), false); // 頂点が末尾（降りてこない）
+  assert.equal(hasSoar([9, 5, 6]), false); // 頂点が先頭（跳び上がっていない）
+  assert.equal(hasSoar([5, 9, 8, 9, 5]), false); // 頂点が2回鳴る
+});
+
+test('detectTags: 舞い上がる断片に soar タグが付き、+16 加点される', () => {
+  // 度数 5,6,10,9,8,7 -> 頂点10へ5度上行、そこから順次下降
+  const SOAR = [
+    n(5, 0, 0.5), n(6, 0.5, 0.5), n(10, 1, 1), n(9, 2, 2),
+    n(8, 4, 1), n(7, 5, 1), n(6, 6, 2),
+  ];
+  const meta = analyzeFragment(SOAR);
+  assert.ok(meta.tags.includes('soar'), `soar が無い: ${meta.tags}`);
+  assert.equal(meta.peakCount, 1);
+
+  // 頂点への跳躍を順次進行に均した版（同じリズム・同じ音数）
+  const FLAT = [
+    n(5, 0, 0.5), n(6, 0.5, 0.5), n(7, 1, 1), n(6, 2, 2),
+    n(5, 4, 1), n(4, 5, 1), n(3, 6, 2),
+  ];
+  const flat = analyzeFragment(FLAT);
+  assert.equal(flat.tags.includes('soar'), false);
+  assert.ok(
+    scoreFragment(SOAR, meta) > scoreFragment(FLAT, flat),
+    `舞い上がりが優位でない: ${scoreFragment(SOAR, meta)} vs ${scoreFragment(FLAT, flat)}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 6c. 音程の分布（名旋律125曲のコーパス実測値への較正）
 //     度数差1 = 2度(順次進行), 2 = 3度, 3以上 = 4度以上。
 //     コーパス: 順次 0.696 / 3度 0.185 / 4度以上 0.055 / 跳躍後に順次 0.619
 // ---------------------------------------------------------------------------

@@ -68,11 +68,11 @@ function bucketKeys() {
 
 const hasTag = (tag) => (c) => c.meta.tags.includes(tag);
 
-// 音程の分布は名旋律57曲のコーパス実測値(順次進行 69.6%)に合わせる。
+// 音程の分布は名旋律125曲のコーパス実測値(順次進行 69.1%)に合わせる。
 // 順次進行 = 度数差1(2度)。3度以上は跳躍として別に数える。
 const inStepBand = (c) => c.meta.stepRatio >= 0.6 && c.meta.stepRatio <= 0.8;
 
-// 跳躍(3度以上)の直後が順次進行になっている割合。コーパス実測 61.9%。
+// 跳躍(3度以上)の直後が順次進行になっている割合。コーパス実測 62.4%。
 const fillsLeaps = (c) => c.meta.leapThenStep !== null && c.meta.leapThenStep >= 0.6;
 
 // ---------------------------------------------------------------------------
@@ -106,16 +106,18 @@ function slotPairs() {
 const SLOTS = slotPairs();
 
 // ---------------------------------------------------------------------------
-// リズム型ごとの下限
+// リズム型の偏り
 // ---------------------------------------------------------------------------
 // 組み立て側は a' / a'' を「a と同じリズムの別の断片」で作る(ゼクエンツが
-// 作れないときの代替)。同じリズムの仲間が数件しかない型の断片が a に選ばれると、
-// 楽節が導出できずに単独選択へ落ちる。スコア順に任せると型ごとの偏りが
-// そのまま残るので、41型すべてに下限を置いて仲間を確保する。
-// 均すのではなく「型が全滅しない」ことだけを保証する。
-// 平らにすると popular な型の仲間が減り、かえって導出できないスロットが増える
-// (実測: 下限15で楽節の導出率 95.7%、下限8で 97%台)。
-const RHYTHM_MIN = 8;
+// 作れないときの代替)。導出に失敗するスロットを調べると、原因は実測で100%が
+// 「同じリズムの仲間は居るが、そのスロットのコード対に乗るものが1つも無い」だった。
+// 仲間が多いほど乗るものが見つかるので、リズム型は均さずに偏らせたままにする。
+//
+// 41型すべてに下限を置いて均すと、よく出る型の仲間が減って逆効果になる。
+// 実測(seed 200本 × 曲長3種を3つの seed 群で):
+//   下限なし 96.9 / 96.3 / 96.4%   下限3 94.7 / 94.7 / 94.5%   下限8 94.8 / 93.3 / 95.3%
+// 下限を置かなくても41型中37型は残り、断片ごとのリズムの多様性
+// (音価3種類以上・シンコペーション・休符)は生成側の制約で保証されている。
 
 /** 断片のリズム型キー(拍と長さの並び)。compose 側の rhythmKey と同じ形。 */
 function rhythmKeyOf(notes) {
@@ -156,6 +158,15 @@ const GOALS = [
   { key: 'inner-motif', min: 50, test: hasTag('inner-motif') },
   // 「泣ける」の中核。跳躍上行のあとの順次下降。
   { key: 'sigh', min: 100, test: hasTag('sigh') },
+  // 「感動する瞬間」の中核。4度以上跳んで頂点に届き、そこから順次で降りる形。
+  // 組み立て側はクライマックスに「高いところまで舞い上がる断片」を要求するので、
+  // 頂点が高い(12以上)ぶんも別に確保する。ここが薄いと曲が舞い上がらない。
+  { key: 'soar', min: 200, test: hasTag('soar') },
+  {
+    key: 'soar&peak>=12',
+    min: 120,
+    test: (c) => c.meta.peakDeg >= 12 && c.meta.peakCount === 1 && c.meta.tags.includes('soar'),
+  },
   // ピアノ曲としての密度。薄いとアンビエントになって退屈になる。
   // ただし詰めるだけだと音価が均一になるので、上げるのは中央値までにする。
   { key: 'notes>=12', min: 120, test: (c) => c.notes.length >= 12 },
@@ -175,10 +186,6 @@ const GOALS = [
   ...SLOTS.map((s, i) => ({
     key: s.key, min: SLOT_MIN, priority: 0, test: (c) => c.slots.includes(i),
   })),
-  // リズム型ごとの仲間の数。楽節の導出(a -> a')がここで決まる。
-  ...RHYTHM_KEYS.map((k, i) => ({
-    key: `rhythm:${i}`, min: RHYTHM_MIN, priority: 0, test: (c) => c.rhythmKey === k,
-  })),
 ];
 
 // 埋めすぎ防止。下限を満たしたあと、スコア上位だけで埋めると
@@ -190,8 +197,12 @@ const CAPS = [
   { key: 'notes==8', max: 450, test: (c) => c.notes.length === 8 },
   // 高い断片ばかりだと組み立て側の「音高の窓」(クライマックス以外は11度まで)に
   // 引っかかって、ふつうのスロットで引ける断片が枯れる。
-  { key: 'peak>=12', max: 280, test: (c) => c.meta.peakDeg >= 12 },
+  { key: 'peak>=12', max: 200, test: (c) => c.meta.peakDeg >= 12 },
   { key: 'contour:wave', max: 430, test: (c) => c.meta.contour === 'wave' },
+  // 舞い上がりは音域が広く(平均 span 6.2 対 3.9)、平行移動できる余地が狭い。
+  // カタログの半分を占めると、組み立て側が楽節を導出できずに単独選択へ落ちる。
+  // クライマックスに要る数は確保しつつ、全体が舞い上がりだらけになるのは止める。
+  { key: 'soar', max: 380, test: hasTag('soar') },
   { key: 'inner-repeat', max: 240, test: hasTag('inner-repeat') },
 ];
 
@@ -552,7 +563,7 @@ function report(melodies, chosenCands, info) {
   console.log(`  peakDeg>=12    : ${melodies.filter((m) => m.peakDeg >= 12).length}  (うち頂点1回 ${melodies.filter((m) => m.peakDeg >= 12 && m.peakCount === 1).length})`);
   console.log(`  上限の消化     : ${[...capCount].map(([k, v]) => `${k}=${v}`).join(' ')}${relaxed.length ? `  (下限優先で緩めた: ${relaxed.join(' ')})` : ''}`);
 
-  // 音程の分布がコーパス(名旋律57曲)の実測値に届いているか。
+  // 音程の分布がコーパス(名旋律125曲)の実測値に届いているか。
   const bySource = tally(chosenCands, (c) => c.source);
   const inBand = chosenCands.filter(inStepBand).length;
   const filled = chosenCands.filter(fillsLeaps).length;
@@ -560,7 +571,7 @@ function report(melodies, chosenCands, info) {
   const mean = (fn) => (chosenCands.reduce((a, c) => a + fn(c), 0) / chosenCands.length).toFixed(3);
   console.log(`  生成経路       : ${JSON.stringify(bySource)}`);
   console.log(`  音程の分布     : 順次0.60〜0.80 ${inBand} / 3度0.10〜0.30 ${thirdBand} / 跳躍後に順次>=0.60 ${filled}`);
-  console.log(`                   平均 順次 ${mean((c) => c.meta.stepRatio)} (コーパス 0.696) / 3度 ${mean((c) => c.meta.thirdRatio)} (0.185) / 4度以上 ${mean((c) => c.meta.leapRatio)} (0.055)`);
+  console.log(`                   平均 順次 ${mean((c) => c.meta.stepRatio)} (コーパス 0.691) / 3度 ${mean((c) => c.meta.thirdRatio)} (0.183) / 4度以上 ${mean((c) => c.meta.leapRatio)} (0.041)`);
 
   // 旋律型の採用状況。特定の型に偏ると、語彙を増やした意味が無くなる。
   const formulaUse = {};

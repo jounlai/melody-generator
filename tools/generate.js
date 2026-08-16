@@ -7,7 +7,7 @@
 // 乱数はすべて引数の rng を経由する(Math.random は使わない)。
 //
 // 設計の柱は4つ。優先順位の高い順に:
-//   1. 旋律型  : パブリックドメインの名旋律57曲から抽出した語彙(FORMULAS)で組み立てる。
+//   1. 旋律型  : パブリックドメインの名旋律125曲から抽出した語彙(FORMULAS)で組み立てる。
 //                輪郭が合っていても中身が音楽の語彙になっていないと、
 //                「ランダムな音程の並び」にしか聴こえない。
 //   2. リズム  : 音価が均一だと、音程が何であろうと童謡にしか聴こえない。
@@ -26,7 +26,7 @@ import { randInt, pick, shuffle } from '../src/rng.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// パブリックドメインの名旋律57曲(781音)から抽出した語彙。
+// パブリックドメインの名旋律125曲(1768音)から抽出した語彙。
 // formulas = 度数オフセット列とコーパスでの出現回数、cadences = フレーズの終わり方。
 // rhythmCells は使わない(上位が [1,1] [0.5,0.5] の等分割で、
 // これを取り込むと音価が均一化して「童謡」に逆戻りする。取り込むのは音程の語彙だけ)。
@@ -148,8 +148,8 @@ export function pickRhythm(rng) {
 // 旋律型ライブラリ(コーパス由来)
 // ---------------------------------------------------------------------------
 // 最初の音からの度数オフセットで持つ。こうすると任意の高さに置ける。
-// 中身は名旋律57曲から抽出した273型で、順次進行と刺繍音が上位を占める
-// (コーパス実測: 2度 69.6% / 3度 18.5% / 4度以上 5.5%)。
+// 中身は名旋律125曲から抽出した490型で、順次進行と刺繍音が上位を占める
+// (コーパス実測: 2度 69.1% / 3度 18.3% / 4度以上 4.1%)。
 //
 // 生の出現回数をそのまま重みにすると、最頻の [0,-1,-2](186回)だけで
 // 抽選の4分の1を占めてしまい、語彙が増えたのにかえって単調になる。
@@ -189,6 +189,11 @@ export const FORMULAS = [...CORPUS_FORMULAS, ...LEAP_FORMULAS.map(toFormula)];
 // フレーズを閉じるための型。2小節目を「着地」で終える経路で使う。
 // コーパスの終止形は下降で着地する形が支配的で、これが「閉じた」感じを作る。
 export const CADENCES = PATTERNS.cadences.map(toFormula);
+
+// 「舞い上がり」の型。4度以上の上行跳躍で頂点に届き、そこから順次で降りてくる形。
+// [0,3,2,1] が Can't Help Falling in Love 型、Hey Jude の "better" もこの系統で、
+// 「感動する瞬間」はほぼこの形が作っている(コーパス125曲中189回検出)。
+export const SOARS = (PATTERNS.soars ?? []).map(toFormula);
 
 // 長さ別の索引。層化抽選のために先に作っておく。
 const BY_LEN = new Map();
@@ -334,6 +339,32 @@ export function cadenceLine(rng, n, state = newDrawState()) {
     const tail = steps.slice(steps.length - n);
     const base = tail[0];
     return { rel: tail.map((s) => s - base), used: [id] };
+  }
+
+  const head = formulaLine(rng, n - steps.length + 1, state);
+  const base = head.rel[head.rel.length - 1];
+  const rel = head.rel.concat(steps.slice(1).map((s) => base + s - steps[0]));
+  return { rel, used: [...head.used, id] };
+}
+
+/**
+ * 舞い上がる長さ n の相対度数列。
+ * 跳び上がってから降りてくるまでが1つの身振りなので、型は途中で切らずに
+ * 「頭を削る」ほうを選ぶ……のではなく、ここでは逆に末尾を削る。
+ * 跳躍(型の頭)を落とすと舞い上がりでなくなるためで、
+ * 音数が足りないときは降りる音を諦める(それでも「跳んで、降り始める」形は残る)。
+ * 余るぶんは手前を旋律型で埋め、跳ぶ直前まで助走させる。
+ */
+export function soarLine(rng, n, state = newDrawState()) {
+  const soar = weightedPick(rng, SOARS, (f) => !state.used.has(f.id))
+    ?? weightedPick(rng, SOARS, () => true);
+  const steps = soar.steps;
+  const id = `soar:${soar.id}`;
+  state.used.add(soar.id);
+
+  // 跳躍と、その直後の下降1音までは最低限必要(3音)。
+  if (n <= steps.length) {
+    return { rel: steps.slice(0, n), used: [id] };
   }
 
   const head = formulaLine(rng, n - steps.length + 1, state);
@@ -683,8 +714,21 @@ function velocityFor(rng, deg, minDeg, maxDeg) {
 // 候補1件
 // ---------------------------------------------------------------------------
 
-// 旋律型から組み立てる経路の割合。残りは輪郭ベース(多様性のために残す)。
-export const FORMULA_RATE = 0.6;
+// 組み立て経路の配分。
+//   soar    : 舞い上がり(跳んで頂点に届き、順次で降りる)。クライマックス用。
+//   formula : 旋律型の連結。断片の主力。
+//   contour : 輪郭テンプレート。多様性のために残す。
+export const ROUTE_RATES = { soar: 0.1, formula: 0.55, contour: 0.35 };
+
+// 旋律型から組み立てる経路の割合(soar も旋律型を使うので合算)。
+export const FORMULA_RATE = ROUTE_RATES.soar + ROUTE_RATES.formula;
+
+export function drawRoute(rng) {
+  const r = rng();
+  if (r < ROUTE_RATES.soar) return 'soar';
+  if (r < ROUTE_RATES.soar + ROUTE_RATES.formula) return 'formula';
+  return 'contour';
+}
 
 // 旋律型経路で、2小節目をどう作るか。
 export const BAR2_RATES = { sequence: 0.4, repeat: 0.15, cadence: 0.3, other: 0.15 };
@@ -755,6 +799,48 @@ function formulaCandidate(rng, kind, contour, wantSus) {
   return { rhythm, degs, used, path: `formula:${mode}` };
 }
 
+// --- 舞い上がりの断片を組む ---
+// 「4度以上跳び上がって頂点に届き、そこから順次で降りてくる」だけを狙う経路。
+// 頂点は断片に1回しか置かない(2回鳴ると、届いた瞬間の一回性が消える)。
+// 曲のクライマックスで使うので、6〜7割は高いところ(度数12以上)へ届かせる。
+export const SOAR_HIGH_RATE = 0.65;
+
+function soarCandidate(rng, kind, contour, wantSus) {
+  // 完全反復は頂点が2回鳴るので使わない。終止形で閉じるか、別の型を続ける。
+  const mode = rng() < 0.55 ? 'cadence' : 'other';
+  const rhythm = pickRhythm(rng);
+  const split = rhythm.findIndex((r) => r.b >= BAR);
+  const n1 = split < 0 ? rhythm.length : split;
+  const n2 = rhythm.length - n1;
+  const state = newDrawState();
+
+  // 舞い上がりは1小節目に置く。2小節目は降りてきた先から着地させる。
+  // (2小節目に置くと、跳んだ直後に断片が終わって降り切れない)
+  const first = soarLine(rng, n1, state);
+  const used = first.used.slice();
+
+  // 跳ぶ前の音をどこに置くか。高く置くほど頂点が高くなる。
+  const want = rng() < SOAR_HIGH_RATE
+    ? MAX_DEG - Math.max(...first.rel) - randInt(rng, 0, 2) // 天井いっぱいまで届かせる
+    : drawStart(rng);
+  const start = placeStart(first.rel, clampDeg(want), kind);
+  // smoothLeaps は「同じ向きの跳躍が続く」ときだけ効く。舞い上がりは跳んだ直後が
+  // 下降なので形は保たれ、助走から続けて跳んでしまう事故だけがならされる。
+  const head = snapKeepingShape(smoothLeaps(first.rel.map((r) => r + start)), kind);
+
+  const endStable = mode === 'cadence';
+  const second = endStable ? cadenceLine(rng, n2, state) : formulaLine(rng, n2, state);
+  used.push(...second.used);
+  // 2小節目は頂点より下に置く。頂点に並ぶと「届いた一回」が消える。
+  const near = clampDeg(head[head.length - 1] - randInt(rng, 0, 2));
+  const tailStart = placeStart(second.rel, near, kind, endStable);
+  const tail = second.rel.map((r) => r + tailStart);
+  const degs = head.concat(snapKeepingShape(smoothLeaps(tail), kind));
+  if (wantSus && n1 > 0 && n2 > 0) seedSuspension(degs, n1);
+
+  return { rhythm, degs, used, path: `soar:${mode}` };
+}
+
 // --- 輪郭テンプレートから2小節を組む(多様性の担保) ---
 function contourCandidate(rng, kind, contour, wantSus) {
   const mode = drawPath(rng);
@@ -807,13 +893,13 @@ function contourCandidate(rng, kind, contour, wantSus) {
 
 export function generateCandidate(rng) {
   const kind = drawPenta(rng);
-  const useFormula = rng() < FORMULA_RATE;
+  const route = drawRoute(rng);
   const contour = pick(rng, CONTOUR_NAMES);
   const wantSus = rng() < 0.35;
 
-  const built = useFormula
-    ? formulaCandidate(rng, kind, contour, wantSus)
-    : contourCandidate(rng, kind, contour, wantSus);
+  const build = { soar: soarCandidate, formula: formulaCandidate, contour: contourCandidate }[route];
+  const built = build(rng, kind, contour, wantSus);
+  const useFormula = route !== 'contour';
 
   const degs = built.degs.map(clampDeg);
   const minDeg = Math.min(...degs);
@@ -831,6 +917,7 @@ export function generateCandidate(rng) {
     penta: kind,
     path: built.path,
     source: useFormula ? 'formula' : 'contour',
+    route,
     formulas: built.used,
   };
 }

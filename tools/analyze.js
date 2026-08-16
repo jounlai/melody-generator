@@ -73,11 +73,11 @@ function intervalsOf(degs) {
 }
 
 // ---------------------------------------------------------------------------
-// 音程の分布（名旋律57曲のコーパス実測値に対する較正用）
+// 音程の分布（名旋律125曲のコーパス実測値に対する較正用）
 // ---------------------------------------------------------------------------
 // 度数差1 = 2度（順次進行）, 2 = 3度, 3 = 4度, 4 = 5度。
-// コーパス実測: 2度 69.6% / 3度 18.5% / 4度以上 5.5% / 同音 6.4%、
-// そして「跳躍したら次は順次で埋め戻す」が 61.9%。
+// コーパス実測: 2度 69.1% / 3度 18.3% / 4度以上 4.1% / 同音 8.5%、
+// そして「跳躍したら次は順次で埋め戻す」が 62.4%。
 // 名旋律のメロディーはこの分布にきれいに収まる。
 
 /** 順次進行（2度）の割合 */
@@ -116,6 +116,26 @@ export function leapThenStepRatio(intervals) {
     if (Math.abs(list[i + 1]) === 1) filled++;
   }
   return leaps === 0 ? null : filled / leaps;
+}
+
+/**
+ * 「舞い上がり」。4度以上（度数差3以上）の上行跳躍で最高音に届き、
+ * その直後に2度以内で降り始める形。最高音は断片に1回だけ。
+ * Can't Help Falling in Love / Hey Jude の "better" がこの形で、
+ * 名旋律の「感動する瞬間」はほぼこれが作っている（コーパス125曲中189回）。
+ */
+export function hasSoar(degs, peakCount) {
+  const list = Array.isArray(degs) ? degs : [];
+  if (list.length < 3) return false;
+  const peak = Math.max(...list);
+  const count = Number.isFinite(peakCount) ? peakCount : list.filter((d) => d === peak).length;
+  if (count !== 1) return false; // 頂点が2回鳴ると「届いた一回」が消える
+
+  const i = list.indexOf(peak);
+  if (i === 0 || i === list.length - 1) return false; // 跳び上がる前と降りる先が要る
+  const up = list[i] - list[i - 1];
+  const down = list[i + 1] - list[i];
+  return up >= 3 && down <= -1 && down >= -2;
 }
 
 /** 方向転換回数（0の音程は無視して符号の変化を数える） */
@@ -207,6 +227,7 @@ function baseOf(notes, base) {
 /**
  * 情動的な特徴タグ。
  * 'sigh' は「5度以上の上行跳躍の直後に順次下降が2音以上続く」形で、涙腺を刺激する中核パターン。
+ * 'soar' は「4度以上跳んで頂点に届き、そこから降り始める」形で、クライマックスの核心。
  * 'penta-major' / 'penta-minor' は大衆性（口ずさめること）の核心。
  * 'inner-sequence' / 'inner-repeat' は「動機として成立しているか」の核心。
  */
@@ -214,6 +235,7 @@ export function detectTags(notes, base) {
   const list = Array.isArray(notes) ? notes : [];
   const b = baseOf(list, base);
   const intervals = b.intervals;
+  const degs = list.map((n) => n.deg);
   const tags = [];
 
   // sigh: 上行跳躍（+5度以上）→ 順次下降（2度以内の下降）が2音以上
@@ -224,6 +246,8 @@ export function detectTags(notes, base) {
       break;
     }
   }
+
+  if (hasSoar(degs, b.peakCount)) tags.push('soar');
 
   if (b.peakCount === 1) tags.push('single-peak');
 
@@ -307,7 +331,7 @@ export function analyzeFragment(notes) {
     // リズムの単調さの主指標。1種類しか音価が無い断片は童謡の正体。
     distinctDurations: distinctDurations(list),
     durationRatio: round2(durationRatio(list)),
-    // 音程の分布。コーパス(名旋律57曲)の実測値と突き合わせて採点する。
+    // 音程の分布。コーパス(名旋律125曲)の実測値と突き合わせて採点する。
     // 帯の境目で採点とテストがずれないよう、ここでは丸めない。
     stepRatio: stepRatioOf(intervals),
     thirdRatio: thirdRatioOf(intervals),
