@@ -5,10 +5,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CORPUS } from '../tools/corpus.js';
+import { CORPUS, REGIONS } from '../tools/corpus.js';
 import {
   FORMULA_MIN_LEN, FORMULA_MAX_LEN, FORMULA_MIN_WEIGHT, CADENCE_LEN,
-  RHYTHM_MIN_LEN, RHYTHM_MAX_LEN, buildPatterns, serializePatterns,
+  RHYTHM_MIN_LEN, RHYTHM_MAX_LEN,
+  SOAR_MIN_LEN, SOAR_MAX_LEN, SOAR_MIN_WEIGHT, SOAR_MIN_LEAP,
+  SOAR_MIN_DESCENT, SOAR_STEP_MAX, PHRASE_END_LONG_FACTOR,
+  isSoarWindow, buildPatterns, serializePatterns,
 } from '../tools/extractPatterns.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -18,15 +21,24 @@ const patterns = JSON.parse(readFileSync(PATTERNS_PATH, 'utf8'));
 
 // 没後70年に余裕を持たせた線。これより後に没した作曲家は入れられない。
 const PD_DEATH_YEAR_LIMIT = 1955;
-const MIN_PIECES = 40;
+const MIN_PIECES = 110;
 const MIN_NOTES_PER_PIECE = 8;
 const MIN_FORMULAS = 200;
 const MIN_CADENCES = 10;
 const MIN_RHYTHM_CELLS = 20;
+const MIN_SOARS = 15;
 // 名旋律は順次進行が主体。この帯を外れたら採譜そのものが疑わしい。
 const STEPWISE_BAND = { min: 0.4, max: 0.8 };
+// 地域ごとに見るときは語法の幅があるので少し広く取る。
+const REGION_STEPWISE_BAND = { min: 0.35, max: 0.85 };
 // 跳んだら順次で埋め戻す、が歌の原則。
 const LEAP_THEN_STEP_MIN = 0.6;
+// 名バラードはフレーズ末で必ず音を伸ばす。
+const PHRASE_END_LONG_MIN = 0.5;
+// 系統ごとの最低収録数。ここを割ると「その系統を分析した」とは言えない。
+const REGION_MIN_COUNT = { italian: 8, latin: 5, korean: 3 };
+// ユーザーが挙げた Can't Help Falling in Love の原曲。必ず入っていること。
+const REQUIRED_IDS = ['martini-plaisir-damour'];
 
 // ---------------------------------------------------------------------------
 // 1. 著作権の監査。ここが落ちたら他が全部通っていても出荷できない。
@@ -85,7 +97,7 @@ test('patterns.json にも由来の監査情報が残っている', () => {
 // 2〜4. コーパスの形式
 // ---------------------------------------------------------------------------
 
-test('40曲以上あり、id が重複していない', () => {
+test('110曲以上あり、id が重複していない', () => {
   assert.ok(
     CORPUS.length >= MIN_PIECES,
     `収録数 ${CORPUS.length} は ${MIN_PIECES} 未満`,
@@ -118,6 +130,37 @@ test('notes は8音以上、deg は整数、dur は正の数', () => {
         `${entry.id}[${i}]: dur=${note.dur} が正の数でない`,
       );
     }
+  }
+});
+
+test('祖先として必須の曲が収録されている', () => {
+  const ids = new Set(CORPUS.map((entry) => entry.id));
+  for (const id of REQUIRED_IDS) {
+    assert.ok(ids.has(id), `${id} が収録されていない`);
+  }
+  // Plaisir d'amour は1784年作・作曲者没1816。念のため中身も確かめる。
+  const plaisir = CORPUS.find((entry) => entry.id === 'martini-plaisir-damour');
+  assert.equal(plaisir.died, 1816);
+  assert.ok(plaisir.notes.length >= MIN_NOTES_PER_PIECE);
+});
+
+test('全エントリが有効な region を持つ', () => {
+  for (const entry of CORPUS) {
+    assert.ok(
+      REGIONS.includes(entry.region),
+      `${entry.id}: region="${entry.region}" は ${REGIONS.join('/')} のいずれかでなければならない`,
+    );
+  }
+});
+
+test('系統ごとの最低収録数(italian 8 / latin 5 / korean 3)を満たす', () => {
+  const count = {};
+  for (const entry of CORPUS) count[entry.region] = (count[entry.region] ?? 0) + 1;
+  for (const [region, min] of Object.entries(REGION_MIN_COUNT)) {
+    assert.ok(
+      (count[region] ?? 0) >= min,
+      `region="${region}" が ${count[region] ?? 0} 曲。${min} 曲以上必要`,
+    );
   }
 });
 
@@ -210,6 +253,77 @@ test('rhythmCells が20種類以上あり、長さ2〜4で dur が正の数', ()
   }
 });
 
+test('soars が15種類以上あり、長さ4〜6の0始まりオフセットである', () => {
+  assert.ok(Array.isArray(patterns.soars));
+  assert.ok(
+    patterns.soars.length >= MIN_SOARS,
+    `soars ${patterns.soars.length} 種類は ${MIN_SOARS} 未満。跳び上がる旋律が足りない`,
+  );
+  for (const soar of patterns.soars) {
+    assert.equal(
+      soar.steps[0], 0,
+      `steps=${soar.steps} が0始まりでない`,
+    );
+    assert.ok(
+      soar.steps.length >= SOAR_MIN_LEN && soar.steps.length <= SOAR_MAX_LEN,
+      `steps=${soar.steps} の長さ ${soar.steps.length} が ${SOAR_MIN_LEN}〜${SOAR_MAX_LEN} の外`,
+    );
+    assert.ok(
+      Number.isInteger(soar.weight) && soar.weight >= SOAR_MIN_WEIGHT,
+      `steps=${soar.steps} の weight=${soar.weight} が ${SOAR_MIN_WEIGHT} 未満`,
+    );
+    for (const step of soar.steps) {
+      assert.ok(Number.isInteger(step), `steps=${soar.steps} に非整数が混じっている`);
+    }
+  }
+});
+
+test('soars は weight の降順に並んでいる', () => {
+  for (let i = 1; i < patterns.soars.length; i += 1) {
+    assert.ok(
+      patterns.soars[i - 1].weight >= patterns.soars[i].weight,
+      `${i} 番目で weight の降順が崩れている`,
+    );
+  }
+});
+
+test('全 soars が定義(大跳躍→最高音→順次下降2音以上)を実際に満たす', () => {
+  for (const soar of patterns.soars) {
+    const peak = Math.max(...soar.steps);
+    // 条件を満たす跳躍が実際に1つ以上あることを、抽出器とは別に数え直す。
+    let ok = false;
+    for (let j = 0; j + 1 < soar.steps.length; j += 1) {
+      const leap = soar.steps[j + 1] - soar.steps[j];
+      if (leap < SOAR_MIN_LEAP) continue;
+      if (soar.steps[j + 1] !== peak) continue;
+      let descent = 0;
+      for (let k = j + 1; k + 1 < soar.steps.length; k += 1) {
+        const move = soar.steps[k + 1] - soar.steps[k];
+        if (move <= -1 && move >= -SOAR_STEP_MAX) descent += 1;
+        else break;
+      }
+      if (descent >= SOAR_MIN_DESCENT) { ok = true; break; }
+    }
+    assert.ok(ok, `steps=${soar.steps} が舞い上がりの定義を満たしていない`);
+    assert.ok(isSoarWindow(soar.steps), `steps=${soar.steps} を抽出器が再判定できない`);
+  }
+});
+
+test('舞い上がりの判定は境界で正しく効く', () => {
+  // 5度上行 → 順次で2音下降。これが定義そのもの。
+  assert.ok(isSoarWindow([0, 4, 3, 2]));
+  // 跳躍が3(=4度)では足りない。
+  assert.ok(!isSoarWindow([0, 3, 2, 1]));
+  // 下降が1音しか続かない。
+  assert.ok(!isSoarWindow([0, 4, 3, 4]));
+  // 到達点が最高音でない(あとでさらに上がる)。
+  assert.ok(!isSoarWindow([0, 4, 5, 4, 3]));
+  // 跳躍後が跳躍(3度を超える下降)なら順次ではない。
+  assert.ok(!isSoarWindow([0, 4, 1, 0]));
+  // 3度(度数差2)までは「順次」に含める。
+  assert.ok(isSoarWindow([0, 5, 3, 2]));
+});
+
 // ---------------------------------------------------------------------------
 // 8〜9. 採譜品質の検算。ここが外れたらコーパス側を直す。
 // ---------------------------------------------------------------------------
@@ -232,6 +346,53 @@ test('leapThenStepRatio が 0.6 以上(跳躍は順次で埋め戻される)', (
   );
 });
 
+test('phraseEndLongRatio が 0.5 以上(名バラードはフレーズ末で伸ばす)', () => {
+  const value = patterns.stats.phraseEndLongRatio;
+  assert.equal(typeof value, 'number');
+  assert.ok(
+    value >= PHRASE_END_LONG_MIN,
+    `phraseEndLongRatio=${value} が ${PHRASE_END_LONG_MIN} 未満`,
+  );
+  // 抽出器を信用せず、コーパスから直接数え直して突き合わせる。
+  const hit = CORPUS.filter((entry) => {
+    const durs = entry.notes.map((note) => note.dur);
+    const mean = durs.reduce((a, b) => a + b, 0) / durs.length;
+    return durs[durs.length - 1] >= mean * PHRASE_END_LONG_FACTOR;
+  }).length;
+  assert.equal(value, Math.round((hit / CORPUS.length) * 1e4) / 1e4);
+});
+
+test('byRegion が全地域を覆い、どの地域も stepwiseRatio が 0.35〜0.85 に収まる', () => {
+  const { byRegion } = patterns.stats;
+  assert.ok(byRegion && typeof byRegion === 'object');
+
+  const expected = {};
+  for (const entry of CORPUS) expected[entry.region] = (expected[entry.region] ?? 0) + 1;
+  assert.deepEqual(Object.keys(byRegion).sort(), Object.keys(expected).sort());
+
+  let total = 0;
+  for (const [region, value] of Object.entries(byRegion)) {
+    assert.equal(value.count, expected[region], `${region}: count が合わない`);
+    total += value.count;
+    assert.ok(
+      value.stepwiseRatio >= REGION_STEPWISE_BAND.min
+        && value.stepwiseRatio <= REGION_STEPWISE_BAND.max,
+      `region="${region}" の stepwiseRatio=${value.stepwiseRatio} が `
+      + `${REGION_STEPWISE_BAND.min}〜${REGION_STEPWISE_BAND.max} の外。`
+      + 'この地域の採譜を見直すこと',
+    );
+    assert.ok(value.meanRange > 0, `${region}: meanRange が正でない`);
+    assert.ok(
+      Number.isInteger(value.soarCount) && value.soarCount >= 0,
+      `${region}: soarCount が非負整数でない`,
+    );
+  }
+  assert.equal(total, CORPUS.length);
+  // 地域別の舞い上がりの合計は全体の soarCount と一致する。
+  const soarTotal = Object.values(byRegion).reduce((a, v) => a + v.soarCount, 0);
+  assert.equal(soarTotal, patterns.stats.soarCount);
+});
+
 test('stats の各項目がそろっている', () => {
   const { stats } = patterns;
   assert.equal(stats.pieces, CORPUS.length);
@@ -247,6 +408,22 @@ test('stats の各項目がそろっている', () => {
   assert.equal(stats.stepwiseRatio, Math.round((steps / stats.intervals) * 1e4) / 1e4);
 
   assert.ok(stats.cadenceOnTonicRatio >= 0 && stats.cadenceOnTonicRatio <= 1);
+
+  // 舞い上がりの総数は、種類ごとの weight の合計と一致する。
+  assert.equal(
+    stats.soarCount,
+    patterns.soars.reduce((a, s) => a + s.weight, 0),
+  );
+  assert.ok(stats.soarCount > 0);
+  assert.ok(stats.phraseEndLongRatio >= 0 && stats.phraseEndLongRatio <= 1);
+  // 冒頭2音が同音の割合。語りかけ型の語彙が実際に入っているか。
+  assert.ok(stats.openingRepeatRatio > 0 && stats.openingRepeatRatio <= 1);
+  const repeats = CORPUS.filter((e) => e.notes[0].deg === e.notes[1].deg).length;
+  assert.equal(
+    stats.openingRepeatRatio,
+    Math.round((repeats / CORPUS.length) * 1e4) / 1e4,
+  );
+
   assert.equal(stats.modeCount.major + stats.modeCount.minor, CORPUS.length);
   assert.ok(stats.modeCount.major > 0 && stats.modeCount.minor > 0);
 

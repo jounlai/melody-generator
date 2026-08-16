@@ -30,6 +30,22 @@ export const CADENCE_LEN = 4;
 export const RHYTHM_MIN_LEN = 2;
 export const RHYTHM_MAX_LEN = 4;
 
+// 「舞い上がり」= 頂点へ大きく跳び上がって、そこから順次で降りてくる形。
+// 名バラードの山場はほぼこの形をしている。滅多に出ない貴重な型なので
+// 出現1回でも捨てない(閾値2にすると全部消える)。
+export const SOAR_MIN_LEN = 4;
+export const SOAR_MAX_LEN = 6;
+export const SOAR_MIN_WEIGHT = 1;
+// 舞い上がりと認める上行跳躍の最小の度数差。4 = 5度以上の跳躍。
+export const SOAR_MIN_LEAP = 4;
+// 跳んだあと順次で降り続ける音の最小数。
+export const SOAR_MIN_DESCENT = 2;
+// 「順次」として許す下降幅(度数差)。1 = 2度、2 = 3度。
+export const SOAR_STEP_MAX = 2;
+
+// フレーズ末を「伸ばした」と見なす、その曲の平均音価に対する倍率。
+export const PHRASE_END_LONG_FACTOR = 1.5;
+
 // 度数の差がいくつなら「順次進行(2度)」か。度数表記なので隣り合う度数の差は1。
 const STEP = 1;
 // 3度以上 = 度数差2以上を跳躍とみなす。
@@ -129,6 +145,59 @@ export function extractRhythmCells(corpus) {
     ));
 }
 
+// (d) 「舞い上がり」。ある窓が次を全部満たすときだけ採る。
+//   1. 度数差 SOAR_MIN_LEAP 以上の上行跳躍を含む
+//   2. その跳躍の到達点が、その窓の最高音である
+//   3. 到達点のあと、順次(度数差1〜2)の下降が SOAR_MIN_DESCENT 音以上続く
+// 条件を満たす跳躍が1つでもあれば、その窓は舞い上がりとする。
+export function isSoarWindow(window) {
+  const peak = Math.max(...window);
+  for (let j = 0; j + 1 < window.length; j += 1) {
+    if (window[j + 1] - window[j] < SOAR_MIN_LEAP) continue;
+    if (window[j + 1] !== peak) continue;
+    let descent = 0;
+    for (let k = j + 1; k + 1 < window.length; k += 1) {
+      const move = window[k + 1] - window[k];
+      if (move <= -1 && move >= -SOAR_STEP_MAX) descent += 1;
+      else break;
+    }
+    if (descent >= SOAR_MIN_DESCENT) return true;
+  }
+  return false;
+}
+
+// 1曲の中で条件を満たす窓の数。stats 側の集計にも使う。
+function countSoarWindows(degs) {
+  let count = 0;
+  for (let len = SOAR_MIN_LEN; len <= SOAR_MAX_LEN; len += 1) {
+    for (let i = 0; i + len <= degs.length; i += 1) {
+      if (isSoarWindow(degs.slice(i, i + len))) count += 1;
+    }
+  }
+  return count;
+}
+
+export function extractSoars(corpus) {
+  const counter = makeCounter();
+  for (const entry of corpus) {
+    const degs = degsOf(entry);
+    for (let len = SOAR_MIN_LEN; len <= SOAR_MAX_LEN; len += 1) {
+      for (let i = 0; i + len <= degs.length; i += 1) {
+        const window = degs.slice(i, i + len);
+        if (isSoarWindow(window)) counter.add(toSteps(window));
+      }
+    }
+  }
+  return counter.entries()
+    .filter((e) => e.weight >= SOAR_MIN_WEIGHT)
+    .map((e) => ({ steps: e.value, weight: e.weight }))
+    .sort((a, b) => (
+      b.weight - a.weight
+      || a.steps.length - b.steps.length
+      || compareNumArrays(a.steps, b.steps)
+    ));
+}
+
 // 度数1, 8, 15 …(および 0 の下、-6 など)はすべて主音。
 const isTonicDeg = (deg) => ((((deg - 1) % 7) + 7) % 7) === 0;
 
@@ -141,7 +210,15 @@ function median(values) {
   return round((sorted[mid - 1] + sorted[mid]) / 2, 3);
 }
 
-// (d) 統計サマリ。生成側のスコアリングは、この数字を根拠に閾値を決める。
+// 地域ごとの語法差を測るための小さな集計器。
+// 1曲ずつ「音程の総数 / 順次の数 / 音域 / 舞い上がりの数」を足し込む。
+function makeRegionAccumulator() {
+  return {
+    count: 0, intervals: 0, steps: 0, rangeSum: 0, soars: 0,
+  };
+}
+
+// (e) 統計サマリ。生成側のスコアリングは、この数字を根拠に閾値を決める。
 export function extractStats(corpus) {
   const intervalHistogram = {};
   let intervalCount = 0;
@@ -149,13 +226,36 @@ export function extractStats(corpus) {
   let leapCount = 0;
   let leapThenStep = 0;
   let tonicEnd = 0;
+  let soarCount = 0;
+  let phraseEndLong = 0;
+  let openingRepeat = 0;
   const modeCount = { major: 0, minor: 0 };
   const beatsHistogram = {};
   const beatsList = [];
+  const byRegionRaw = new Map();
 
   for (const entry of corpus) {
     const degs = degsOf(entry);
+    const durs = dursOf(entry);
     const intervals = intervalsOf(degs);
+
+    const soars = countSoarWindows(degs);
+    soarCount += soars;
+
+    // フレーズ末で伸ばしたか。名バラードは必ず最後の音を置きにいく。
+    const meanDur = sum(durs) / durs.length;
+    if (durs[durs.length - 1] >= meanDur * PHRASE_END_LONG_FACTOR) phraseEndLong += 1;
+    // 冒頭2音が同音か(Hey Jude 型の語りかけ)。
+    if (degs.length >= 2 && degs[0] === degs[1]) openingRepeat += 1;
+
+    const region = entry.region ?? 'other';
+    if (!byRegionRaw.has(region)) byRegionRaw.set(region, makeRegionAccumulator());
+    const acc = byRegionRaw.get(region);
+    acc.count += 1;
+    acc.intervals += intervals.length;
+    acc.steps += intervals.filter((d) => Math.abs(d) === STEP).length;
+    acc.rangeSum += Math.max(...degs) - Math.min(...degs);
+    acc.soars += soars;
 
     for (let i = 0; i < intervals.length; i += 1) {
       const size = Math.abs(intervals[i]);
@@ -185,6 +285,19 @@ export function extractStats(corpus) {
       .map((k) => [String(k), obj[k]]),
   );
 
+  // 地域名でソートしてから書き出す(JSONのバイト列を固定するため)。
+  const byRegion = Object.fromEntries(
+    [...byRegionRaw.keys()].sort().map((key) => {
+      const acc = byRegionRaw.get(key);
+      return [key, {
+        count: acc.count,
+        stepwiseRatio: ratio(acc.steps, acc.intervals),
+        meanRange: round(acc.rangeSum / acc.count, 3),
+        soarCount: acc.soars,
+      }];
+    }),
+  );
+
   return {
     pieces: corpus.length,
     notes: sum(corpus.map((e) => e.notes.length)),
@@ -194,6 +307,9 @@ export function extractStats(corpus) {
     leapCount,
     leapThenStepRatio: ratio(leapThenStep, leapCount),
     cadenceOnTonicRatio: ratio(tonicEnd, corpus.length),
+    soarCount,
+    phraseEndLongRatio: ratio(phraseEndLong, corpus.length),
+    openingRepeatRatio: ratio(openingRepeat, corpus.length),
     phraseLengthBeats: {
       min: Math.min(...beatsList),
       max: Math.max(...beatsList),
@@ -202,6 +318,7 @@ export function extractStats(corpus) {
       histogram: sortedNumKeys(beatsHistogram),
     },
     modeCount,
+    byRegion,
   };
 }
 
@@ -218,6 +335,7 @@ export function buildPatterns(corpus = CORPUS) {
     formulas: extractFormulas(corpus),
     cadences: extractCadences(corpus),
     rhythmCells: extractRhythmCells(corpus),
+    soars: extractSoars(corpus),
     stats: extractStats(corpus),
   };
 }
@@ -247,9 +365,12 @@ function main() {
     `  formulas    : ${patterns.formulas.length}`,
     `  cadences    : ${patterns.cadences.length}`,
     `  rhythmCells : ${patterns.rhythmCells.length}`,
+    `  soars       : ${patterns.soars.length} kinds / ${stats.soarCount} hits`,
     `  stepwise    : ${stats.stepwiseRatio}`,
     `  leapThenStep: ${stats.leapThenStepRatio}`,
     `  tonicEnd    : ${stats.cadenceOnTonicRatio}`,
+    `  phraseEndLong: ${stats.phraseEndLongRatio}`,
+    `  openingRepeat: ${stats.openingRepeatRatio}`,
     '',
   ].join('\n'));
 }
