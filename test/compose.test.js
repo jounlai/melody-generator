@@ -8,6 +8,8 @@ import { defaultSettings } from '../src/settings.js';
 import {
   SECTION_NAMES, climaxSlot, curveFor, varyProgression,
   passesFilters, selectFragment, composeSong,
+  transposeFragment, deriveFragment, phraseRoles, rhythmKey,
+  progressionWeight, arpeggioIndex,
 } from '../src/compose.js';
 
 // ---------------------------------------------------------------------------
@@ -235,6 +237,20 @@ function barChordsOf(song, sectionIdx) {
   const out = [];
   for (let r = 0; r < song.bars / 4 / 4; r++) for (const b of prog.bars) out.push(b.chord);
   return out;
+}
+
+// スロットが実際に鳴らした断片を復元する。
+// ゼクエンツで作られたスロットは元の断片が残っていないので、記録された offset で
+// 同じ移調をやり直して復元する（実装と同じ関数を使う＝同じものが返る）。
+function fragmentOf(slot, byId) {
+  if (slot.offset === null || slot.offset === undefined) return byId.get(slot.fragmentId) ?? null;
+  const base = byId.get(slot.fragmentId.slice(0, slot.fragmentId.lastIndexOf('+')));
+  return base ? transposeFragment(base, slot.offset) : null;
+}
+
+// 隣接音程の並び。ゼクエンツ（平行移動）なら元とまったく同じになる。
+function intervalsOf(fragment) {
+  return fragment.notes.slice(1).map((n, i) => n.deg - fragment.notes[i].deg);
 }
 
 function allMidis(song) {
@@ -473,7 +489,10 @@ test('頂点には、断片内で最高音が2回鳴る断片を選ばない', (
 // 10〜11. 接続とコード適合
 // ---------------------------------------------------------------------------
 
-test('隣り合うスロットの接続が滑らか', () => {
+// 接続の滑らかさは「選び直したスロット」の保証。
+// ゼクエンツで導出したスロットは、同じ音形を意図して平行移動したものなので、
+// そこで生じる跳躍は事故ではなく形の一部。免除する。
+test('隣り合うスロットの接続が滑らか（通常選択のスロット）', () => {
   for (const maxLeap of [2, 3]) {
     for (const seed of SEEDS) {
       const song = composeSong(seed, DATA, S({ maxLeap, motifRecall: false }));
@@ -482,9 +501,9 @@ test('隣り合うスロットの接続が滑らか', () => {
       let prevEnd = null;
       song.sections.forEach((sec, si) => {
         sec.slots.forEach((slot, k) => {
-          const frag = BY_ID.get(slot.fragmentId);
+          const frag = fragmentOf(slot, BY_ID);
           assert.ok(frag, `断片が見つからない: ${slot.fragmentId}`);
-          const exempt = k === 0 || (si === 2 && k === cs);
+          const exempt = k === 0 || (si === 2 && k === cs) || slot.derivedFrom !== null;
           if (prevEnd !== null && !exempt) {
             assert.ok(Math.abs(frag.startDeg - prevEnd) <= maxLeap,
               `${seed} ${sec.name}:${k} で跳躍しすぎ (${prevEnd} → ${frag.startDeg})`);
@@ -503,7 +522,7 @@ test('選ばれた断片は実際にその小節のコードに乗っている',
       song.sections.forEach((sec, si) => {
         const chords = barChordsOf(song, si);
         sec.slots.forEach((slot, k) => {
-          const frag = BY_ID.get(slot.fragmentId);
+          const frag = fragmentOf(slot, BY_ID);
           if (!frag) return; // フォールバックは対象外
           const [b0, b1] = splitBars(frag.notes);
           assert.ok(fitsBar(b0, song.mode, chords[2 * k]),
@@ -698,15 +717,16 @@ test('pad / bass / accomp が全小節ぶん鳴る', () => {
     const song = composeSong('layers', DATA, S({ songBars: bars }));
     assert.equal(song.pad.length, song.bars);
     assert.equal(song.bass.length, song.bars);
-    assert.equal(song.accomp.length, song.bars * 4);
+    // 伴奏は8分音符。1小節8音で左手を途切れさせない。
+    assert.equal(song.accomp.length, song.bars * 8);
     for (let bar = 0; bar < song.bars; bar++) {
       assert.equal(song.pad[bar].beat, bar * 4);
       assert.equal(song.pad[bar].dur, 4);
       assert.ok(song.pad[bar].midis.length >= 3);
       assert.equal(song.bass[bar].beat, bar * 4);
       const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
-      assert.equal(inBar.length, 4);
-      assert.deepEqual(inBar.map((n) => n.beat - bar * 4), [0, 1.5, 2, 3.5]);
+      assert.equal(inBar.length, 8);
+      assert.deepEqual(inBar.map((n) => n.beat - bar * 4), [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]);
       // ベースは伴奏より下、伴奏はパッドより下（同じ高さになることはある）。
       // 層が入れ替わると土台が濁る。
       assert.ok(song.bass[bar].midi < Math.min(...inBar.map((n) => n.midi)));
@@ -812,6 +832,366 @@ test('selectFragment: 頂点の直前では掛留のある断片を優先する'
 });
 
 // ---------------------------------------------------------------------------
+// 楽節構造（a - a' - b - a''）
+//
+// 無関係な断片を4つ並べても「ランダムな音程の列」にしか聴こえない。
+// 旋律が旋律に聴こえるのは、同じ形が少しずつ姿を変えて戻ってくるから。
+// ---------------------------------------------------------------------------
+
+test('phraseRoles: スロット数ごとの役割', () => {
+  assert.deepEqual(phraseRoles(2).map((r) => r.name), ['a', "a'"]);
+  assert.deepEqual(phraseRoles(4).map((r) => r.name), ['a', "a'", 'b', "a''"]);
+  assert.deepEqual(phraseRoles(8).map((r) => r.name),
+    ['a', "a'", 'b', "a''", 'a', "a'", 'b', "a''"]);
+  // 導出するのは a' と a'' だけ。導出元は同じ楽節の a。
+  assert.deepEqual(phraseRoles(8).map((r) => r.derive),
+    [false, true, false, true, false, true, false, true]);
+  assert.deepEqual(phraseRoles(8).map((r) => r.anchor), [null, 0, 0, 0, null, 4, 4, 4]);
+  assert.deepEqual(phraseRoles(2).map((r) => r.anchor), [null, 0]);
+});
+
+test('transposeFragment: リズムを保ったままスケール度数を平行移動する', () => {
+  const src = DATA.melodies.find((m) => m.peakDeg <= 10);
+  assert.ok(src, '素材が無い');
+  const moved = transposeFragment(src, 2);
+  assert.ok(moved);
+  assert.equal(moved.notes.length, src.notes.length);
+  assert.deepEqual(moved.notes.map((n) => n.deg), src.notes.map((n) => n.deg + 2));
+  // リズムは完全に同じ
+  assert.equal(rhythmKey(moved), rhythmKey(src));
+  assert.deepEqual(moved.notes.map((n) => n.vel), src.notes.map((n) => n.vel));
+  // 音形（隣接音程の並び）も完全に同じ
+  assert.deepEqual(intervalsOf(moved), intervalsOf(src));
+  // 再計算されるフィールド
+  assert.equal(moved.startDeg, src.startDeg + 2);
+  assert.equal(moved.endDeg, src.endDeg + 2);
+  assert.equal(moved.peakDeg, src.peakDeg + 2);
+  assert.equal(moved.peakCount, src.peakCount);
+  assert.deepEqual(moved.range, [src.range[0] + 2, src.range[1] + 2]);
+  assert.equal(moved.span, src.span);
+  assert.equal(moved.contour, src.contour);
+  assert.equal(moved.tension, src.tension);
+  assert.match(moved.id, /\+2$/);
+  // offset 0 は元と同じ音
+  assert.deepEqual(transposeFragment(src, 0).notes.map((n) => n.deg), src.notes.map((n) => n.deg));
+  // 元の断片は無傷
+  assert.equal(src.id.includes('+'), false);
+
+  // 1〜15 に収まらない offset は不採用（クランプで音形が潰れるため）
+  assert.equal(transposeFragment(src, 20), null);
+  assert.equal(transposeFragment(src, -20), null);
+  assert.equal(transposeFragment({ id: 'x', notes: [] }, 1), null);
+});
+
+test('deriveFragment: コードに乗る平行移動を選び、音高の窓も守る', () => {
+  const mode = 'major';
+  const ctx = {
+    mode, chordA: 'I', chordB: 'V',
+    chordAIdx: chordIndex(mode, 'I'), chordBIdx: chordIndex(mode, 'V'),
+    maxPeak: 11, minPeak: 1,
+  };
+  const anchor = DATA.melodies.find((m) => m.peakDeg <= 9);
+  const got = deriveFragment(anchor, ctx);
+  assert.ok(got, '導出できる断片が1つも無い');
+  assert.ok(Number.isInteger(got.offset));
+  // 実際にコードへ乗っていること（fit の添字ではなく再計算で確かめる）
+  const [b0, b1] = splitBars(got.fragment.notes);
+  assert.ok(fitsBar(b0, mode, 'I'), '前半が I に乗っていない');
+  assert.ok(fitsBar(b1, mode, 'V'), '後半が V に乗っていない');
+  assert.ok(got.fragment.peakDeg <= 11, '音高の窓を超えた');
+
+  // 窓を閉じきれば導出できない
+  assert.equal(deriveFragment(anchor, { ...ctx, maxPeak: 0 }), null);
+  // 乗りようのないコードでも null（例外を投げない）
+  assert.equal(deriveFragment(null, ctx), null);
+
+  // exclude した offset は使わない
+  const again = deriveFragment(anchor, ctx, { exclude: got.offset });
+  if (again) assert.notEqual(again.offset, got.offset);
+});
+
+// フィクスチャは4分音符4つの断片ばかりなので、リズム一致の代替は必ず見つかる。
+// 実データでの割合は下の実データ統合テストで測る。
+test('セクション内が a - a\' - b - a\'\' の楽節になっている', () => {
+  let derived = 0;
+  let total = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars, motifRecall: false }));
+      const slots = slotsPerSection(song);
+      const cs = climaxSlot(slots);
+      const roles = phraseRoles(slots);
+      song.sections.forEach((sec, si) => {
+        assert.deepEqual(sec.slots.map((sl) => sl.role), roles.map((r) => r.name));
+        sec.slots.forEach((slot, k) => {
+          // クライマックスは楽節構造より音高の条件が優先。導出しない。
+          if (si === 2 && k === cs) {
+            assert.equal(slot.derivedFrom, null, 'クライマックスで導出している');
+            return;
+          }
+          if (!roles[k].derive) {
+            assert.equal(slot.derivedFrom, null, `${sec.name}:${k} は導出しないスロット`);
+            return;
+          }
+          total++;
+          if (slot.derivedFrom !== null) {
+            assert.equal(slot.derivedFrom, roles[k].anchor);
+            derived++;
+          }
+        });
+      });
+    }
+  }
+  assert.ok(total > 0);
+  assert.ok(derived / total >= 0.95, `導出された割合が低い: ${(100 * derived / total).toFixed(1)}%`);
+});
+
+test('ゼクエンツは a とリズムも音形も完全に一致する', () => {
+  let checked = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars, motifRecall: false }));
+      song.sections.forEach((sec) => {
+        sec.slots.forEach((slot) => {
+          if (slot.offset === null || slot.offset === undefined) return;
+          const anchor = fragmentOf(sec.slots[slot.derivedFrom], BY_ID);
+          const frag = fragmentOf(slot, BY_ID);
+          assert.ok(anchor && frag);
+          assert.equal(rhythmKey(frag), rhythmKey(anchor),
+            `${seed} ${sec.name}: リズムが違う`);
+          assert.deepEqual(intervalsOf(frag), intervalsOf(anchor),
+            `${seed} ${sec.name}: 音形が違う`);
+          assert.deepEqual(frag.notes.map((n) => n.deg),
+            anchor.notes.map((n) => n.deg + slot.offset));
+          checked++;
+        });
+      });
+    }
+  }
+  assert.ok(checked > 0, 'ゼクエンツが1件も作られていない');
+});
+
+test('導出した断片も、実際にそのスロットのコードに乗っている', () => {
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars }));
+      song.sections.forEach((sec, si) => {
+        const chords = barChordsOf(song, si);
+        sec.slots.forEach((slot, k) => {
+          if (slot.derivedFrom === null) return;
+          const frag = fragmentOf(slot, BY_ID);
+          assert.ok(frag, `断片が復元できない: ${slot.fragmentId}`);
+          const [b0, b1] = splitBars(frag.notes);
+          assert.ok(fitsBar(b0, song.mode, chords[2 * k]),
+            `${seed} ${sec.name}:${k} 導出の前半が ${chords[2 * k]} に乗っていない`);
+          assert.ok(fitsBar(b1, song.mode, chords[2 * k + 1]),
+            `${seed} ${sec.name}:${k} 導出の後半が ${chords[2 * k + 1]} に乗っていない`);
+        });
+      });
+    }
+  }
+});
+
+test('b は a と違う輪郭で対比を作る', () => {
+  let contrast = 0;
+  let total = 0;
+  for (const bars of ['32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars, motifRecall: false }));
+      song.sections.forEach((sec) => {
+        for (let k = 2; k < sec.slots.length; k += 4) {
+          const a = fragmentOf(sec.slots[k - 2], BY_ID);
+          const b = fragmentOf(sec.slots[k], BY_ID);
+          if (!a || !b) continue;
+          total++;
+          if (a.contour !== b.contour) contrast++;
+        }
+      });
+    }
+  }
+  assert.ok(total > 0);
+  assert.ok(contrast / total >= 0.7, `対比が少なすぎる: ${(100 * contrast / total).toFixed(1)}%`);
+});
+
+// ---------------------------------------------------------------------------
+// 人気度による重み付け抽選
+// ---------------------------------------------------------------------------
+
+test('progressionWeight: 人気度の2乗。欠けていたら真ん中(3)として扱う', () => {
+  for (const [pop, w] of [[1, 1], [2, 4], [3, 9], [4, 16], [5, 25]]) {
+    assert.equal(progressionWeight({ popularity: pop }), w);
+  }
+  assert.equal(progressionWeight({}), 9);
+  assert.equal(progressionWeight({ popularity: 'x' }), 9);
+  assert.equal(progressionWeight({ popularity: 99 }), 25);
+  assert.equal(progressionWeight({ popularity: -5 }), 1);
+});
+
+test('人気度の高い進行のほうが多く選ばれる', () => {
+  // 同じ進行を「人気5」と「人気1」の2つに複製して、どちらが引かれるかを数える。
+  // 重み 25 対 1 なので、人気側が圧倒的多数になるはず。
+  const data = {
+    melodies: DATA.melodies,
+    progressions: [
+      ...FIX_PROGRESSIONS.map((p) => ({ ...p, id: `${p.id}-hi`, popularity: 5 })),
+      ...FIX_PROGRESSIONS.map((p) => ({ ...p, id: `${p.id}-lo`, popularity: 1 })),
+    ],
+  };
+  let hi = 0;
+  let lo = 0;
+  for (let i = 0; i < 1000; i++) {
+    const song = composeSong(`w-${i}`, data, S());
+    for (const si of [0, 2]) {
+      if (song.sections[si].progressionId.endsWith('-hi')) hi++; else lo++;
+    }
+  }
+  const share = hi / (hi + lo);
+  assert.ok(share >= 0.85, `人気進行の採用率が低い: ${(100 * share).toFixed(1)}%`);
+  // フィルタではなく重み付けであること（人気の低い進行も出番はある）。
+  assert.ok(lo > 0, '人気の低い進行が一度も選ばれていない');
+});
+
+// ---------------------------------------------------------------------------
+// ペンタトニック優先
+// ---------------------------------------------------------------------------
+
+const PENTA_TAG = { major: 'penta-major', minor: 'penta-minor' };
+
+// 主グリッド（緊張度 1/3/5）にだけタグを付ける。
+// 非クライマックスのスロットは主グリッドから必ず選べるので、
+// 優先が効いていればタグ付きしか選ばれない。
+function pentaData() {
+  return {
+    melodies: DATA.melodies.map((m) => (m.tension % 2 === 1
+      ? { ...m, tags: [PENTA_TAG.major, PENTA_TAG.minor] }
+      : m)),
+    progressions: FIX_PROGRESSIONS,
+  };
+}
+
+test('ペンタトニックの断片が優先され、クライマックスでは優先しない', () => {
+  const data = pentaData();
+  const byId = new Map(data.melodies.map((m) => [m.id, m]));
+  const tagged = data.melodies.filter((m) => m.tags.length > 0);
+  assert.ok(tagged.length > 0 && tagged.length < data.melodies.length,
+    'タグ付きが全件または0件では検証にならない');
+
+  let climaxNonPenta = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, data, S({ songBars: bars, motifRecall: false }));
+      const slots = slotsPerSection(song);
+      const cs = climaxSlot(slots);
+      song.sections.forEach((sec, si) => {
+        sec.slots.forEach((slot, k) => {
+          // 通常選択のスロットだけが対象（導出は元のタグを引き継ぐ・引き剥がすため）。
+          if (slot.source !== 'select') return;
+          const frag = byId.get(slot.fragmentId);
+          assert.ok(frag, `断片が見つからない: ${slot.fragmentId}`);
+          const penta = (frag.tags ?? []).includes(PENTA_TAG[song.mode]);
+          if (si === 2 && k === cs) {
+            if (!penta) climaxNonPenta++;
+            return;
+          }
+          assert.ok(penta, `${seed}/${bars} ${sec.name}:${k} が非ペンタ (${frag.id})`);
+        });
+      });
+    }
+  }
+  assert.ok(climaxNonPenta > 0,
+    'クライマックスでもペンタトニックが強制されている（頂点は音域が最優先のはず）');
+});
+
+test('selectFragment: preferPenta はモードに合うタグだけを見る', () => {
+  const mode = 'major';
+  const ctx = {
+    mode, chordA: 'I', chordB: 'V',
+    chordAIdx: chordIndex(mode, 'I'), chordBIdx: chordIndex(mode, 'V'),
+    prevEndDeg: null, tension: 3, maxPeak: 15, minPeak: 1, maxLeap: 6,
+  };
+  const base = DATA.melodies.filter((m) => passesFilters(m, ctx, 3));
+  assert.ok(base.length >= 4);
+  // 半分に penta-major、残りに penta-minor（＝長調では効かないタグ）を付ける。
+  const pool = base.map((m, i) => ({ ...m, tags: [i % 2 === 0 ? 'penta-major' : 'penta-minor'] }));
+  const rs = [0, 0.2, 0.4, 0.6, 0.8, 0.99];
+  for (const r of rs) {
+    const picked = selectFragment(() => r, pool, { ...ctx, preferPenta: true });
+    assert.ok(picked.tags.includes('penta-major'), `長調で penta-minor が選ばれた: ${picked.id}`);
+  }
+  // 優先を切れば penta-minor 側も引ける（フィルタではなく優先であることの確認）
+  const off = new Set(rs.map((r) => selectFragment(() => r, pool, { ...ctx, preferPenta: false }).tags[0]));
+  assert.ok(off.has('penta-minor'), '優先を切っても結果が変わっていない');
+});
+
+test('selectFragment: ペンタトニックのタグが1件も無ければ絞らない', () => {
+  // melodies.json がまだタグ無しでも安全に動くこと。
+  const mode = 'minor';
+  const ctx = {
+    mode, chordA: 'i', chordB: 'VII',
+    chordAIdx: chordIndex(mode, 'i'), chordBIdx: chordIndex(mode, 'VII'),
+    prevEndDeg: null, tension: 3, maxPeak: 15, minPeak: 1, maxLeap: 6,
+  };
+  assert.ok(DATA.melodies.every((m) => (m.tags ?? []).length === 0), 'フィクスチャにタグがある');
+  for (const r of [0, 0.33, 0.66, 0.99]) {
+    const on = selectFragment(() => r, DATA.melodies, { ...ctx, preferPenta: true });
+    const off = selectFragment(() => r, DATA.melodies, { ...ctx, preferPenta: false });
+    assert.equal(on.id, off.id, 'タグが無いのに候補が絞られた');
+  }
+});
+
+test('selectFragment: ペンタトニック優先のあとに掛留優先が掛かる', () => {
+  const mode = 'major';
+  const ia = chordIndex(mode, 'I');
+  const ib = chordIndex(mode, 'V');
+  const ctx = {
+    mode, chordA: 'I', chordB: 'V', chordAIdx: ia, chordBIdx: ib,
+    prevEndDeg: null, tension: 3, maxPeak: 15, minPeak: 1, maxLeap: 6,
+  };
+  const base = DATA.melodies.filter((m) => passesFilters(m, ctx, 3));
+  const hasSus = (m) => m.sus[mode][0].includes(ia) || m.sus[mode][1].includes(ib);
+  // ペンタかつ掛留、ペンタだけ、掛留だけ、が混ざったプールを作る。
+  const pool = base.map((m) => ({ ...m, tags: hasSus(m) || base.indexOf(m) % 2 === 0 ? ['penta-major'] : [] }));
+  const both = pool.filter((m) => m.tags.length > 0 && hasSus(m));
+  assert.ok(both.length > 0, '両方を満たす断片が無く、検証にならない');
+  for (const r of [0, 0.25, 0.5, 0.75, 0.99]) {
+    const picked = selectFragment(() => r, pool, { ...ctx, preferPenta: true, preferSus: true });
+    assert.ok(picked.tags.includes('penta-major'), `非ペンタが選ばれた: ${picked.id}`);
+    assert.ok(hasSus(picked), `掛留でない断片が選ばれた: ${picked.id}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 伴奏（8分音符の分散和音）
+// ---------------------------------------------------------------------------
+
+test('arpeggioIndex: 上行して下行する波で構成音を巡回する', () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => arpeggioIndex(i, 3)), [0, 1, 2, 1, 0, 1, 2, 1]);
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => arpeggioIndex(i, 4)), [0, 1, 2, 3, 2, 1, 0, 1]);
+  assert.deepEqual([0, 1, 2, 3].map((i) => arpeggioIndex(i, 2)), [0, 1, 0, 1]);
+  assert.equal(arpeggioIndex(3, 1), 0);
+  for (const voices of [1, 2, 3, 4, 5]) {
+    for (let i = 0; i < 32; i++) {
+      const idx = arpeggioIndex(i, voices);
+      assert.ok(Number.isInteger(idx) && idx >= 0 && idx < voices, `voices=${voices} i=${i} → ${idx}`);
+    }
+  }
+});
+
+test('伴奏は1小節8音の8分音符で、単純な繰り返しになっていない', () => {
+  const song = composeSong('accomp', DATA, S({ songBars: '32' }));
+  assert.equal(song.accomp.length, song.bars * 8);
+  for (const n of song.accomp) {
+    assert.ok(n.dur > 0 && n.dur <= 1, `dur が長すぎる: ${n.dur}`);
+    assert.ok(n.vel > 0 && n.vel <= 0.35, `伴奏が強すぎる: ${n.vel}`);
+  }
+  // 8音のうち、単純な i % voices の繰り返しとは違う並びになっていること。
+  const bar0 = song.accomp.filter((n) => n.beat < 4);
+  const midis = bar0.map((n) => n.midi);
+  assert.equal(new Set(midis).size >= 3, true, '同じ音ばかり鳴っている');
+  assert.equal(midis[0], Math.min(...midis), '小節頭が最低音ではない');
+});
+
+// ---------------------------------------------------------------------------
 // 実データ統合テスト
 //
 // src/data/*.json は別途生成されるので、無い環境ではスキップする。
@@ -889,6 +1269,124 @@ test('実データ: fallback が1度も発動しない', realOpts, () => {
           assert.notEqual(sl.fragmentId, 'fallback', `${seed}/${bars} ${sec.name} で fallback`);
         }
       }
+    }
+  }
+});
+
+test('実データ: セクション内の楽節構造が95%以上のスロットで成立する', realOpts, () => {
+  let derived = 0;
+  let total = 0;
+  const sources = {};
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const slots = slotsPerSection(song);
+      const cs = climaxSlot(slots);
+      const roles = phraseRoles(slots);
+      song.sections.forEach((sec, si) => {
+        assert.deepEqual(sec.slots.map((sl) => sl.role), roles.map((r) => r.name));
+        sec.slots.forEach((slot, k) => {
+          sources[slot.source] = (sources[slot.source] ?? 0) + 1;
+          // クライマックスと、再登場で埋まったスロットは楽節の導出より優先される。
+          if (si === 2 && k === cs) return;
+          if (!roles[k].derive || slot.reusedFrom !== null) return;
+          total++;
+          if (slot.derivedFrom === null) return;
+          assert.equal(slot.derivedFrom, roles[k].anchor);
+          // 導出元は必ず同じセクションの a
+          assert.equal(sec.slots[roles[k].anchor].role, 'a');
+          derived++;
+        });
+      });
+    }
+  }
+  assert.ok(total >= 1000, `検査したスロットが少ない: ${total}`);
+  const rate = derived / total;
+  assert.ok(rate >= 0.95,
+    `導出された割合が低い: ${(100 * rate).toFixed(1)}% (${derived}/${total}) ${JSON.stringify(sources)}`);
+  assert.ok((sources.fallback ?? 0) === 0, 'fallback が出ている');
+});
+
+test('実データ: ゼクエンツはリズムも音形も元と完全に一致し、コードにも乗る', realOpts, () => {
+  const byId = new Map(REAL.melodies.map((m) => [m.id, m]));
+  const progById = new Map(REAL.progressions.map((p) => [p.id, p]));
+  let checked = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS.slice(0, 80)) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      song.sections.forEach((sec, si) => {
+        const prog = varyProgression(progById.get(sec.progressionId), SECTION_LEVELS[si]);
+        const chords = [];
+        for (let r = 0; r < song.bars / 4 / 4; r++) for (const b of prog.bars) chords.push(b.chord);
+        sec.slots.forEach((slot, k) => {
+          if (slot.offset === null || slot.offset === undefined) return;
+          const anchor = fragmentOf(sec.slots[slot.derivedFrom], byId);
+          const frag = fragmentOf(slot, byId);
+          assert.ok(anchor && frag, `断片が復元できない: ${slot.fragmentId}`);
+          assert.equal(rhythmKey(frag), rhythmKey(anchor), `${seed} ${sec.name}:${k} リズムが違う`);
+          assert.deepEqual(intervalsOf(frag), intervalsOf(anchor), `${seed} ${sec.name}:${k} 音形が違う`);
+          const [b0, b1] = splitBars(frag.notes);
+          assert.ok(fitsBar(b0, song.mode, chords[2 * k]),
+            `${seed} ${sec.name}:${k} 導出の前半が ${chords[2 * k]} に乗っていない`);
+          assert.ok(fitsBar(b1, song.mode, chords[2 * k + 1]),
+            `${seed} ${sec.name}:${k} 導出の後半が ${chords[2 * k + 1]} に乗っていない`);
+          checked++;
+        });
+      });
+    }
+  }
+  assert.ok(checked >= 500, `ゼクエンツが少なすぎる: ${checked}`);
+});
+
+test('実データ: b と a の輪郭が違う曲が7割以上ある', realOpts, () => {
+  const byId = new Map(REAL.melodies.map((m) => [m.id, m]));
+  let contrast = 0;
+  let total = 0;
+  for (const bars of ['32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      song.sections.forEach((sec) => {
+        for (let k = 2; k < sec.slots.length; k += 4) {
+          const a = fragmentOf(sec.slots[k - 2], byId);
+          const b = fragmentOf(sec.slots[k], byId);
+          if (!a || !b) continue;
+          total++;
+          if (a.contour !== b.contour) contrast++;
+        }
+      });
+    }
+  }
+  assert.ok(total >= 1000);
+  assert.ok(contrast / total >= 0.7,
+    `対比が少なすぎる: ${(100 * contrast / total).toFixed(1)}% (${contrast}/${total})`);
+});
+
+test('実データ: popularity >= 4 の進行が7割以上使われる', realOpts, () => {
+  const byId = new Map(REAL.progressions.map((p) => [p.id, p]));
+  let used = 0;
+  let popular = 0;
+  for (let i = 0; i < 1000; i++) {
+    const song = composeSong(`pop-${i}`, REAL, S());
+    // A系（セクション0）と B（セクション2）の2つが、その曲で使われた進行。
+    for (const si of [0, 2]) {
+      const p = byId.get(song.sections[si].progressionId);
+      assert.ok(p, `未知の進行: ${song.sections[si].progressionId}`);
+      used++;
+      if (p.popularity >= 4) popular++;
+    }
+  }
+  assert.equal(used, 2000);
+  const share = popular / used;
+  assert.ok(share >= 0.7, `人気進行の採用率が低い: ${(100 * share).toFixed(1)}%`);
+});
+
+test('実データ: 伴奏が1小節8音で鳴る', realOpts, () => {
+  for (const bars of ['16', '32', '64']) {
+    const song = composeSong('accomp-real', REAL, S({ songBars: bars }));
+    assert.equal(song.accomp.length, song.bars * 8);
+    for (let bar = 0; bar < song.bars; bar++) {
+      const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
+      assert.equal(inBar.length, 8, `${bar}小節目の伴奏が ${inBar.length} 音`);
     }
   }
 });
