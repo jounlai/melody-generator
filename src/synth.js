@@ -50,6 +50,12 @@ const PARTIALS = {
     { mul: 3, gain: 0.12, decay: 0.26 },
     { mul: 4, gain: 0.05, decay: 0.16 },
   ],
+  // ベース: さらに暗く。ただし低音は基音だけだと小型スピーカーで消えるため2倍音は残す
+  bass: [
+    { mul: 1, gain: 1.00, decay: 1.00 },
+    { mul: 2, gain: 0.22, decay: 0.40 },
+    { mul: 3, gain: 0.06, decay: 0.20 },
+  ],
 };
 
 // settings.js の PARAM_DEFS における既定値の写し。
@@ -154,7 +160,8 @@ export function createEngine(audioCtx, settings) {
   limiter.connect(master);
   master.connect(ctx.destination);
 
-  const layerGains = { melody: melodyGain, accomp: accompGain };
+  // ベースは伴奏バスに合流させる。伴奏音量ひとつで下支え全体が動くようにするため。
+  const layerGains = { melody: melodyGain, accomp: accompGain, bass: accompGain };
 
   // brightness は「以降に発音する音」から反映されればよいので、値を保持して発音時に読む。
   let brightScale = 1;
@@ -220,7 +227,7 @@ export function createEngine(audioCtx, settings) {
     // コードが変わるまで引きずるサステインペダル相当の長いリリース
     const releaseSec = Math.max(dur * RELEASE_RATIO, MIN_RELEASE_SEC);
     const stopAt = t0 + releaseSec + TAIL_SEC;
-    const peak = (layer === 'accomp' ? ACCOMP_PEAK : MELODY_PEAK) * v;
+    const peak = (layer === 'melody' ? MELODY_PEAK : ACCOMP_PEAK) * v;
     // 実際のピアノ同様、強く弾いた音ほど倍音が出る
     const velBright = 0.6 + 0.4 * v;
     const f0 = midiToFreq(Number(midi));
