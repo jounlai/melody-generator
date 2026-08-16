@@ -8,6 +8,7 @@
 import {
   PARAM_DEFS,
   GROUP_LABELS,
+  visibleParams,
   normalizeSettings,
   defaultSettings,
 } from './settings.js';
@@ -240,11 +241,12 @@ export function createSettingsPanel(rootEl, options = {}) {
   }
 
   for (const group of groupOrder()) {
-    const defs = PARAM_DEFS.filter((def) => def.group === group);
+    const defs = visibleParams().filter((def) => def.group === group);
     if (defs.length === 0) continue;
 
     const details = el('details', 'settings-group');
-    details.open = group === 'sound';
+    // 出す項目を絞ってあるので、畳む意味がない。常に開いておく。
+    details.open = true;
     details.append(
       el('summary', 'settings-group-title', GROUP_LABELS[group] || group),
     );

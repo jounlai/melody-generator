@@ -8,6 +8,7 @@
 import {
   PARAM_DEFS,
   normalizeSettings,
+  resolveSettings,
   encodeSongCode,
   decodeSongCode,
 } from './settings.js';
@@ -132,9 +133,9 @@ function init() {
     const Ctor = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!Ctor) throw new Error('このブラウザは Web Audio API に対応していません');
     audioCtx = new Ctor();
-    engine = createEngine(audioCtx, settings);
+    engine = createEngine(audioCtx, resolveSettings(settings));
     // 設定は関数越しに渡す。player 側でキャッシュさせないため。
-    player = createPlayer(audioCtx, engine, data, () => settings);
+    player = createPlayer(audioCtx, engine, data, () => resolveSettings(settings));
     player.onSongChange(handleSongChange);
     return player;
   }
@@ -191,7 +192,7 @@ function init() {
         // サウンド系だけは鳴っている最中でも即座に反映する。
         // 作曲・演奏系は曲の組み立て時にすでに使われているので次の曲から。
         if (DEF_BY_KEY.get(key)?.apply === 'live' && player) {
-          player.applySettings(settings);
+          player.applySettings(resolveSettings(settings));
         }
       },
       onRebuild() {
@@ -282,7 +283,7 @@ function init() {
       storeSettings(settings);
       panel?.setSettings(settings);
       panel?.clearPending();
-      if (player) player.applySettings(settings);
+      if (player) player.applySettings(resolveSettings(settings));
       pendingSeed = null;
       setStatus('曲コードを読み込みました', 2000);
       startPlayback(decoded.seed);

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PARAM_DEFS, GROUP_LABELS, coerce, normalizeSettings, defaultSettings,
-  encodeSongCode, decodeSongCode, composeParamKeys,
+  encodeSongCode, decodeSongCode, composeParamKeys, visibleParams, resolveSettings,
 } from '../src/settings.js';
 
 test('全パラメータが必須項目を持つ', () => {
@@ -75,7 +75,7 @@ test('defaultSettings は定義どおりの既定値を返す', () => {
 });
 
 test('曲コードは往復する', () => {
-  const s = normalizeSettings({ tempoMin: 58, tempoMax: 70, majorRatio: 30, motifRecall: false });
+  const s = normalizeSettings({ mood: 'wistful', tempoFeel: 'flowing' });
   const code = encodeSongCode('a3f91c', s);
   const back = decodeSongCode(code);
   assert.equal(back.seed, 'a3f91c');
@@ -105,7 +105,50 @@ test('曲コードにサウンド系は含まれない', () => {
 
 test('composeParamKeys は作曲系のキーだけを返す', () => {
   const keys = composeParamKeys();
-  assert.ok(keys.includes('tempoMin'));
-  assert.ok(keys.includes('motifRecall'));
+  assert.ok(keys.includes('mood'));
+  assert.ok(keys.includes('tempoFeel'));
   assert.ok(!keys.includes('masterVolume'));
+});
+
+test('画面に出すのは3項目だけ', () => {
+  const vis = visibleParams();
+  assert.equal(vis.length, 3, `画面に出す項目が3つでない: ${vis.map((d) => d.key).join(',')}`);
+  assert.deepEqual(vis.map((d) => d.key).sort(), ['masterVolume', 'mood', 'tempoFeel']);
+});
+
+test('全パラメータが ui 真偽値を持つ', () => {
+  for (const d of PARAM_DEFS) {
+    assert.equal(typeof d.ui, 'boolean', `${d.key}: ui が真偽値でない`);
+  }
+});
+
+test('曲コードに載るのは画面に出す作曲パラメータだけ', () => {
+  for (const d of PARAM_DEFS) {
+    if (d.code) assert.equal(d.ui, true, `${d.key}: 画面に出さないのに曲コードに載っている`);
+  }
+});
+
+test('resolveSettings は雰囲気を長調比率へ展開する', () => {
+  const bright = resolveSettings({ mood: 'bright' });
+  const wistful = resolveSettings({ mood: 'wistful' });
+  assert.ok(bright.majorRatio > 80, `明るめの長調比率が低い: ${bright.majorRatio}`);
+  assert.ok(wistful.majorRatio < 25, `切なめの長調比率が高い: ${wistful.majorRatio}`);
+});
+
+test('resolveSettings はテンポ感をBPM範囲へ展開する', () => {
+  const slow = resolveSettings({ tempoFeel: 'slow' });
+  const normal = resolveSettings({ tempoFeel: 'normal' });
+  const flowing = resolveSettings({ tempoFeel: 'flowing' });
+  assert.ok(slow.tempoMax < normal.tempoMin, 'ゆっくりとふつうの範囲が重なっている');
+  assert.ok(normal.tempoMax < flowing.tempoMin, 'ふつうと少し速めの範囲が重なっている');
+  // 「普通のピアノ曲」として成立する速さであること
+  assert.ok(normal.tempoMin >= 76, `ふつうが遅すぎる: ${normal.tempoMin}`);
+});
+
+test('resolveSettings は画面に出さない値を既定のまま渡す', () => {
+  const r = resolveSettings({});
+  assert.equal(r.songBars, '32');
+  assert.equal(r.motifRecall, true);
+  assert.equal(r.musicKey, 'random');
+  assert.equal(r.curveStrength, 100);
 });
