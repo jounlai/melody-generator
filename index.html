@@ -356,8 +356,9 @@
     <section aria-labelledby="code-head">
       <h2 id="code-head">曲コード</h2>
       <div class="code-row">
-        <input id="song-code" type="text" readonly aria-label="現在の曲コード"
-               placeholder="再生するとここに出ます">
+        <input id="song-code" type="text" aria-label="現在の曲コード（貼り付けて読み込めます）"
+               spellcheck="false" autocomplete="off"
+               placeholder="再生するとここに出ます。貼り付けて「読み込む」も可">
         <button id="copy-code" type="button">コピー</button>
         <button id="load-code" type="button">読み込む</button>
       </div>
