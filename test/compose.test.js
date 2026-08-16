@@ -6,10 +6,10 @@ import {
 } from '../src/theory.js';
 import { defaultSettings } from '../src/settings.js';
 import {
-  SECTION_NAMES, climaxSlot, curveFor, varyProgression,
+  SECTION_NAMES, climaxSlot, curveFor, rawTension, varyProgression,
   passesFilters, selectFragment, composeSong,
-  transposeFragment, deriveFragment, phraseRoles, rhythmKey,
-  progressionWeight, arpeggioIndex,
+  transposeFragment, deriveFragment, phraseRoles, phraseOffsets, rhythmKey,
+  progressionWeight, arpeggioIndex, isDarkChord,
 } from '../src/compose.js';
 
 // ---------------------------------------------------------------------------
@@ -31,28 +31,32 @@ const FIX_PROGRESSIONS = [
 
 // varyProgression が作りうるコードの上位集合を、テスト側で独立に列挙する。
 // （実装に問い合わせずにフィクスチャの網羅範囲を決めるため）
-function variantsOfBar(prog, index) {
-  const sym = prog.bars[index].chord;
-  const out = [sym];
-  if (index === 1 && !sym.includes('/') && chordIndex(prog.mode, `${sym}/3`) >= 0) {
-    out.push(`${sym}/3`);
+// level ごとの小節並び。level 2 が最後の2小節をまとめて差し替えるので、
+// 小節ごとの候補を総当たりすると実際には起きない組み合わせ（iv → IV など）まで
+// フィクスチャに要求してしまう。並び単位で列挙する。
+function variantBars(prog) {
+  const base = prog.bars.map((b) => b.chord);
+  const lv1 = base.slice();
+  if (lv1.length >= 2 && !lv1[1].includes('/') && chordIndex(prog.mode, `${lv1[1]}/3`) >= 0) {
+    lv1[1] = `${lv1[1]}/3`;
   }
-  if (index === prog.bars.length - 1) {
-    const sub = prog.mode === 'major' ? 'iv' : 'VI';
-    if (chordIndex(prog.mode, sub) >= 0 && sub !== sym) out.push(sub);
+  const lv2 = lv1.slice();
+  for (const [i, sym] of [[lv2.length - 1, prog.mode === 'major' ? 'I' : 'i'],
+    [lv2.length - 2, prog.mode === 'major' ? 'iv' : 'VI']]) {
+    if (i >= 0 && chordIndex(prog.mode, sym) >= 0) lv2[i] = sym;
   }
-  return out;
+  return [base, lv1, lv2];
 }
 
 // スロットが覆う2小節は (0,1) と (2,3) の組み合わせだけ。
 function requiredPairs() {
   const seen = new Map();
   for (const p of FIX_PROGRESSIONS) {
-    for (const [ia, ib] of [[0, 1], [2, 3]]) {
-      for (const chordA of variantsOfBar(p, ia)) {
-        for (const chordB of variantsOfBar(p, ib)) {
-          seen.set(`${p.mode}|${chordA}|${chordB}`, { mode: p.mode, chordA, chordB });
-        }
+    for (const bars of variantBars(p)) {
+      for (const [ia, ib] of [[0, 1], [2, 3]]) {
+        const chordA = bars[ia];
+        const chordB = bars[ib];
+        seen.set(`${p.mode}|${chordA}|${chordB}`, { mode: p.mode, chordA, chordB });
       }
     }
   }
@@ -289,9 +293,16 @@ test('フィクスチャ: 曲に出てくるコード対をすべて賄える', 
     // 頂点用（12以上・緊張度4以上）と非頂点用（10以下）の両方が要る。
     assert.ok(list.some((m) => m.peakDeg >= 12 && m.tension >= 4), `${mode} ${chordA}->${chordB}: 頂点用が無い`);
     assert.ok(list.some((m) => m.peakDeg <= 10), `${mode} ${chordA}->${chordB}: 非頂点用が無い`);
-    for (const start of [4, 5, 6, 7, 8]) {
-      assert.ok(list.some((m) => m.startDeg === start), `${mode} ${chordA}->${chordB}: 開始音 ${start} が無い`);
+    // 接続フィルタ（|startDeg - prevEndDeg| <= maxLeap、既定2）が必ず通せるよう、
+    // 4〜8 のどの音の隣にも歌い出しがある状態を要求する。
+    // 「4〜8 が全部ある」ではないのは、major の iv のように度数6の近くに
+    // 構成音を持たないコードがあり、そこは音楽の側の事情で埋まらないため。
+    for (const near of [4, 5, 6, 7, 8]) {
+      assert.ok(list.some((m) => Math.abs(m.startDeg - near) <= 1),
+        `${mode} ${chordA}->${chordB}: 度数 ${near} の隣から始まる断片が無い`);
     }
+    assert.ok(new Set(list.map((m) => m.startDeg)).size >= 4,
+      `${mode} ${chordA}->${chordB}: 歌い出しの種類が少なすぎる`);
   }
 });
 
@@ -639,8 +650,9 @@ test('curveFor: B の頂点だけが最高音域を要求する', () => {
         if (si === 2 && k === cs) continue;
         assert.ok(c.maxPeak <= 11, `セクション${si}:${k} の maxPeak=${c.maxPeak}`);
         assert.equal(c.minPeak, 1);
-        // A'' は着地なので、他より低い天井にする。
-        assert.equal(c.maxPeak, si === 3 ? 10 : 11);
+        // A'' と、B の頂点を過ぎたスロットは着地なので、他より低い天井にする。
+        const landing = si === 3 || (si === 2 && k > cs);
+        assert.equal(c.maxPeak, landing ? 10 : 11);
       }
     }
     // 起伏を切ったら音高の制約は消える。
@@ -668,6 +680,20 @@ test('curveFor: 緊張度は A→A\'→B と積み上がり A\'\' で解ける',
   assert.equal(a3[slots - 1], 1);
 });
 
+test('rawTension: 頂点を過ぎたら 3 まで落ちる（脱力の落差）', () => {
+  for (const slots of [4, 8]) {
+    const cs = climaxSlot(slots);
+    assert.equal(rawTension(2, cs, slots), 5, '頂点は5');
+    for (let k = cs + 1; k < slots; k++) {
+      assert.equal(rawTension(2, k, slots), 3, `B:${k} が頂点のあとも緩んでいない`);
+    }
+    // 頂点までは登り続ける。
+    for (let k = 1; k <= cs; k++) {
+      assert.ok(rawTension(2, k, slots) > rawTension(2, k - 1, slots), `B:${k} で登っていない`);
+    }
+  }
+});
+
 test('climaxSlot は終わりの1つ手前を頂点にする', () => {
   assert.equal(climaxSlot(4), 2);
   assert.equal(climaxSlot(2), 1);
@@ -683,13 +709,22 @@ test('varyProgression: level 1 は2小節目を第1転回形にする', () => {
   assert.deepEqual(varyProgression(q, 1).bars.map((b) => b.chord), ['I', 'iii', 'IV', 'V']);
 });
 
-test('varyProgression: level 2 は最終小節をサブドミナントマイナーに差し替える', () => {
+test('varyProgression: level 2 は iv → I（VI → i）のアーメン終止で閉じる', () => {
+  // 最終小節は主和音。その1つ前がサブドミナントマイナー。
+  // 陰りは落とすが、曲は解決した和音で終わる。
   const p = FIX_PROGRESSIONS.find((x) => x.id === 'fx-M1');
-  assert.deepEqual(varyProgression(p, 2).bars.map((b) => b.chord), ['I', 'V/3', 'vi', 'iv']);
+  assert.deepEqual(varyProgression(p, 2).bars.map((b) => b.chord), ['I', 'V/3', 'iv', 'I']);
   const m = FIX_PROGRESSIONS.find((x) => x.id === 'fx-m2');
-  assert.deepEqual(varyProgression(m, 2).bars.map((b) => b.chord), ['i', 'iv/3', 'VI', 'VI']);
+  assert.deepEqual(varyProgression(m, 2).bars.map((b) => b.chord), ['i', 'iv/3', 'VI', 'i']);
   for (const mode of ['major', 'minor']) {
     assert.ok(chordIndex(mode, mode === 'major' ? 'iv' : 'VI') >= 0);
+    assert.ok(chordIndex(mode, mode === 'major' ? 'I' : 'i') >= 0);
+  }
+  // どの進行でも、level 2 の最終小節は必ず主和音になる。
+  for (const prog of FIX_PROGRESSIONS) {
+    const bars = varyProgression(prog, 2).bars.map((b) => b.chord);
+    assert.equal(bars[bars.length - 1], prog.mode === 'major' ? 'I' : 'i');
+    assert.equal(bars[bars.length - 2], prog.mode === 'major' ? 'iv' : 'VI');
   }
 });
 
@@ -718,13 +753,24 @@ test('pad / bass / accomp が全小節ぶん鳴る', () => {
     assert.equal(song.pad.length, song.bars);
     assert.equal(song.bass.length, song.bars);
     // 伴奏は8分音符。1小節8音で左手を途切れさせない。
-    assert.equal(song.accomp.length, song.bars * 8);
+    // ただし最終小節だけは刻みを止めて和音を置く（＝1イベント）。
+    assert.equal(song.accomp.length, (song.bars - 1) * 8 + 1);
     for (let bar = 0; bar < song.bars; bar++) {
+      const isFinal = bar === song.bars - 1;
       assert.equal(song.pad[bar].beat, bar * 4);
-      assert.equal(song.pad[bar].dur, 4);
+      assert.equal(song.pad[bar].dur, isFinal ? 6 : 4);
       assert.ok(song.pad[bar].midis.length >= 3);
       assert.equal(song.bass[bar].beat, bar * 4);
+      assert.equal(song.bass[bar].dur, 4);
       const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
+      if (isFinal) {
+        assert.equal(inBar.length, 1, '最終小節で刻みが止まっていない');
+        assert.equal(inBar[0].beat, bar * 4);
+        assert.equal(inBar[0].dur, 4);
+        assert.ok(inBar[0].midis.length >= 3, '最終小節の伴奏が和音になっていない');
+        assert.ok(song.bass[bar].midi < Math.min(...inBar[0].midis));
+        continue;
+      }
       assert.equal(inBar.length, 8);
       assert.deepEqual(inBar.map((n) => n.beat - bar * 4), [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]);
       // ベースは伴奏より下、伴奏はパッドより下（同じ高さになることはある）。
@@ -1014,6 +1060,142 @@ test('b は a と違う輪郭で対比を作る', () => {
 });
 
 // ---------------------------------------------------------------------------
+// ゼクエンツの方向 / 終止の重み / 陰りの和音（単体）
+// ---------------------------------------------------------------------------
+
+test('phraseOffsets: セクションと役割ごとに向きのある優先順を返す', () => {
+  // A は静かに提示して少しだけ上げ、A' と B は上げ、A'' は下げて収める。
+  assert.deepEqual(phraseOffsets(0, "a'"), [0, 1, 2, -1, 3, -2]);
+  assert.deepEqual(phraseOffsets(0, "a''"), [1, 2, 0, 3, -1, -2]);
+  assert.deepEqual(phraseOffsets(1, "a'"), [1, 2, 3, 0, -1]);
+  assert.deepEqual(phraseOffsets(1, "a''"), [2, 3, 1, 0, -1]);
+  assert.deepEqual(phraseOffsets(2, "a'"), [2, 3, 1, 4, 0]);
+  assert.deepEqual(phraseOffsets(2, "a''"), [3, 4, 2, 1, 0]);
+  assert.deepEqual(phraseOffsets(3, "a'"), [0, -1, -2, 1, -3]);
+  assert.deepEqual(phraseOffsets(3, "a''"), [-2, -3, -1, 0, -4]);
+
+  // 先頭の向きが A ≦ A' ≦ B と上がり、A'' だけ下がる。
+  for (const role of ["a'", "a''"]) {
+    const head = [0, 1, 2, 3].map((s) => phraseOffsets(s, role)[0]);
+    assert.ok(head[0] <= head[1], `${role}: A の出だしが A' より上`);
+    assert.ok(head[1] < head[2], `${role}: A' の出だしが B より上`);
+    assert.ok(head[3] <= 0, `${role}: A'' が下降で始まっていない`);
+    // 平均も同じ向きに並ぶ（先頭だけでなく表全体が上げ／下げになっている）。
+    const avg = [0, 1, 2, 3].map((s) => {
+      const o = phraseOffsets(s, role);
+      return o.reduce((a, b) => a + b, 0) / o.length;
+    });
+    assert.ok(avg[0] < avg[1] && avg[1] < avg[2], `${role}: 表の平均が A<A'<B でない`);
+    assert.ok(avg[3] < 0, `${role}: A'' の表の平均が負でない`);
+  }
+  // 表に無い組み合わせでも落ちない。
+  assert.ok(Array.isArray(phraseOffsets(0, 'a')));
+  assert.ok(Array.isArray(phraseOffsets(9, "a'")));
+});
+
+test('deriveFragment: 終止条件を満たす平行移動量を前に出す', () => {
+  const mode = 'major';
+  const ctx = {
+    mode, chordA: 'I', chordB: 'V',
+    chordAIdx: chordIndex(mode, 'I'), chordBIdx: chordIndex(mode, 'V'),
+    maxPeak: 15, minPeak: 1,
+  };
+  const sd = (d) => ((((d - 1) % 7) + 7) % 7) + 1;
+  // 乗る量が2つ以上ある断片を探し、その中で「終止で並べ替えると別の量が来る」例を見る。
+  let checked = 0;
+  for (const anchor of DATA.melodies) {
+    const accepted = [];
+    for (const o of [0, -1, 1, -2, 2, -3, 3]) {
+      const got = deriveFragment(anchor, ctx, { offsets: [o] });
+      if (got) accepted.push(got);
+    }
+    if (accepted.length < 2) continue;
+    const offsets = accepted.map((a) => a.offset);
+    const wanted = accepted.filter((a) => sd(a.fragment.endDeg) === 1);
+    if (wanted.length === 0 || sd(accepted[0].fragment.endDeg) === 1) continue;
+    // 素の順（終止指定なし）では先頭が選ばれる。
+    const plain = deriveFragment(anchor, ctx, { offsets });
+    assert.equal(plain.offset, accepted[0].offset);
+    // トニックを第1段に指定すると、トニックで終われる量が前に出る。
+    const closed = deriveFragment(anchor, ctx, { offsets, endDegrees: [[1], [3, 5]] });
+    assert.equal(sd(closed.fragment.endDeg), 1, `${anchor.id}: トニックで閉じていない`);
+    checked++;
+    if (checked >= 5) break;
+  }
+  assert.ok(checked > 0, '終止で並べ替わる例が1つも無く、検証になっていない');
+
+  // どの段にも当たらなければ元の優先順のまま（＝必須ではない）。
+  const anchor = DATA.melodies.find((m) => deriveFragment(m, ctx, { offsets: [0, 1, 2] }));
+  const none = deriveFragment(anchor, ctx, { offsets: [0, 1, 2], endDegrees: [[]] });
+  const bare = deriveFragment(anchor, ctx, { offsets: [0, 1, 2] });
+  assert.equal(none.offset, bare.offset);
+});
+
+test('selectFragment: 役割ごとに終止音の好みが変わり、空なら絞らない', () => {
+  const mode = 'major';
+  const ctx = {
+    mode, chordA: 'I', chordB: 'V', chordAIdx: chordIndex(mode, 'I'), chordBIdx: chordIndex(mode, 'V'),
+    prevEndDeg: null, tension: 3, maxPeak: 15, minPeak: 1, maxLeap: 6,
+  };
+  const sd = (d) => ((((d - 1) % 7) + 7) % 7) + 1;
+  const pool = DATA.melodies.filter((m) => passesFilters(m, ctx, 3));
+  assert.ok(pool.length > 5);
+  const ends = new Set(pool.map((m) => sd(m.endDeg)));
+  assert.ok(ends.has(1) && ends.size > 1, 'プールの終止音が偏っていて検証にならない');
+
+  for (const r of [0, 0.2, 0.4, 0.6, 0.8, 0.99]) {
+    // a / b は「問いかけて開いたまま」＝トニック以外
+    const open = selectFragment(() => r, pool, { ...ctx, endDegrees: [[2, 3, 4, 5, 6, 7]] });
+    assert.notEqual(sd(open.endDeg), 1, `開いた終止のはずが主音: ${open.id}`);
+    // a'' は「完全に閉じる」＝主音
+    const closed = selectFragment(() => r, pool, { ...ctx, endDegrees: [[1], [3, 5]] });
+    assert.equal(sd(closed.endDeg), 1, `閉じた終止のはずが主音でない: ${closed.id}`);
+  }
+  // 第1段が空なら第2段へ落ちる。
+  const noTonic = pool.filter((m) => sd(m.endDeg) !== 1);
+  const tier2 = selectFragment(() => 0.5, noTonic, { ...ctx, endDegrees: [[1], [3, 5]] });
+  assert.ok([3, 5].includes(sd(tier2.endDeg)), `第2段に落ちていない: ${tier2.id}`);
+  // どの段にも該当が無ければ絞らない（候補が消えて例外になったりしない）。
+  const impossible = selectFragment(() => 0.5, pool, { ...ctx, endDegrees: [[], []] });
+  assert.equal(impossible.id, selectFragment(() => 0.5, pool, ctx).id);
+});
+
+test('isDarkChord: iv / bVI / bVII だけを陰りとみなす', () => {
+  for (const sym of ['iv', 'iv7', 'iv/3', 'bVI', 'bVI/3', 'bVII', 'bVIIM7']) {
+    assert.equal(isDarkChord(sym), true, `${sym} が陰りに入っていない`);
+  }
+  for (const sym of ['I', 'i', 'i7', 'IV', 'IVM7', 'V', 'V7', 'vi', 'VI', 'VII', 'III', '', null]) {
+    assert.equal(isDarkChord(sym), false, `${sym} を陰りと誤判定`);
+  }
+});
+
+test('selectFragment: 陰りの和音では掛留がペンタトニックより先に掛かる', () => {
+  const mode = 'major';
+  const ia = chordIndex(mode, 'iv');
+  const ib = chordIndex(mode, 'I');
+  const ctx = {
+    mode, chordA: 'iv', chordB: 'I', chordAIdx: ia, chordBIdx: ib,
+    prevEndDeg: null, tension: 3, maxPeak: 15, minPeak: 1, maxLeap: 6,
+  };
+  const base = DATA.melodies.filter((m) => passesFilters(m, ctx, 3));
+  const susOf = (m) => m.sus[mode][0].includes(ia) || m.sus[mode][1].includes(ib);
+  // 掛留を持つ断片には「ペンタでない」札を、持たない断片にはペンタの札を貼る。
+  // ＝ ペンタ優先が先に掛かると掛留が全滅する、意地の悪いプール。
+  const pool = base.map((m) => ({ ...m, tags: susOf(m) ? [] : ['penta-major'] }));
+  assert.ok(pool.some(susOf), '掛留を持つ断片が無く、検証にならない');
+  assert.ok(pool.some((m) => m.tags.length > 0), 'ペンタの断片が無く、検証にならない');
+  for (const r of [0, 0.3, 0.6, 0.99]) {
+    const dark = selectFragment(() => r, pool, {
+      ...ctx, preferPenta: true, preferSus: true, susOverPenta: true,
+    });
+    assert.ok(susOf(dark), `陰りの和音で掛留でない断片が選ばれた: ${dark.id}`);
+    // 陰りでないスロットは従来どおりペンタ優先が先。
+    const bright = selectFragment(() => r, pool, { ...ctx, preferPenta: true, preferSus: true });
+    assert.ok(bright.tags.includes('penta-major'), `非ペンタが選ばれた: ${bright.id}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 人気度による重み付け抽選
 // ---------------------------------------------------------------------------
 
@@ -1118,9 +1300,12 @@ test('selectFragment: preferPenta はモードに合うタグだけを見る', (
     const picked = selectFragment(() => r, pool, { ...ctx, preferPenta: true });
     assert.ok(picked.tags.includes('penta-major'), `長調で penta-minor が選ばれた: ${picked.id}`);
   }
-  // 優先を切れば penta-minor 側も引ける（フィルタではなく優先であることの確認）
-  const off = new Set(rs.map((r) => selectFragment(() => r, pool, { ...ctx, preferPenta: false }).tags[0]));
+  // 優先を切れば penta-minor 側も引ける（フィルタではなく優先であることの確認）。
+  // 抽選のどの目も一度は通るよう、候補数ぶんの目を等間隔で舐める。
+  const sweep = pool.map((_, i) => (i + 0.5) / pool.length);
+  const off = new Set(sweep.map((r) => selectFragment(() => r, pool, { ...ctx, preferPenta: false }).tags[0]));
   assert.ok(off.has('penta-minor'), '優先を切っても結果が変わっていない');
+  assert.ok(off.has('penta-major'));
 });
 
 test('selectFragment: ペンタトニックのタグが1件も無ければ絞らない', () => {
@@ -1179,8 +1364,10 @@ test('arpeggioIndex: 上行して下行する波で構成音を巡回する', ()
 
 test('伴奏は1小節8音の8分音符で、単純な繰り返しになっていない', () => {
   const song = composeSong('accomp', DATA, S({ songBars: '32' }));
-  assert.equal(song.accomp.length, song.bars * 8);
+  assert.equal(song.accomp.length, (song.bars - 1) * 8 + 1);
+  const lastBarBeat = (song.bars - 1) * 4;
   for (const n of song.accomp) {
+    if (n.beat >= lastBarBeat) continue; // 最終小節は保持和音なので別枠
     assert.ok(n.dur > 0 && n.dur <= 1, `dur が長すぎる: ${n.dur}`);
     assert.ok(n.vel > 0 && n.vel <= 0.35, `伴奏が強すぎる: ${n.vel}`);
   }
@@ -1380,13 +1567,14 @@ test('実データ: popularity >= 4 の進行が7割以上使われる', realOpt
   assert.ok(share >= 0.7, `人気進行の採用率が低い: ${(100 * share).toFixed(1)}%`);
 });
 
-test('実データ: 伴奏が1小節8音で鳴る', realOpts, () => {
+test('実データ: 伴奏が1小節8音で鳴り、最終小節だけ和音を保持する', realOpts, () => {
   for (const bars of ['16', '32', '64']) {
     const song = composeSong('accomp-real', REAL, S({ songBars: bars }));
-    assert.equal(song.accomp.length, song.bars * 8);
+    assert.equal(song.accomp.length, (song.bars - 1) * 8 + 1);
     for (let bar = 0; bar < song.bars; bar++) {
       const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
-      assert.equal(inBar.length, 8, `${bar}小節目の伴奏が ${inBar.length} 音`);
+      const want = bar === song.bars - 1 ? 1 : 8;
+      assert.equal(inBar.length, want, `${bar}小節目の伴奏が ${inBar.length} 音`);
     }
   }
 });
@@ -1401,4 +1589,227 @@ test('実データ: 無音の小節が無く、音域も外れない', realOpts,
       assert.equal(JSON.stringify(song), JSON.stringify(composeSong(seed, REAL, S({ songBars: bars }))));
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// 実データ: ゼクエンツの方向・終止の重み・陰りの掛留
+//
+// ここは「曲が良くなったか」を数字で見る唯一の場所なので、
+// 単体テストではなく実データ200シード×3つの長さ（600曲）で測る。
+// ---------------------------------------------------------------------------
+
+// 曲の全スロットを、復元した断片つきで舐めるための共通ヘルパ。
+function walkSlots(seeds, barsList, fn) {
+  const byId = new Map(REAL.melodies.map((m) => [m.id, m]));
+  const progById = new Map(REAL.progressions.map((p) => [p.id, p]));
+  for (const bars of barsList) {
+    for (const seed of seeds) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const slots = slotsPerSection(song);
+      song.sections.forEach((sec, si) => {
+        const prog = varyProgression(progById.get(sec.progressionId), SECTION_LEVELS[si]);
+        const chords = [];
+        for (let r = 0; r < song.bars / 16; r++) for (const b of prog.bars) chords.push(b.chord);
+        sec.slots.forEach((slot, k) => {
+          fn({ song, sec, si, slot, k, slots, chords, fragment: fragmentOf(slot, byId) });
+        });
+      });
+    }
+  }
+}
+
+const scaleDeg = (deg) => ((((deg - 1) % 7) + 7) % 7) + 1;
+const meanOf = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+test('実データ: ゼクエンツが A→A\'→B と上行し、A\'\' だけ下降する', realOpts, () => {
+  // 感動させる音楽は数小節かけて音域を上げ、頂点で解放し、下りてくる。
+  // その「上げ」を作っているのが平行移動量の符号なので、セクション平均で見る。
+  const offsets = [[], [], [], []];
+  walkSlots(REAL_SEEDS, ['16', '32', '64'], ({ si, slot }) => {
+    if (slot.offset !== null && slot.offset !== undefined) offsets[si].push(slot.offset);
+  });
+  for (let si = 0; si < 4; si++) {
+    assert.ok(offsets[si].length >= 200, `セクション${si}のゼクエンツが少ない: ${offsets[si].length}`);
+  }
+  const [a, a2, b, a3] = offsets.map(meanOf);
+  const show = `A=${a.toFixed(3)} A'=${a2.toFixed(3)} B=${b.toFixed(3)} A''=${a3.toFixed(3)}`;
+  assert.ok(a < a2, `A が A' より上がっている: ${show}`);
+  assert.ok(a2 < b, `A' が B より上がっている: ${show}`);
+  assert.ok(a3 < 0, `A'' が下降していない: ${show}`);
+  // 「A は静かに提示」なので、B ほど上げてはいけない。
+  assert.ok(b - a >= 0.3, `A と B の差が小さすぎる: ${show}`);
+});
+
+test('実データ: メロディーの平均音高が A→A\'→B で上がる', realOpts, () => {
+  const pitch = [[], [], [], []];
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const span = (song.bars / 4) * 4;
+      song.sections.forEach((sec, si) => {
+        const from = sec.startBar * 4;
+        const notes = song.melody.filter((n) => n.beat >= from && n.beat < from + span);
+        assert.ok(notes.length > 0);
+        pitch[si].push(meanOf(notes.map((n) => n.midi)));
+      });
+    }
+  }
+  const [a, a2, b, a3] = pitch.map(meanOf);
+  const show = `A=${a.toFixed(2)} A'=${a2.toFixed(2)} B=${b.toFixed(2)} A''=${a3.toFixed(2)}`;
+  assert.ok(a < a2, `A' が A より高くない: ${show}`);
+  assert.ok(a2 < b, `B が A' より高くない: ${show}`);
+  assert.ok(a3 < b, `A'' が B より下りていない: ${show}`);
+});
+
+test('実データ: 楽節の役割ごとに終わり方が変わる', realOpts, () => {
+  // a は問いかけて開いたまま、a' はひとまず答え、b で再び開き、a'' で閉じる。
+  // 2小節ごとに同じ終わり方をすると、聴き手は次に何が来るか全部読めてしまう。
+  const stat = {};
+  walkSlots(REAL_SEEDS, ['16', '32', '64'], ({ slot, fragment }) => {
+    if (!fragment) return;
+    const s = (stat[slot.role] ??= { n: 0, tonic: 0, triad: 0 });
+    const d = scaleDeg(fragment.endDeg);
+    s.n++;
+    if (d === 1) s.tonic++;
+    if ([1, 3, 5].includes(d)) s.triad++;
+  });
+  const rate = (r, key) => stat[r][key] / stat[r].n;
+  const show = Object.entries(stat)
+    .map(([r, s]) => `${r}:トニック${(100 * s.tonic / s.n).toFixed(1)}% {1,3,5}${(100 * s.triad / s.n).toFixed(1)}%`)
+    .join(' / ');
+
+  // a と b は「開いたまま」＝トニック以外で終わる。
+  assert.ok(1 - rate('a', 'tonic') >= 0.6, `a がトニックで閉じすぎ: ${show}`);
+  assert.ok(1 - rate('b', 'tonic') >= 0.6, `b がトニックで閉じすぎ: ${show}`);
+  // a' は「ひとまず答える」＝主和音の構成音。
+  assert.ok(rate("a'", 'triad') >= 0.6, `a' が答えていない: ${show}`);
+  // a'' は「完全に閉じる」。断片プールの都合でトニックそのものには届かない曲も
+  // あるので、まず {1,3,5} で閉じること、そのうえで a より明確にトニックが多いこと。
+  assert.ok(rate("a''", 'triad') >= 0.6, `a'' が閉じていない: ${show}`);
+  assert.ok(rate("a''", 'tonic') >= rate('a', 'tonic') + 0.15, `a'' と a の差が無い: ${show}`);
+  assert.ok(rate("a''", 'tonic') >= rate('b', 'tonic'), `a'' が b より閉じていない: ${show}`);
+});
+
+test('実データ: 陰りの和音のスロットに掛留が寄る', realOpts, () => {
+  // iv / bVI / bVII が鳴る瞬間はその曲でいちばん感情が動く。掛留を重ねて効かせる。
+  // 再登場・移調で埋まったスロットは断片を選び直していないので対象外。
+  const dark = { n: 0, sus: 0 };
+  const plain = { n: 0, sus: 0 };
+  walkSlots(REAL_SEEDS, ['32', '64'], ({ song, slot, k, chords, fragment }) => {
+    if (!fragment) return;
+    if (slot.source !== 'select' && slot.source !== 'rhythm') return;
+    const [b0, b1] = splitBars(fragment.notes);
+    const sus = hasSuspension(b0, song.mode, chords[2 * k])
+      || hasSuspension(b1, song.mode, chords[2 * k + 1]);
+    const bucket = isDarkChord(chords[2 * k]) || isDarkChord(chords[2 * k + 1]) ? dark : plain;
+    bucket.n++;
+    if (sus) bucket.sus++;
+  });
+  assert.ok(dark.n >= 500 && plain.n >= 500, `標本が少ない: ${dark.n}/${plain.n}`);
+  const dr = dark.sus / dark.n;
+  const pr = plain.sus / plain.n;
+  const show = `陰り ${(100 * dr).toFixed(1)}% (${dark.sus}/${dark.n}) / それ以外 ${(100 * pr).toFixed(1)}% (${plain.sus}/${plain.n})`;
+  assert.ok(dr > pr, `陰りの和音に掛留が寄っていない: ${show}`);
+  assert.ok(dr - pr >= 0.03, `寄せ方が弱い: ${show}`);
+  assert.ok(dr >= 0.25, `陰りの和音の掛留率が低い: ${show}`);
+});
+
+// ---------------------------------------------------------------------------
+// 実データ: 強弱のヘッドルームと、頂点のあとの脱力
+// ---------------------------------------------------------------------------
+
+test('実データ: メロディーの素ベロシティに余裕がある', realOpts, () => {
+  // 演奏側は最大 1.10(B) × 1.20(頂点) を掛ける。素で 0.72 を超えると
+  // クレッシェンドの行き先が 1.0 に張り付き、いちばん効かせたい一音が潰れる。
+  let hi = 0;
+  let lo = 1;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      for (const n of composeSong(seed, REAL, S({ songBars: bars })).melody) {
+        if (n.vel > hi) hi = n.vel;
+        if (n.vel < lo) lo = n.vel;
+        assert.ok(n.vel > 0, `ベロシティが0以下: ${n.vel}`);
+      }
+    }
+  }
+  assert.ok(hi <= 0.72, `素ベロシティが大きすぎる: ${hi.toFixed(4)}`);
+  assert.ok(hi * 1.1 * 1.2 < 1, `演奏側の係数を掛けると天井に当たる: ${hi.toFixed(4)}`);
+  assert.ok(lo >= 0.05, `素ベロシティが小さすぎる: ${lo.toFixed(4)}`);
+});
+
+test('実データ: 頂点の直後は直前より弱くなる', realOpts, () => {
+  // 上げて、頂点で解放し、下りてくる。この往復が「感動」の形。
+  // 頂点を過ぎても素材が鳴り続けると、演奏側のディミヌエンドを押し返してしまう。
+  let ok = 0;
+  let n = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const cb = song.climaxBeat;
+      const before = song.melody.filter((x) => x.beat >= cb - 4 && x.beat < cb);
+      const after = song.melody.filter((x) => x.beat > cb && x.beat <= cb + 4);
+      if (before.length === 0 || after.length === 0) continue;
+      n++;
+      if (meanOf(after.map((x) => x.vel)) < meanOf(before.map((x) => x.vel))) ok++;
+    }
+  }
+  assert.ok(n >= 50, `検査した曲が少ない: ${n}`);
+  assert.ok(ok / n >= 0.9, `脱力できていない曲が多い: ${(100 * ok / n).toFixed(1)}% (${ok}/${n})`);
+});
+
+// ---------------------------------------------------------------------------
+// 実データ: 曲の始まりと終わり
+//
+// 曲が切り替わるとき「ちゃんと終わって、ちゃんと始まる」ように聴こえるかどうか。
+// ---------------------------------------------------------------------------
+
+test('実データ: 曲は iv → I（VI → i）で閉じ、最後の音が主音を伸ばす', realOpts, () => {
+  const progById = new Map(REAL.progressions.map((p) => [p.id, p]));
+  let songs = 0;
+  let subdominant = 0;
+  let melodyTonic = 0;
+  let downbeat = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      songs++;
+      // 最終小節の和音は主和音。A'' は level 2 で、進行を repeats 回まわしても
+      // 最後に来るのは差し替えた最終小節。
+      const prog = varyProgression(progById.get(song.sections[3].progressionId), 2);
+      const chords = prog.bars.map((b) => b.chord);
+      const tonic = song.mode === 'major' ? 'I' : 'i';
+      assert.equal(chords[chords.length - 1], tonic, `${seed}/${bars}: 最終小節が主和音でない`);
+      if (chords[chords.length - 2] === (song.mode === 'major' ? 'iv' : 'VI')) subdominant++;
+
+      // 最後の音は最終小節の終わりまで伸び、主音へ着地する。
+      const tail = song.melody.reduce((a, b) => (b.beat >= a.beat ? b : a));
+      assert.ok(tail.dur >= 3, `${seed}/${bars}: 最後の音が短い (${tail.dur})`);
+      assert.ok(tail.beat + tail.dur >= song.totalBeats,
+        `${seed}/${bars}: 最後の音が最終小節を埋めていない`);
+      if ((((tail.midi - song.tonicMidi) % 12) + 12) % 12 === 0) melodyTonic++;
+      // 最高音がただ一度だけ、という保証を最後の1音が壊していないこと。
+      const top = Math.max(...song.melody.map((x) => x.midi));
+      assert.equal(song.melody.filter((x) => x.midi === top).length, 1,
+        `${seed}/${bars}: 最後の音が最高音に並んだ`);
+
+      // 最終小節は刻みを止めて和音を保持し、パッドは小節をはみ出して余韻を作る。
+      const lastBeat = (song.bars - 1) * 4;
+      const inLast = song.accomp.filter((x) => x.beat >= lastBeat);
+      assert.equal(inLast.length, 1, `${seed}/${bars}: 最終小節の伴奏が ${inLast.length} イベント`);
+      assert.equal(inLast[0].dur, 4);
+      assert.ok(inLast[0].midis.length >= 3);
+      assert.equal(song.pad[song.bars - 1].dur, 6, `${seed}/${bars}: パッドの余韻が無い`);
+
+      // 出だしは拍0から。弱起で始まるとどこが1拍目か掴めない。
+      const head = song.melody.reduce((a, b) => (b.beat < a.beat ? b : a));
+      if (head.beat === 0) downbeat++;
+    }
+  }
+  assert.ok(songs >= 100, `曲数が足りない: ${songs}`);
+  assert.ok(subdominant / songs >= 0.8,
+    `終止前がサブドミナントマイナーの曲が少ない: ${(100 * subdominant / songs).toFixed(1)}%`);
+  assert.ok(melodyTonic / songs >= 0.9,
+    `最後の音が主音でない曲が多い: ${(100 * melodyTonic / songs).toFixed(1)}%`);
+  assert.ok(downbeat / songs >= 0.8,
+    `弱起で始まる曲が多い: ${(100 * downbeat / songs).toFixed(1)}%`);
 });

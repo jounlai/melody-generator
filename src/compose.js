@@ -54,10 +54,41 @@ const PAD_LOWEST = 55;
 const BASS_VEL = 0.5;
 const BASS_LOWEST = 36;
 
+// 終止の形。実際のピアノ曲は、終わりで左手の刻みを止めて和音を置く。
+// 刻み続けたまま終わると、耳は「まだ続く」と判断して曲が閉じない。
+// 最終小節だけ分散をやめて和音を保持し、パッドは小節をはみ出して余韻を作る。
+const FINAL_ACCOMP_VEL = 0.4;
+const FINAL_PAD_DUR = 6;
+// 曲の最後の音は、最終小節の終わりまで伸ばす（短くても3拍）。
+// 長く伸びた主音の上に主和音が鳴る、これが「終わった」という感覚を作る。
+const FINAL_NOTE_MIN_DUR = 3;
+
 // 断片が1件も適合しなかったときに鳴らす音の強さ。
 const FALLBACK_VEL = [0.55, 0.5];
 // 断片が小節を空けていたときに埋める音の強さ。
 const FILL_VEL = 0.5;
+
+// メロディーのベロシティに掛ける余裕（ヘッドルーム）。
+//
+// 断片の vel は 0.55〜0.85 で来る。演奏側（perform.js）はこれに
+// セクション基準(最大1.10)×フレーズ内スウェル×クライマックスカーブ(頂点1.20) を掛けるので、
+// 素のまま渡すと頂点付近が 1.0 に張り付いて潰れる。クレッシェンドの行き先が
+// 天井では、いちばん効かせたい一音が「他と同じ大きさ」になってしまう。
+// 0.82 倍して 0.45〜0.70 にしておけば 0.70×1.10×1.20 = 0.92 で天井に当たらない。
+// 伴奏・ベース・パッドは元々天井に当たらないので触らない。
+const MELODY_VEL_SCALE = 0.82;
+
+// 頂点を越えた直後の脱力。頂点の音のあと RELEASE_BEATS 拍かけて
+// RELEASE_FLOOR 倍から等倍へ戻す（＝直後がいちばん小さく、そこから戻っていく）。
+//
+// 断片の中の抑揚はデータに焼き込まれていて、頂点音の「あと」も普通に鳴り続ける。
+// 実測では頂点直後4拍の素ベロシティが直前4拍より大きい曲が64%あり、
+// 緊張度と音域の天井を下げただけでは 36% までしか直らなかった
+// （直後4拍の音の64%は頂点と同じスロットの中にあり、スロット単位の手当てでは届かない）。
+// 泣けるのは高い音そのものではなく、そのあとの静けさとの落差のほう。
+// 戻し切るのは、A'' を素の側で削ると伴奏に埋もれるから（A'' の減衰は演奏側が掛ける）。
+const RELEASE_FLOOR = 0.72;
+const RELEASE_BEATS = 8;
 
 // 進行データが空、あるいはそのモードの進行が1つも無いときの最終手段。
 // データ不備で曲が生成できないより、平凡でも鳴るほうがましという判断。
@@ -79,7 +110,12 @@ const DEFAULT_PROGRESSION = {
 };
 
 // level 2 で終止に差し込む「翳り」のコード。長調でも短調の色を1つ混ぜると泣ける。
+// ただし置く場所は最終小節の**1つ前**。サブドミナントマイナーは語彙の中で最も
+// 未解決な響きなので、ここで曲を終わらせると「途中で切れた」ようにしか聴こえない。
 const SUBDOMINANT_MINOR = { major: 'iv', minor: 'VI' };
+// 最終小節は主和音で閉じる。iv → I はアーメン終止と呼ばれる形で、
+// 陰りを落としてからちゃんと帰ってくる。曲と曲の切れ目はここで決まる。
+const TONIC_CHORD = { major: 'I', minor: 'i' };
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
@@ -106,13 +142,16 @@ export function climaxSlot(slots) {
 }
 
 // カーブを掛ける前の理想の緊張度（1〜5の連続値）。
-function rawTension(sectionIdx, slotIdx, slots) {
+export function rawTension(sectionIdx, slotIdx, slots) {
   if (sectionIdx === 2) {
-    // B は頂点へ向かって登り、頂点を過ぎたら少しだけ緩める。
+    // B は頂点へ向かって登り、頂点を過ぎたら**はっきり**緩める。
+    // ここを 4 のままにすると、頂点を越えたあとも緊張度の高い断片＝素のベロシティの
+    // 大きい断片が選ばれ続け、演奏側がディミヌエンドを掛けても押し返してしまう。
+    // 「脱力の落差」は感動の要。上げて、頂点で解放し、下りてくる。
     const cs = climaxSlot(slots);
     if (slotIdx < cs) return 3 + (2 * slotIdx) / Math.max(1, cs);
     if (slotIdx === cs) return 5;
-    return 4;
+    return 3;
   }
   const t = slots === 1 ? 0 : slotIdx / (slots - 1);
   // A: 1→2（提示）、A': 2→3（高まり）、A'': 3→1（着地）
@@ -133,10 +172,14 @@ export function curveFor(sectionIdx, slotIdx, slots, strength) {
   const st = clamp(Number.isFinite(strength) ? strength : 1, 0, 1);
   const raw = rawTension(sectionIdx, slotIdx, slots);
   const tension = clamp(Math.round(3 + (raw - 3) * st), 1, 5);
-  const isClimax = sectionIdx === 2 && slotIdx === climaxSlot(slots);
+  const cs = climaxSlot(slots);
+  const isClimax = sectionIdx === 2 && slotIdx === cs;
+  // 頂点を過ぎたスロットと A'' は、音域の天井も1つ下げる。
+  // 緊張度だけ下げても高い音が鳴り続ければ「まだ登っている」ように聴こえる。
+  const afterClimax = sectionIdx === 2 && slotIdx > cs;
   return {
     tension,
-    maxPeak: st === 0 ? 15 : isClimax ? 15 : sectionIdx === 3 ? 10 : 11,
+    maxPeak: st === 0 || isClimax ? 15 : sectionIdx === 3 || afterClimax ? 10 : 11,
     minPeak: st === 0 ? 1 : isClimax ? 12 : 1,
   };
 }
@@ -161,8 +204,10 @@ export function varyProgression(prog, level) {
     }
   }
   if (level >= 2 && bars.length >= 1) {
+    const tonic = TONIC_CHORD[mode];
+    if (tonic && chordIndex(mode, tonic) >= 0) bars[bars.length - 1].chord = tonic;
     const sub = SUBDOMINANT_MINOR[mode];
-    if (sub && chordIndex(mode, sub) >= 0) bars[bars.length - 1].chord = sub;
+    if (bars.length >= 2 && sub && chordIndex(mode, sub) >= 0) bars[bars.length - 2].chord = sub;
   }
   return out;
 }
@@ -233,6 +278,15 @@ function fallbackFragment(ctx) {
   };
 }
 
+// 陰りのコード。ここが鳴る瞬間が、その曲でいちばん感情の動くところ。
+// 転回や7thが付いていても正体は同じなので、根音の記号だけを見る（iv7、bVI/3 も同じ扱い）。
+const DARK_CHORDS = new Set(['iv', 'bVI', 'bVII']);
+
+export function isDarkChord(symbol) {
+  const m = /^b?[ivIV]+/.exec(String(symbol ?? ''));
+  return m ? DARK_CHORDS.has(m[0]) : false;
+}
+
 function hasSus(m, ctx) {
   const sus = m?.sus?.[ctx.mode];
   if (!Array.isArray(sus)) return false;
@@ -267,8 +321,13 @@ export function fragmentCandidates(melodies, ctx) {
  * データにタグが無い環境でも安全に動くのが条件。
  *
  *   1. 対比      — 楽節の b は a と違う輪郭にする
- *   2. ペンタトニック — 大衆的で口ずさめる旋律の最大の要因
- *   3. 掛留      — 頂点の直前。泣けるかどうかはここで決まる
+ *   2. 終止      — 楽節のどこにいるかで「終わり方」を変える（下記 CADENCE_BY_ROLE）
+ *   3. ペンタトニック — 大衆的で口ずさめる旋律の最大の要因
+ *   4. 掛留      — 頂点の直前と陰りのコードの上。泣けるかどうかはここで決まる
+ *
+ * 終止をペンタトニック・掛留より先に掛けるのは、いちばん広い候補の中から
+ * 選ばせるため。あとに回すと、絞り込まれた小さな集合の中に目当ての終止音が
+ * 残っておらず「該当なし」で素通りしてしまう。
  */
 function narrowCandidates(candidates, ctx) {
   let out = candidates;
@@ -276,9 +335,36 @@ function narrowCandidates(candidates, ctx) {
     const contrast = out.filter((m) => m.contour !== ctx.avoidContour);
     if (contrast.length > 0) out = contrast;
   }
+  // 曲の出だしだけは、拍0から鳴り出す断片を採る。
+  // 弱起の断片で始まると、聴き手はどこが1拍目か掴めないまま曲に入ることになる。
+  if (ctx.preferDownbeat) {
+    const onBeat = out.filter((m) => (m.notes?.[0]?.beat ?? 0) === 0);
+    if (onBeat.length > 0) out = onBeat;
+  }
+  if (Array.isArray(ctx.endDegrees)) {
+    for (const tier of ctx.endDegrees) {
+      const closed = out.filter((m) => tier.includes(scaleDegreeOf(m.endDeg)));
+      if (closed.length > 0) { out = closed; break; }
+    }
+  }
+  // 陰りのコードの上では、掛留がその瞬間の主役。ペンタトニックより先に掛ける。
+  // あとに回すと、ペンタトニックで絞ったあとの小さな集合に掛留が残っておらず、
+  // 「該当なし」で素通りしてしまう（実測でここが効かず、掛留率がほぼ動かなかった）。
+  if (ctx.preferSus && ctx.susOverPenta) {
+    const sus = out.filter((m) => hasSus(m, ctx));
+    if (sus.length > 0) out = sus;
+  }
   if (ctx.preferPenta) {
     const penta = out.filter((m) => hasPentatonic(m, ctx.mode));
     if (penta.length > 0) out = penta;
+  }
+  // 登り坂の出だしは、天井いっぱいの断片を引かない。
+  // ゼクエンツは音形ごと平行移動するので、元が天井に着いていると上へ動かせず、
+  // 「少しずつ上げてクライマックスへ」が最初のスロットで詰む。低く始めて余地を残す。
+  // 口ずさめること（ペンタトニック）のほうが上なので、その中から低いものを採る。
+  if (ctx.headroom) {
+    const low = out.filter((m) => m.peakDeg <= ctx.headroom);
+    if (low.length > 0) out = low;
   }
   if (ctx.preferSus) {
     const sus = out.filter((m) => hasSus(m, ctx));
@@ -306,15 +392,79 @@ export function selectFragment(rng, melodies, ctx) {
 const DEG_MIN = 1;
 const DEG_MAX = 15;
 
-// 平行移動量の試行順。0（＝そのまま繰り返す）を最初に試すのが重要で、
-// コードが変わっていれば同じ旋律でも響きが変わり、変奏として成立する。
-// 近い順に ±3 まで試し、そこまでで乗らなければ最後に ±7（オクターブ＝音名は同じまま
-// 音域だけ移す）、±4、±5 まで広げる。ここまで広げると9割方は乗る。
+// 平行移動量の既定の試行順。近い順に ±3 まで試し、そこまでで乗らなければ
+// ±7（オクターブ＝音名は同じまま音域だけ移す）、±4、±5 まで広げる。
+// 曲を組むときは下の phraseOffsets が返す「向きのある」順を使う。
 const PHRASE_OFFSETS = [0, -1, 1, -2, 2, -3, 3, -7, 7, -4, 4, -5, 5];
-// 2周目（64小節のセクション後半）は上下を入れ替えて、同じ場所で同じ動きをさせない。
-const PHRASE_OFFSETS_ALT = [0, 1, -1, 2, -2, 3, -3, 7, -7, 4, -4, 5, -5];
-// 終止感のある着地音（主和音の構成音）。
-const CADENTIAL_DEGREES = [1, 3, 5];
+
+/**
+ * セクションと役割ごとの平行移動量の優先順。**この表がこのファイルの心臓部**。
+ *
+ * 適合する量を近い順に試して最初に乗ったものを採ると、オフセットが場当たり的になり、
+ * ゼクエンツが上がったり下がったりして旋律に方向が生まれない。
+ * 感動させる音楽は数小節かけて音域を少しずつ上げ、頂点で解放し、そして下りてくる。
+ * ゼクエンツが上行していくこと自体が感情を作る（賛歌やサビの盛り上がりの正体）。
+ *
+ *   A   静かに提示し、少しだけ上げる
+ *   A'  明確に上昇させる
+ *   B   クライマックスへ駆け上がる
+ *   A'' 家へ帰る。下降して収める ← 上がりっぱなしでは終われない
+ *
+ * 64小節（1セクション8スロット＝2周）でも周ごとに向きは変えない。
+ * 2周目で上下を入れ替えると、せっかく作った方向がその場で打ち消される。
+ */
+const SEQUENCE_OFFSETS = {
+  0: { "a'": [0, 1, 2, -1, 3, -2], "a''": [1, 2, 0, 3, -1, -2] },
+  1: { "a'": [1, 2, 3, 0, -1], "a''": [2, 3, 1, 0, -1] },
+  2: { "a'": [2, 3, 1, 4, 0], "a''": [3, 4, 2, 1, 0] },
+  3: { "a'": [0, -1, -2, 1, -3], "a''": [-2, -3, -1, 0, -4] },
+};
+
+// セクションの向き。表に無い量を最後に並べるときの符号の好みに使う。
+const SECTION_DIRECTION = [1, 1, 1, -1];
+const EXTRA_OFFSETS = [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7, -7];
+
+/**
+ * そのセクション・その役割で平行移動量を試す順。
+ *
+ * 既定では表の量だけを返す。表に無い量（±4以上やオクターブ）を混ぜると
+ * 「乗りさえすれば何でも使う」に戻って方向がその場で消える
+ * （±7 は音名が同じままなのでコード適合が変わらず、下降指定のセクションでも上へ跳ぶ）。
+ *
+ * wide は最後の手段専用。リズム一致の断片も見つからず、このままでは楽節が
+ * 無関係な断片に置き換わる、というときだけ広げる。広げるときも
+ * 表の量を先頭に残し、そのあとはセクションの向きに合う符号から並べる。
+ */
+export function phraseOffsets(sectionIdx, roleName, wide = false) {
+  const primary = SEQUENCE_OFFSETS[sectionIdx]?.[roleName];
+  if (!primary) return PHRASE_OFFSETS;
+  if (!wide) return primary;
+  const dir = SECTION_DIRECTION[sectionIdx] ?? 1;
+  const extra = EXTRA_OFFSETS
+    .filter((o) => !primary.includes(o))
+    .sort((a, b) => (Math.sign(b) === dir) - (Math.sign(a) === dir) || Math.abs(a) - Math.abs(b));
+  return [...primary, ...extra];
+}
+
+/**
+ * 役割ごとの終止音（スケール度数）の好み。前から順に試し、該当が無ければ次へ。
+ * どれにも該当しなければ絞らない（＝必須ではなく優先）。
+ *
+ *   a    問いかけて開いたまま     トニック以外
+ *   a'   ひとまず答える          1 / 3 / 5
+ *   b    再び開く               トニック以外
+ *   a''  完全に閉じる            まずトニック、無ければ 3 / 5
+ *
+ * どのスロットも同じ条件で選ぶと2小節ごとに必ず似た終わり方をして予測可能になる。
+ * 「問いかけ→答え→問いかけ→締め」の差が、4つの断片を1つの楽節に束ねる。
+ */
+const OPEN_DEGREES = [2, 3, 4, 5, 6, 7];
+const CADENCE_BY_ROLE = {
+  a: [OPEN_DEGREES],
+  "a'": [[1, 3, 5]],
+  b: [OPEN_DEGREES],
+  "a''": [[1], [3, 5]],
+};
 
 const PHRASE_ROLES = ['a', "a'", 'b', "a''"];
 
@@ -434,11 +584,29 @@ function fitsSlotChords(fragment, ctx) {
   return fitsBar(b0, ctx.mode, ctx.chordA) && fitsBar(b1, ctx.mode, ctx.chordB);
 }
 
+// その断片が、この役割にいちばん求められている終止音で終わっているか。
+function closesOnTonic(fragment, ctx) {
+  const wanted = Array.isArray(ctx.endDegrees) ? ctx.endDegrees[0] : null;
+  return wanted ? wanted.includes(scaleDegreeOf(fragment.endDeg)) : false;
+}
+
+// 終止の好み（CADENCE_BY_ROLE の段）の何段目に当たるか。当たらなければ最下位。
+function cadenceRank(endDeg, tiers) {
+  if (!Array.isArray(tiers)) return 0;
+  for (let i = 0; i < tiers.length; i++) {
+    if (tiers[i].includes(scaleDegreeOf(endDeg))) return i;
+  }
+  return tiers.length;
+}
+
 /**
  * a から a'（a''）を導出する。
  * 平行移動量を順に試し、そのスロットの2つのコードに実際に乗るものを採る。
  * 音高の窓（maxPeak / minPeak）は選択と同じ条件で守る。ここを緩めると
  * 非クライマックスのスロットが頂点に並んで「最高音は一度だけ」が壊れる。
+ *
+ * 採用は「優先順（＝方向）を基本に、その中で終止の好みに合う量を前へ出す」。
+ * 乗る中で最初の1つ、ではない。最初の1つを採ると方向も終止も場当たりになる。
  *
  * @returns {{offset:number, fragment:object}|null}
  */
@@ -446,20 +614,24 @@ export function deriveFragment(anchor, ctx, opts = {}) {
   if (!anchor || !Array.isArray(anchor.notes) || anchor.notes.length === 0) return null;
   const offsets = opts.offsets ?? PHRASE_OFFSETS;
   const accepted = [];
-  for (const offset of offsets) {
+  for (let i = 0; i < offsets.length; i++) {
+    const offset = offsets[i];
     if (opts.exclude !== null && opts.exclude !== undefined && offset === opts.exclude) continue;
     const moved = transposeFragment(anchor, offset);
     if (!moved) continue;
     if (moved.peakDeg > (ctx.maxPeak ?? 15)) continue;
     if (moved.peakDeg < (ctx.minPeak ?? 1)) continue;
     if (!fitsSlotChords(moved, ctx)) continue;
-    accepted.push({ offset, fragment: moved });
+    accepted.push({
+      offset,
+      fragment: moved,
+      rank: cadenceRank(moved.endDeg, opts.endDegrees),
+      order: i,
+    });
   }
   if (accepted.length === 0) return null;
-  // a'' は着地感を優先する。主和音の構成音で終われるならそちらを選ぶ。
-  const chosen = (opts.cadential
-    && accepted.find((a) => CADENTIAL_DEGREES.includes(scaleDegreeOf(a.fragment.endDeg))))
-    || accepted[0];
+  accepted.sort((x, y) => x.rank - y.rank || x.order - y.order);
+  const chosen = accepted[0];
   return { offset: chosen.offset, fragment: attachFitSus(chosen.fragment, ctx.mode) };
 }
 
@@ -469,21 +641,33 @@ export function deriveFragment(anchor, ctx, opts = {}) {
  *
  * 拍と長さの完全一致を先に、無ければ打点だけの一致を探す。
  * フィルタは厳しい順に緩めていく（リズムが揃うことのほうが、緊張度の一致より効く）。
+ *
+ * 求める終止（ctx.endDegrees の第1段）に届かないうちは、緩いレベルや
+ * 打点だけの一致まで探し続ける。いちばん厳しい組み合わせで見つかった1つは
+ * 控えに取っておき、どこまで探しても終止が揃わなければそれを返す。
+ * リズム一致の候補は平均5件しかなく、最初の1組で打ち切ると
+ * 「閉じる」べき楽節が閉じられないまま終わる率が高い（実測でここが効いた）。
  */
 export function phraseTwin(anchor, melodies, ctx) {
   const key = rhythmKey(anchor);
   if (!key) return null;
   const onsets = onsetKey(anchor);
   const pool = Array.isArray(melodies) ? melodies : [];
+  const wanted = Array.isArray(ctx.endDegrees) ? ctx.endDegrees[0] : null;
+  let strictest = null;
   for (const level of [3, 2, 1]) {
     const candidates = pool.filter((m) => m.id !== anchor.id && passesFilters(m, ctx, level));
     if (candidates.length === 0) continue;
     for (const matcher of [(m) => rhythmKey(m) === key, (m) => onsetKey(m) === onsets]) {
       const matches = candidates.filter(matcher);
-      if (matches.length > 0) return narrowCandidates(matches, ctx)[0];
+      if (matches.length === 0) continue;
+      const chosen = narrowCandidates(matches, ctx)[0];
+      if (!wanted) return chosen;
+      if (wanted.includes(scaleDegreeOf(chosen.endDeg))) return chosen;
+      if (strictest === null) strictest = chosen;
     }
   }
-  return null;
+  return strictest;
 }
 
 // モチーフを再登場させるスロット。値は A（セクション0）のスロット番号。
@@ -585,7 +769,7 @@ function slotMelodyNotes(fragment, ctx, slotStartBeat, tonicMidi) {
       midi: degToMidi(n.deg, mode, tonicMidi),
       beat: slotStartBeat + beat,
       dur: n.dur,
-      vel: n.vel,
+      vel: n.vel * MELODY_VEL_SCALE,
     });
   }
   const chords = [chordA, chordB];
@@ -597,7 +781,7 @@ function slotMelodyNotes(fragment, ctx, slotStartBeat, tonicMidi) {
       midi: degToMidi(deg, mode, tonicMidi),
       beat: slotStartBeat + b * 4,
       dur: 4,
-      vel: FILL_VEL,
+      vel: FILL_VEL * MELODY_VEL_SCALE,
     });
   }
   notes.sort((a, b) => a.beat - b.beat);
@@ -661,6 +845,11 @@ export function composeSong(seed, data, settings) {
       const anchor = role.anchor === null ? null : slotFragments[role.anchor];
       // セクションの頭と頂点だけは跳躍を許す（新しい息継ぎ、あるいは意図した飛翔）。
       const allowLeap = k === 0 || isClimax;
+      // 陰りのコードが鳴るスロットと、偽終止で閉じそこねる最後の小節。
+      // 進行の最終小節はスロットの後半（chordB）にしか来ない（2k は必ず偶数）。
+      const deceptiveEnd = prog.cadence === 'deceptive'
+        && (2 * k + 1) % prog.bars.length === prog.bars.length - 1;
+      const dark = isDarkChord(chordA) || isDarkChord(chordB) || deceptiveEnd;
       const ctx = {
         mode,
         chordA,
@@ -672,13 +861,26 @@ export function composeSong(seed, data, settings) {
         maxPeak: curve.maxPeak,
         minPeak: curve.minPeak,
         maxLeap: allowLeap ? cfg.maxLeap + 4 : cfg.maxLeap,
-        preferSus: s === 2 && k === cs - 1,
+        // 頂点の直前と、陰りのコードの上。掛留（非和声音が順次下降で解決する形）が
+        // iv / bVI / bVII の上で鳴ると陰りが最大限に効く。
+        // クライマックスだけは音域と単一頂点の条件が優先なので、ここでは立てない。
+        preferSus: (s === 2 && k === cs - 1) || (dark && !isClimax),
+        susOverPenta: dark && !isClimax,
         soloPeak: isClimax && strength > 0,
         // 頂点は「そこで初めて届いた音」が最優先。ペンタトニックに寄せると
         // かえって頂点が埋もれるので、ここだけは絞らない。
         preferPenta: !isClimax,
         // b は a と違う輪郭にして対比を作る。
         avoidContour: role.name === 'b' && anchor ? anchor.contour : null,
+        // 楽節のどこにいるかで終わり方を変える（問いかけ／答え／締め）。
+        endDegrees: CADENCE_BY_ROLE[role.name] ?? null,
+        // 曲の1音目。ここだけは拍0から始めて、拍の位置を最初に示す。
+        preferDownbeat: s === 0 && k === 0,
+        // B の頂点までの楽節の頭（a）だけ、天井から3度ぶん余白を残す。
+        // 登る距離がいちばん長いのが B で、ここが詰むとクライマックスへ辿り着かない。
+        // 実測では、この余白の有無で B のゼクエンツの平均移動量が +0.3〜+0.6 変わる
+        // （＝出だしが天井に着いていると、上に動かせる量がそのぶん消える）。
+        headroom: role.anchor === null && s === 2 && k < cs ? curve.maxPeak - 3 : null,
       };
 
       let fragment = null;
@@ -701,17 +903,36 @@ export function composeSong(seed, data, settings) {
       // 2. 楽節内のゼクエンツ（a' / a''）。
       //    クライマックスだけは楽節構造より音高の条件を優先して通常選択に回す。
       if (!fragment && role.derive && anchor && !isClimax) {
-        const offsets = role.cycle % 2 === 0 ? PHRASE_OFFSETS : PHRASE_OFFSETS_ALT;
-        const cadential = role.name === "a''";
+        // セクションごとに向きの違う優先順を使う（A は少しだけ上、A' と B は上、A'' は下）。
+        const offsets = phraseOffsets(s, role.name);
+        const closing = role.name === "a''";
+        // 平行移動量を終止で並べ替えるのは、締めくくる a'' だけにする。
+        // a' の「1/3/5 で答える」は3度数ぶんと広く、これを方向より優先させると
+        // 採る量がほぼ終止だけで決まってしまい、A→A' の上昇が実測で消えた。
+        const endDegrees = closing ? ctx.endDegrees : null;
         // a'' が a' と同じ移動量では、同じコードの上に同じものが並ぶ。
-        const exclude = cadential ? phraseOffset[role.anchor] : null;
-        let derived = deriveFragment(anchor, ctx, { offsets, exclude, cadential });
+        const exclude = closing ? phraseOffset[role.anchor] : null;
+        const opts = { offsets, endDegrees };
+        let derived = deriveFragment(anchor, ctx, { ...opts, exclude });
         // 3. 移調では乗らないとき。同じリズム型の別の断片で「続き」に聴かせる。
-        const twin = derived ? null : phraseTwin(anchor, melodies, ctx);
-        // 4. それも無ければ、避けていた移動量まで戻して使う。
-        //    a' の繰り返しになるが、無関係な断片を挟むよりは歌が途切れない。
-        if (!derived && !twin && exclude !== null && exclude !== undefined) {
-          derived = deriveFragment(anchor, ctx, { offsets, cadential });
+        let twin = derived ? null : phraseTwin(anchor, melodies, ctx);
+        // 3'. a'' は閉じるための楽節。移調がトニックに着地できないなら、
+        //     着地できるリズム一致の断片のほうを採る。ここだけは「同じ音形」より
+        //     「閉じること」が上。閉じ損なった楽節は、次のセクションへ雪崩れ込む。
+        if (closing && derived && !closesOnTonic(derived.fragment, ctx)) {
+          const alt = phraseTwin(anchor, melodies, ctx);
+          if (alt && closesOnTonic(alt, ctx)) {
+            derived = null;
+            twin = alt;
+          }
+        }
+        // 4. それも無ければ、最後にもう一度だけ移調を試す。
+        //    避けていた移動量（a' と同じ量）も、向きの表に無い量（±4以上やオクターブ）も
+        //    ここでは許す。a' の繰り返しや向きの乱れは痛いが、ここで諦めると
+        //    楽節が無関係な断片に置き換わって「同じ歌が続いている」感覚ごと消える。
+        //    表の量を先頭に残すので、乗るなら向きのある量が優先されるのは変わらない。
+        if (!derived && !twin) {
+          derived = deriveFragment(anchor, ctx, { offsets: phraseOffsets(s, role.name, true), endDegrees });
         }
         if (derived) {
           fragment = derived.fragment;
@@ -751,9 +972,23 @@ export function composeSong(seed, data, settings) {
     for (let b = 0; b < barChords.length; b++) {
       const chord = barChords[b];
       const beat = (startBar + b) * 4;
-      pad.push({ midis: chordVoicing(chord, mode, tonicMidi, PAD_LOWEST), beat, dur: 4, vel: PAD_VEL });
+      const isFinalBar = startBar + b === bars - 1;
+      pad.push({
+        midis: chordVoicing(chord, mode, tonicMidi, PAD_LOWEST),
+        beat,
+        dur: isFinalBar ? FINAL_PAD_DUR : 4,
+        vel: PAD_VEL,
+      });
       bass.push({ midi: bassMidi(chord, mode, tonicMidi, BASS_LOWEST), beat, dur: 4, vel: BASS_VEL });
       const voicing = chordVoicing(chord, mode, tonicMidi, ACCOMP_LOWEST);
+      if (isFinalBar) {
+        // 刻みをやめて和音を置く。midi は単音しか読まない再生系のための代表音で、
+        // 実際に鳴らしたい全構成音は midis に入れる。
+        accomp.push({
+          midi: voicing[0], midis: voicing.slice(), beat, dur: 4, vel: FINAL_ACCOMP_VEL,
+        });
+        continue;
+      }
       for (let i = 0; i < ACCOMP_OFFSETS.length; i++) {
         accomp.push({
           midi: voicing[arpeggioIndex(i, voicing.length)],
@@ -780,6 +1015,33 @@ export function composeSong(seed, data, settings) {
       highest = n.midi;
       climaxBeat = n.beat;
     }
+  }
+
+  // 頂点を越えたら、素材の側からも確実に下げる。上げて、頂点で解放し、下りてくる。
+  for (const n of melody) {
+    const d = n.beat - climaxBeat;
+    if (d <= 0 || d >= RELEASE_BEATS) continue;
+    n.vel *= RELEASE_FLOOR + (1 - RELEASE_FLOOR) * (d / RELEASE_BEATS);
+  }
+
+  // 曲の最後の1音だけは、断片の形より終止を優先する。
+  //
+  //  1. 最終小節の終わりまで伸ばす。断片の最後の音は8分や4分のことが多く、
+  //     そのまま鳴らすと1拍で切れて、曲が終わらずに次の曲へなだれ込む。
+  //  2. 主音へ着地させる。断片プールの側で主音に終われる断片が用意できるのは
+  //     全スロットの7割弱が上限で、選択だけでは「終わった」と聴こえる曲にならない。
+  //     長く伸びた主音の上に主和音（varyProgression level 2 の最終小節）が鳴る、
+  //     この一致が終止感そのものなので、ここは1音だけ書き換える。
+  //     上の頂点より高くはしない（曲中の最高音が一度だけ、という保証を壊さないため）。
+  if (melody.length > 0) {
+    let last = 0;
+    for (let i = 1; i < melody.length; i++) if (melody[i].beat >= melody[last].beat) last = i;
+    const tail = melody[last];
+    tail.dur = Math.max(FINAL_NOTE_MIN_DUR, bars * 4 - tail.beat);
+    const below = tonicMidi + 12 * Math.floor((tail.midi - tonicMidi) / 12);
+    const above = below + 12;
+    const near = tail.midi - below <= above - tail.midi ? below : above;
+    tail.midi = near < highest ? near : below;
   }
 
   return {

@@ -278,7 +278,19 @@ export function buildPerformance(song, settings) {
 
       at += hesitate(n.beat);
       at += ritDelay(n.beat);
-      events.push({ kind: 'piano', layer, at: Math.max(0, at), midi: n.midi, dur, vel });
+      const start = Math.max(0, at);
+
+      // 曲の最終小節だけ、伴奏は刻みをやめて和音を保持する。compose 側が
+      // その1イベントに midis（全構成音）を入れてくるので、ここで和音に開く。
+      // 乱数は1イベントにつき2つのまま（音数で消費が変わると再現性が壊れる）。
+      const chord = Array.isArray(n.midis) && n.midis.length > 0 ? n.midis : null;
+      if (chord) {
+        for (const midi of chord) {
+          events.push({ kind: 'piano', layer, at: start, midi, dur, vel });
+        }
+      } else {
+        events.push({ kind: 'piano', layer, at: start, midi: n.midi, dur, vel });
+      }
     }
   }
 
