@@ -14,6 +14,37 @@ function isMirrored(rhythm) {
   return first.every((n, i) => n.b + 4 === second[i].b && n.d === second[i].d);
 }
 
+// --- リズムの多様性を測る道具 ---
+// 音価が均一な型は、音程が何であろうと童謡にしか聴こえない。
+// ここでの判定は tools/analyze.js の syncopation / has-rest と同じ定義。
+const q = (v) => Math.round(v * 1e4) / 1e4;
+const durationsOf = (r) => r.map((n) => q(n.d));
+const distinctDurations = (r) => new Set(durationsOf(r)).size;
+const durationRatio = (r) => Math.max(...durationsOf(r)) / Math.min(...durationsOf(r));
+
+// 拍の裏から始まり、次の拍をまたいで伸びる音がある型。
+const hasSyncopation = (r) => r.some((n) => q(n.b) % 1 !== 0 && n.d >= 1);
+
+// 音と音のあいだが0.5拍以上空くか、最初の音が拍頭から遅れて入る型。
+const hasRest = (r) => q(r[0].b) > 0
+  || r.some((n, i) => i + 1 < r.length && q(r[i + 1].b - (n.b + n.d)) >= 0.5);
+
+// 弱起: 短い音から入って、次の拍の頭に長い音で着地する型。
+const isAnacrusis = (r) => r.length >= 2 && r[0].d <= 0.5 && q(r[1].b) % 1 === 0 && r[1].d >= 1;
+
+// 付点のリズム(1.5+0.5 / 0.75+0.25)を含む型。
+const hasDotted = (r) => r.some((n, i) => i + 1 < r.length
+  && ((q(n.d) === 1.5 && q(r[i + 1].d) === 0.5)
+    || (q(n.d) === 0.75 && q(r[i + 1].d) === 0.25)));
+
+// 音が等間隔に並ぶだけの型(童謡の正体)。
+const isEvenlySpaced = (r) => {
+  if (r.length < 3) return false;
+  return new Set(r.slice(1).map((n, i) => q(n.b - r[i].b))).size === 1;
+};
+
+const rate = (list, fn) => list.filter(fn).length / list.length;
+
 function sample(n, fn) {
   const out = [];
   for (let i = 0; i < n; i++) out.push(fn(i));
@@ -26,28 +57,67 @@ function assertMostly(label, results) {
   assert.ok(ok >= 7, `${label}: ${ok}/${results.length} 回しか成立していない`);
 }
 
-test('RHYTHMS は12個以上あり、全型が制約を満たす', () => {
-  assert.ok(RHYTHMS.length >= 12, `リズム型が足りない: ${RHYTHMS.length}`);
+test('RHYTHMS は24個以上あり、全型が制約を満たす', () => {
+  assert.ok(RHYTHMS.length >= 24, `リズム型が足りない: ${RHYTHMS.length}`);
   for (const [idx, r] of RHYTHMS.entries()) {
     assert.ok(Array.isArray(r), `#${idx} が配列でない`);
-    assert.ok(r.length >= 4 && r.length <= 9, `#${idx} の音数が範囲外: ${r.length}`);
+    // 2小節あたり6〜16音。
+    assert.ok(r.length >= 6 && r.length <= 16, `#${idx} の音数が範囲外: ${r.length}`);
     let prevEnd = 0;
+    let sixteenths = 0;
     for (const n of r) {
       assert.ok(typeof n.b === 'number' && typeof n.d === 'number', `#${idx} の音が {b,d} でない`);
-      assert.ok(n.d >= 0.5, `#${idx} に8分より短い音がある: ${n.d}`);
-      assert.ok(n.b >= prevEnd, `#${idx} で音が重なっている: b=${n.b} < ${prevEnd}`);
+      assert.ok(n.d >= 0.25, `#${idx} に16分より短い音がある: ${n.d}`);
+      assert.ok(q(n.b) >= q(prevEnd), `#${idx} で音が重なっている: b=${n.b} < ${prevEnd}`);
       assert.ok(n.b + n.d <= 8, `#${idx} が8拍を超える: ${n.b}+${n.d}`);
+      if (n.d < 0.5) sixteenths++;
       prevEnd = n.b + n.d;
     }
+    // 16分は装飾。並べると単に忙しいだけになる。
+    assert.ok(sixteenths <= 3, `#${idx} の16分が多すぎる: ${sixteenths}音`);
   }
 });
 
-test('RHYTHMS の半分以上は後半1小節が前半と同形', () => {
+test('RHYTHMS は全型が3種類以上の音価を持ち、最長÷最短が3以上', () => {
+  for (const [idx, r] of RHYTHMS.entries()) {
+    assert.ok(
+      distinctDurations(r) >= 3,
+      `#${idx} の音価が ${distinctDurations(r)} 種類しかない: [${durationsOf(r).join(' ')}]`,
+    );
+    assert.ok(
+      durationRatio(r) >= 3,
+      `#${idx} の最長÷最短が ${durationRatio(r)} しかない: [${durationsOf(r).join(' ')}]`,
+    );
+    assert.ok(!isEvenlySpaced(r), `#${idx} は音が等間隔に並んでいる`);
+  }
+});
+
+test('RHYTHMS は全型の最後の音が1.5拍以上(フレーズの息継ぎ)', () => {
+  for (const [idx, r] of RHYTHMS.entries()) {
+    const last = r[r.length - 1];
+    assert.ok(last.d >= 1.5, `#${idx} の最終音が短い: ${last.d}`);
+  }
+});
+
+test('RHYTHMS はシンコペーション40%以上・休符30%以上・弱起25%以上を含む', () => {
+  const sync = rate(RHYTHMS, hasSyncopation);
+  const rest = rate(RHYTHMS, hasRest);
+  const anacrusis = rate(RHYTHMS, isAnacrusis);
+  assert.ok(sync >= 0.4, `シンコペーションの型が少ない: ${(sync * 100).toFixed(1)}%`);
+  assert.ok(rest >= 0.3, `休符を含む型が少ない: ${(rest * 100).toFixed(1)}%`);
+  assert.ok(anacrusis >= 0.25, `弱起の型が少ない: ${(anacrusis * 100).toFixed(1)}%`);
+});
+
+test('RHYTHMS は付点のリズムを含む型を6個以上持つ', () => {
+  const dotted = RHYTHMS.filter(hasDotted).length;
+  assert.ok(dotted >= 6, `付点の型が少ない: ${dotted}`);
+});
+
+test('RHYTHMS の6割程度は後半1小節が前半と同形', () => {
   const mirrored = RHYTHMS.filter(isMirrored).length;
-  assert.ok(
-    mirrored * 2 >= RHYTHMS.length,
-    `モチーフ反復型が少ない: ${mirrored}/${RHYTHMS.length}`,
-  );
+  const ratio = mirrored / RHYTHMS.length;
+  assert.ok(ratio >= 0.55, `モチーフ反復型が少ない: ${mirrored}/${RHYTHMS.length}`);
+  assert.ok(ratio <= 0.75, `モチーフ反復型が多すぎる: ${mirrored}/${RHYTHMS.length}`);
 });
 
 test('CONTOUR_SHAPE は6種類あり、値が 0〜1 に収まる', () => {
@@ -144,12 +214,62 @@ test('generateCandidate の notes は重ならず 8拍に収まる', () => {
     const { notes } = generateCandidate(rng);
     for (let k = 0; k < notes.length; k++) {
       const n = notes[k];
-      assert.ok(n.beat >= 0 && n.dur >= 0.5, `不正な音: ${JSON.stringify(n)}`);
+      // 最短音価は0.25拍(16分)。
+      assert.ok(n.beat >= 0 && n.dur >= 0.25, `不正な音: ${JSON.stringify(n)}`);
       assert.ok(n.beat + n.dur <= 8, `8拍を超える: ${JSON.stringify(n)}`);
       if (k + 1 < notes.length) {
         assert.ok(n.beat + n.dur <= notes[k + 1].beat, `重なり: ${JSON.stringify(notes)}`);
       }
     }
+  }
+});
+
+test('generateCandidate は音価の一定な断片を作らない', () => {
+  const rng = makeRng(1234);
+  let sync = 0;
+  let rest = 0;
+  for (let i = 0; i < 500; i++) {
+    const { notes } = generateCandidate(rng);
+    const r = notes.map((n) => ({ b: n.beat, d: n.dur }));
+    assert.ok(
+      distinctDurations(r) >= 3,
+      `音価が ${distinctDurations(r)} 種類しかない: ${JSON.stringify(notes)}`,
+    );
+    assert.ok(durationRatio(r) >= 3, `音価の落差が小さい: ${JSON.stringify(notes)}`);
+    assert.ok(r[r.length - 1].d >= 1.5, `最終音が短い: ${JSON.stringify(notes)}`);
+    if (hasSyncopation(r)) sync++;
+    if (hasRest(r)) rest++;
+  }
+  // 引く確率どおりならシンコペーション・休符はそれぞれ半数前後になる。
+  assert.ok(sync >= 150, `シンコペーションが少ない: ${sync}/500`);
+  assert.ok(rest >= 100, `休符が少ない: ${rest}/500`);
+});
+
+// 旋律型の経路では、開始音(その断片をどの高さに置くか)は1小節につき一度だけ決める。
+// これが音ごとに決まると、音ごとに置き場所が変わって旋律型の形が壊れる。
+// 「音ごとに乱数を引いていないこと」を乱数の消費回数で見張る。
+// (vel は仕様上1音1回引くので、その分は差し引いて数える)
+test('旋律型の断片は開始音を音ごとに引き直さない', () => {
+  const byPath = new Map();
+  for (let seed = 1; seed <= 2000; seed++) {
+    const base = makeRng(seed);
+    let draws = 0;
+    const rng = () => {
+      draws++;
+      return base();
+    };
+    const cand = generateCandidate(rng);
+    if (!cand.path.startsWith('formula:')) continue;
+    const extra = draws - cand.notes.length; // vel のぶんを除いた消費
+    if (!byPath.has(cand.path)) byPath.set(cand.path, []);
+    byPath.get(cand.path).push(extra);
+    assert.ok(extra <= 25, `${cand.path} が乱数を使いすぎ: ${extra} (音数 ${cand.notes.length})`);
+  }
+  assert.ok(byPath.size > 0, '旋律型の断片が1つも出ていない');
+  for (const [path, list] of byPath) {
+    const spread = Math.max(...list) - Math.min(...list);
+    // 音数は6〜16音まで開くので、音ごとに引いていれば必ず10前後の差が出る。
+    assert.ok(spread <= 8, `${path} の乱数消費が音数につれて増えている: 幅 ${spread}`);
   }
 });
 

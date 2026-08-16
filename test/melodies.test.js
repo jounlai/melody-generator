@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHORD_VOCAB, splitBars, fitsBar } from '../src/theory.js';
+import { CHORD_VOCAB, splitBars, fitsBar, chordIndex } from '../src/theory.js';
+import { distinctDurations } from '../tools/analyze.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_PATH = resolve(HERE, '../src/data/melodies.json');
+const PROG_PATH = resolve(HERE, '../src/data/progressions.json');
 const melodies = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
+const progressions = JSON.parse(readFileSync(PROG_PATH, 'utf8'));
 
 const COUNT = 999;
 const MODES = ['major', 'minor'];
@@ -28,6 +31,19 @@ const countBy = (keyOf) => {
 };
 
 const withTag = (tag) => melodies.filter((m) => m.tags.includes(tag));
+
+const median = (values) => {
+  const a = values.slice().sort((x, y) => x - y);
+  return a[Math.floor(a.length / 2)];
+};
+
+// 順次進行(2度以内)の割合。名曲のメロディーの音程分布に一致する帯は 55〜80%。
+const stepRatioOf = (m) => {
+  const degs = m.notes.map((n) => n.deg);
+  const intervals = degs.slice(1).map((d, i) => d - degs[i]);
+  if (intervals.length === 0) return 0;
+  return intervals.filter((d) => Math.abs(d) >= 1 && Math.abs(d) <= 2).length / intervals.length;
+};
 
 test('断片はちょうど999件', () => {
   assert.ok(Array.isArray(melodies));
@@ -151,14 +167,106 @@ test('peakDeg>=12 の断片が50件以上ある(クライマックス用)', () =
   assert.ok(climax.length >= 50, `クライマックス用の断片が ${climax.length} 件しかない`);
 });
 
+test('peakDeg>=12 かつ頂点が1回だけの断片が80件以上ある', () => {
+  const solo = melodies.filter((m) => m.peakDeg >= 12 && m.peakCount === 1);
+  assert.ok(solo.length >= 80, `頂点の一回性を満たす断片が ${solo.length} 件しかない`);
+});
+
+// ---------------------------------------------------------------------------
+// リズムの多様性（「音の長さが一定過ぎて全部童謡に聴こえる」への対策）
+// ---------------------------------------------------------------------------
+
+test('音価が3種類以上の断片が700件以上ある(リズムの単調さの主指標)', () => {
+  const varied = melodies.filter((m) => distinctDurations(m.notes) >= 3);
+  assert.ok(varied.length >= 700, `音価の多様な断片が ${varied.length} 件しかない`);
+});
+
+test('syncopation タグの断片が250件以上ある', () => {
+  const sync = withTag('syncopation');
+  assert.ok(sync.length >= 250, `syncopation が ${sync.length} 件しかない`);
+});
+
+test('has-rest タグの断片が200件以上ある(息継ぎ)', () => {
+  const rests = withTag('has-rest');
+  assert.ok(rests.length >= 200, `has-rest が ${rests.length} 件しかない`);
+});
+
+test('全断片の最後の音が1.5拍以上(フレーズの終わりで息を継ぐ)', () => {
+  for (const m of melodies) {
+    const last = m.notes[m.notes.length - 1];
+    assert.ok(last.dur >= 1.5, `${m.id}: 最終音が短い (${last.dur})`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 大衆性・動機・密度
+// ---------------------------------------------------------------------------
+
+test('ペンタトニックの断片が penta-major 400件・penta-minor 250件以上ある', () => {
+  assert.ok(withTag('penta-major').length >= 400, `penta-major が ${withTag('penta-major').length} 件しかない`);
+  assert.ok(withTag('penta-minor').length >= 250, `penta-minor が ${withTag('penta-minor').length} 件しかない`);
+});
+
+test('inner-sequence が300件・inner-repeat が120件以上ある(動機の成立)', () => {
+  assert.ok(withTag('inner-sequence').length >= 300, `inner-sequence が ${withTag('inner-sequence').length} 件しかない`);
+  assert.ok(withTag('inner-repeat').length >= 120, `inner-repeat が ${withTag('inner-repeat').length} 件しかない`);
+});
+
+test('順次進行の割合が55〜80%の断片が400件以上ある', () => {
+  const band = melodies.filter((m) => stepRatioOf(m) >= 0.55 && stepRatioOf(m) <= 0.8);
+  assert.ok(band.length >= 400, `音程分布が名曲の帯に入る断片が ${band.length} 件しかない`);
+});
+
+test('音数の中央値が8以上で、10音以上の断片が350件以上ある', () => {
+  const lens = melodies.map((m) => m.notes.length);
+  assert.ok(median(lens) >= 8, `音数の中央値が ${median(lens)} しかない`);
+  const dense = lens.filter((n) => n >= 10).length;
+  assert.ok(dense >= 350, `10音以上の断片が ${dense} 件しかない`);
+});
+
+// ---------------------------------------------------------------------------
+// 進行の被覆（ここがゼロになると、その2小節が保険の全音符で埋まって曲が破綻する）
+// ---------------------------------------------------------------------------
+
+test('全99進行×198スロットに適合する断片が1件以上ある', () => {
+  const slots = [];
+  for (const p of progressions) {
+    for (let k = 0; k * 2 + 1 < p.bars.length; k++) {
+      slots.push({
+        id: p.id,
+        mode: p.mode,
+        a: p.bars[2 * k].chord,
+        b: p.bars[2 * k + 1].chord,
+      });
+    }
+  }
+  assert.equal(slots.length, 198, `スロット数が198でない: ${slots.length}`);
+
+  const counts = slots.map((s) => {
+    const ia = chordIndex(s.mode, s.a);
+    const ib = chordIndex(s.mode, s.b);
+    assert.ok(ia >= 0 && ib >= 0, `${s.id}: 語彙に無いコード ${s.a}->${s.b}`);
+    return {
+      label: `${s.id} ${s.mode} ${s.a}->${s.b}`,
+      n: melodies.filter((m) => m.fit[s.mode][0].includes(ia) && m.fit[s.mode][1].includes(ib)).length,
+    };
+  });
+
+  const empty = counts.filter((c) => c.n === 0);
+  assert.equal(empty.length, 0, `適合断片ゼロのスロット: ${empty.map((c) => c.label).join(' / ')}`);
+  // 組み立て側は音高の窓や緊張度でさらに絞るので、1件では実質枯れる。
+  const worst = counts.reduce((a, b) => (a.n <= b.n ? a : b));
+  assert.ok(worst.n >= 20, `最も痩せたスロットが ${worst.n} 件しかない: ${worst.label}`);
+});
+
 test('トニックで終わる断片が200件以上ある(着地感のある終止用)', () => {
   const resting = melodies.filter((m) => isTonicDeg(m.endDeg));
   assert.ok(resting.length >= 200, `トニック終止が ${resting.length} 件しかない`);
 });
 
-test('sigh タグの断片が30件以上ある(「泣ける」の中核要素)', () => {
+test('sigh タグの断片が100件以上ある(「泣ける」の中核要素)', () => {
   const sighs = withTag('sigh');
-  assert.ok(sighs.length >= 30, `sigh が ${sighs.length} 件しかない`);
+  assert.ok(sighs.length >= 100, `sigh が ${sighs.length} 件しかない`);
 });
 
 test('inner-motif タグの断片が50件以上ある', () => {
