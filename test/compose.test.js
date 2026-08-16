@@ -2,14 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CHORD_VOCAB, chordIndex, isChordTone, splitBars, fitsBar, hasSuspension,
+  CHORD_VOCAB, chordIndex, isChordTone, splitBars, fitsBar, hasSuspension, bassMidi,
 } from '../src/theory.js';
 import { defaultSettings } from '../src/settings.js';
+import { makeRng, seedFromString } from '../src/rng.js';
 import {
   SECTION_NAMES, climaxSlot, curveFor, rawTension, varyProgression,
   passesFilters, selectFragment, composeSong,
   transposeFragment, deriveFragment, phraseRoles, phraseOffsets, rhythmKey,
   progressionWeight, arpeggioIndex, isDarkChord,
+  phrasePlan, phraseEndFlags, soarsToPeak, hasLongEnding, nearestOctave,
 } from '../src/compose.js';
 
 // ---------------------------------------------------------------------------
@@ -264,6 +266,39 @@ function allMidis(song) {
   return out;
 }
 
+// 「無音の小節」は伴奏を含めた**全体**で見る。
+// メロディーの1小節の休みは息継ぎで、意図してそこに置いている。
+function soundingBars(song) {
+  const bars = new Set();
+  for (const layer of ['melody', 'accomp', 'bass']) {
+    for (const n of song[layer]) bars.add(Math.floor(n.beat / 4));
+  }
+  for (const p of song.pad) bars.add(Math.floor(p.beat / 4));
+  return bars;
+}
+
+function melodyBars(song) {
+  return new Set(song.melody.map((n) => Math.floor(n.beat / 4)));
+}
+
+// 曲全体で鳴っている小節と、メロディーが休んでいる小節を検査する。
+// メロディーが休んでよいのは song.breathBar のちょうど1小節だけ。
+function assertNoSilentBar(song, label) {
+  const sounding = soundingBars(song);
+  const withMelody = melodyBars(song);
+  for (let bar = 0; bar < song.bars; bar++) {
+    assert.ok(sounding.has(bar), `${label}: ${bar}小節目が完全に無音`);
+    if (bar === song.breathBar) continue;
+    assert.ok(withMelody.has(bar), `${label}: ${bar}小節目にメロディーが無い（息継ぎではない）`);
+  }
+  if (song.breathBar !== null) {
+    assert.equal(withMelody.has(song.breathBar), false,
+      `${label}: 息継ぎの小節 ${song.breathBar} にメロディーが残っている`);
+  }
+  assert.equal(song.bars - withMelody.size, song.breathBar === null ? 0 : 1,
+    `${label}: メロディーの休みが息継ぎの1小節を超えている`);
+}
+
 // ---------------------------------------------------------------------------
 // フィクスチャ自体の健全性（これが崩れると以降のテストが無意味になる）
 // ---------------------------------------------------------------------------
@@ -410,14 +445,14 @@ test('すべてのスロットが断片で埋まっている', () => {
   }
 });
 
-test('無音の小節が1つも無い', () => {
+// 「無音の小節が無い」は伴奏・ベース・パッドを含めた全体について検査する。
+// メロディーだけが1小節休む「息継ぎ」は歌のためにわざと置いたもので、
+// そこも伴奏は鳴り続けている（＝音楽は止まっていない）。
+test('無音の小節が1つも無い（伴奏を含めた全体で）', () => {
   for (const bars of ['16', '32', '64']) {
     for (const seed of SEEDS) {
       const song = composeSong(seed, DATA, S({ songBars: bars }));
-      const filled = new Set(song.melody.map((n) => Math.floor(n.beat / 4)));
-      for (let bar = 0; bar < song.bars; bar++) {
-        assert.ok(filled.has(bar), `${seed}/${bars}: ${bar}小節目が無音`);
-      }
+      assertNoSilentBar(song, `${seed}/${bars}`);
       for (const n of song.melody) {
         assert.ok(n.beat >= 0 && n.beat < song.totalBeats, `曲の外に音がある: ${n.beat}`);
       }
@@ -618,10 +653,7 @@ test('適合する断片が皆無でも例外を投げず、無音の小節も�
       for (const seed of SEEDS.slice(0, 4)) {
         let song;
         assert.doesNotThrow(() => { song = composeSong(seed, data, S({ songBars: bars })); });
-        const filled = new Set(song.melody.map((n) => Math.floor(n.beat / 4)));
-        for (let bar = 0; bar < song.bars; bar++) {
-          assert.ok(filled.has(bar), `${bar}小節目が無音`);
-        }
+        assertNoSilentBar(song, `${seed}/${bars}`);
         for (const sec of song.sections) {
           for (const slot of sec.slots) assert.ok(slot.fragmentId);
         }
@@ -704,9 +736,20 @@ test('climaxSlot は終わりの1つ手前を頂点にする', () => {
 test('varyProgression: level 1 は2小節目を第1転回形にする', () => {
   const p = FIX_PROGRESSIONS.find((x) => x.id === 'fx-M1');
   assert.deepEqual(varyProgression(p, 1).bars.map((b) => b.chord), ['I', 'V/3', 'vi', 'IV']);
-  // 語彙に無い転回形（iii/3）は諦めて原形を残す。
-  const q = FIX_PROGRESSIONS.find((x) => x.id === 'fx-M3');
-  assert.deepEqual(varyProgression(q, 1).bars.map((b) => b.chord), ['I', 'iii', 'IV', 'V']);
+  // どの進行でも規則は同じ：転回形が語彙にあれば差し替え、無ければ原形を残す。
+  // （語彙 CHORD_VOCAB は theory.js 側で増えるので、記号を決め打ちにしない）
+  for (const q of FIX_PROGRESSIONS) {
+    const base = q.bars.map((b) => b.chord);
+    const want = base.slice();
+    want[1] = chordIndex(q.mode, `${base[1]}/3`) >= 0 ? `${base[1]}/3` : base[1];
+    assert.deepEqual(varyProgression(q, 1).bars.map((b) => b.chord), want, q.id);
+    // 1小節目・3小節目・4小節目は触らない。
+    for (const i of [0, 2, 3]) assert.equal(varyProgression(q, 1).bars[i].chord, base[i]);
+  }
+  // 語彙に無い転回形は諦めて原形を残す（語彙の外の記号で規則そのものを確かめる）。
+  const alien = { id: 'alien', mode: 'major', bars: [{ chord: 'I' }, { chord: 'bVII' }, { chord: 'IV' }, { chord: 'V' }] };
+  assert.equal(chordIndex('major', 'bVII/3') >= 0, false, 'bVII/3 が語彙に入ったので別の記号で試すこと');
+  assert.deepEqual(varyProgression(alien, 1).bars.map((b) => b.chord), ['I', 'bVII', 'IV', 'V']);
 });
 
 test('varyProgression: level 2 は iv → I（VI → i）のアーメン終止で閉じる', () => {
@@ -779,6 +822,109 @@ test('pad / bass / accomp が全小節ぶん鳴る', () => {
       assert.ok(Math.min(...inBar.map((n) => n.midi)) <= Math.min(...song.pad[bar].midis));
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// 声部進行（下降ベース）
+//
+// theory.js の chordVoicing / bassMidi は和音を1つずつオクターブ正規化するので、
+// 単体では正しくても、並べると下降ベースが最初の1歩で7度跳ね上がる。
+// 下降ベースはバラードの背骨なので、ここが跳ねると進行そのものが聴こえない。
+// ---------------------------------------------------------------------------
+
+test('nearestOctave: 直前の音にいちばん近いオクターブを、範囲の中から選ぶ', () => {
+  // 47 は 35 のほうが 36 に近い（|35-36|=1 < |47-36|=11）。
+  assert.equal(nearestOctave(47, 36, [28, 55]), 35);
+  // 同点なら低いほうを採る（30 と 42 はどちらも 36 から6半音）。
+  assert.equal(nearestOctave(42, 36, [28, 55]), 30);
+  assert.equal(nearestOctave(48, 42, [28, 55]), 36);
+  // 同点でなければ純粋に近いほう。
+  assert.equal(nearestOctave(42, 48, [28, 55]), 42);
+  assert.equal(nearestOctave(48, 38, [28, 55]), 36);
+  assert.equal(nearestOctave(48, 50, [28, 55]), 48);
+  assert.equal(nearestOctave(36, 50, [28, 55]), 48);
+  // 範囲の外へは出さない（下がり続けて張り付かないよう止める）。
+  for (const prev of [28, 30, 55]) {
+    for (const midi of [36, 40, 47]) {
+      const v = nearestOctave(midi, prev, [28, 55]);
+      assert.ok(v >= 28 && v <= 55, `範囲外: ${v}`);
+      assert.equal(((v - midi) % 12 + 12) % 12, 0, 'オクターブ以外の移動をした');
+    }
+  }
+  // 曲の1小節目（prev が無い）は正規化された値をそのまま使う。
+  assert.equal(nearestOctave(36, null, [28, 55]), 36);
+  assert.equal(nearestOctave(47, undefined, [28, 55]), 47);
+});
+
+// 下降ベースの進行だけを持つデータ。狙いは I - V/3 - vi - I/5 の順次下降。
+const DESC_PROG = {
+  id: 'fx-desc',
+  mode: 'major',
+  bars: [{ chord: 'I' }, { chord: 'V/3' }, { chord: 'vi' }, { chord: 'I/5' }],
+  cadence: 'open',
+  tension: [1, 2, 2, 3],
+  popularity: 5,
+};
+
+test('I - V/3 - vi - I/5 のベースが4小節にわたって単調非増加', () => {
+  for (const sym of ['I', 'V/3', 'vi', 'I/5']) {
+    assert.ok(chordIndex('major', sym) >= 0, `語彙に無い: ${sym}`);
+  }
+  const data = { melodies: DATA.melodies, progressions: [DESC_PROG] };
+  for (const seed of SEEDS) {
+    const song = composeSong(seed, data, S({ songBars: '16', majorRatio: 100 }));
+    // A（level 0）は進行そのまま。ここが下降ベースの本体。
+    const line = song.bass.slice(0, 4).map((n) => n.midi);
+    for (let i = 1; i < line.length; i++) {
+      assert.ok(line[i] <= line[i - 1], `${seed}: ベースが上がった ${line.join(' → ')}`);
+    }
+    // 半音・全音でじわじわ下がること（オクターブ跳躍で「下降」に見せかけていない）。
+    for (let i = 1; i < line.length; i++) {
+      assert.ok(line[i - 1] - line[i] <= 4, `${seed}: 下降の1歩が大きすぎる ${line.join(' → ')}`);
+    }
+    for (const m of allMidis(song)) assert.ok(m >= 21 && m <= 108, `音域外: ${m}`);
+  }
+});
+
+// 修正前（各和音を独立に正規化したときの並び）を、テスト側で独立に再現する。
+function rawBassLine(song, chordsOf) {
+  const out = [];
+  song.sections.forEach((sec, si) => {
+    for (const chord of chordsOf(song, si)) out.push(bassMidi(chord, song.mode, song.tonicMidi, 36));
+  });
+  return out;
+}
+
+function meanStep(line) {
+  let sum = 0;
+  for (let i = 1; i < line.length; i++) sum += Math.abs(line[i] - line[i - 1]);
+  return sum / (line.length - 1);
+}
+
+test('隣り合う小節のベースと伴奏が跳ね回らない（合成フィクスチャ）', () => {
+  let after = 0;
+  let before = 0;
+  let accomp = 0;
+  let songs = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars }));
+      songs++;
+      after += meanStep(song.bass.map((n) => n.midi));
+      before += meanStep(rawBassLine(song, barChordsOf));
+      const lows = [];
+      for (let bar = 0; bar < song.bars; bar++) {
+        const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
+        lows.push(Math.min(...inBar.map((n) => n.midi)));
+      }
+      accomp += meanStep(lows);
+    }
+  }
+  const show = `修正後 ${(after / songs).toFixed(2)} / 修正前 ${(before / songs).toFixed(2)}`
+    + ` / 伴奏 ${(accomp / songs).toFixed(2)} 半音`;
+  assert.ok(after / songs <= 7, `ベースが跳ね回っている: ${show}`);
+  assert.ok(accomp / songs <= 7, `伴奏が跳ね回っている: ${show}`);
+  assert.ok(after / songs < before / songs, `正規化したままと変わらない: ${show}`);
 });
 
 test('すべての音がピアノの音域（21〜108）に収まる', () => {
@@ -1379,6 +1525,385 @@ test('伴奏は1小節8音の8分音符で、単純な繰り返しになって�
 });
 
 // ---------------------------------------------------------------------------
+// 楽節計画（フレーズの長さの非対称）
+//
+// 断片が2小節なので、素直に組むと全フレーズが2小節ちょうどに切り揃う。
+// 名バラード（Yesterday の7小節フレーズなど）はそうなっていない。
+// 計画は「どこで息継ぎするか」だけを決め、楽節の役割と導出には手を出さない。
+// ---------------------------------------------------------------------------
+
+const PLAN_RNG_SEED = 'plan-rng';
+
+test('phrasePlan: 計画の合計は必ずスロット数と一致する', () => {
+  for (const slots of [2, 4, 8]) {
+    const rng = makeRng(seedFromString(`${PLAN_RNG_SEED}-${slots}`));
+    for (let i = 0; i < 500; i++) {
+      const plan = phrasePlan(rng, slots);
+      assert.ok(plan.length > 0, `空の計画: slots=${slots}`);
+      assert.equal(plan.reduce((a, b) => a + b, 0), slots, `合計が違う: ${JSON.stringify(plan)}`);
+      for (const g of plan) assert.ok(g === 1 || g === 2, `グループが1でも2でもない: ${g}`);
+    }
+  }
+});
+
+test('phrasePlan: 4スロットの抽選が表の重みどおりに散る', () => {
+  const rng = makeRng(seedFromString('plan-dist'));
+  const count = new Map();
+  const N = 12000;
+  for (let i = 0; i < N; i++) {
+    const key = JSON.stringify(phrasePlan(rng, 4));
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+  // 表: [1,1,1,1]=2 / [2,1,1]=3 / [1,1,2]=3 / [2,2]=2 / [1,2,1]=2（合計12）
+  const want = {
+    '[1,1,1,1]': 2 / 12, '[2,1,1]': 3 / 12, '[1,1,2]': 3 / 12, '[2,2]': 2 / 12, '[1,2,1]': 2 / 12,
+  };
+  assert.deepEqual([...count.keys()].sort(), Object.keys(want).sort(), '表に無い計画が出た');
+  for (const [key, share] of Object.entries(want)) {
+    const got = (count.get(key) ?? 0) / N;
+    assert.ok(Math.abs(got - share) < 0.02,
+      `${key} の割合が重みと違う: ${(100 * got).toFixed(1)}% (期待 ${(100 * share).toFixed(1)}%)`);
+  }
+  // 「4小節フレーズを含む計画」が多数派であること（＝2小節で切り揃わない）。
+  const even = (count.get('[1,1,1,1]') ?? 0) / N;
+  assert.ok(1 - even >= 0.75, `4小節フレーズを含む計画が少ない: ${(100 * (1 - even)).toFixed(1)}%`);
+});
+
+test('phrasePlan: 8スロットは4スロットの計画を2つ連結する', () => {
+  const rng = makeRng(seedFromString('plan-8'));
+  const allowed = new Set(['[1,1,1,1]', '[2,1,1]', '[1,1,2]', '[2,2]', '[1,2,1]']);
+  for (let i = 0; i < 400; i++) {
+    const plan = phrasePlan(rng, 8);
+    // 前半4スロットぶんで必ず切れる（連結なので境目はフレーズ末になる）。
+    let acc = 0;
+    let cut = -1;
+    for (let j = 0; j < plan.length; j++) {
+      acc += plan[j];
+      if (acc === 4) { cut = j; break; }
+    }
+    assert.ok(cut >= 0, `4スロット目で切れていない: ${JSON.stringify(plan)}`);
+    assert.ok(allowed.has(JSON.stringify(plan.slice(0, cut + 1))), `前半が表に無い: ${JSON.stringify(plan)}`);
+    assert.ok(allowed.has(JSON.stringify(plan.slice(cut + 1))), `後半が表に無い: ${JSON.stringify(plan)}`);
+  }
+});
+
+test('phraseEndFlags: グループの最後のスロットだけがフレーズ末', () => {
+  const cases = [
+    [[1, 1, 1, 1], 4, [true, true, true, true]],
+    [[2, 1, 1], 4, [false, true, true, true]],
+    [[1, 1, 2], 4, [true, true, false, true]],
+    [[2, 2], 4, [false, true, false, true]],
+    [[1, 2, 1], 4, [true, false, true, true]],
+    [[1, 1], 2, [true, true]],
+    [[2], 2, [false, true]],
+    [[2, 1, 1, 1, 1, 2], 8, [false, true, true, true, true, true, false, true]],
+  ];
+  for (const [plan, slots, want] of cases) {
+    assert.deepEqual(phraseEndFlags(plan, slots), want, JSON.stringify(plan));
+  }
+  // セクションの最後は、計画が壊れていても必ずフレーズ末にする。
+  assert.deepEqual(phraseEndFlags([1], 4), [true, false, false, true]);
+  assert.deepEqual(phraseEndFlags([], 2), [false, true]);
+});
+
+// ---------------------------------------------------------------------------
+// 息の流れ（フレーズ末は閉じ、フレーズ途中は閉じない）
+// ---------------------------------------------------------------------------
+
+// 終止感だけが違う2つの断片を作る。音符も fit も完全に同一で、
+// 違うのは long-ending タグの有無だけ。だから選ばれ方に差が出たら、
+// それは「フレーズ末か途中か」以外では説明がつかない。
+function flowPair(base) {
+  const closing = { ...base, id: `close-${base.id}`, tags: [...base.tags, 'long-ending'] };
+  const flowing = { ...base, id: `flow-${base.id}`, tags: [...base.tags] };
+  return [closing, flowing];
+}
+
+// タグが全断片に付いてしまっているデータ（実測: 999/999）でも息の流れが効くよう、
+// 実装は「最後の音を伸ばすかどうか」を第2段に持っている。その段を直接見る。
+function holdPair(base) {
+  const held = {
+    ...base,
+    id: `hold-${base.id}`,
+    tags: [...base.tags, 'long-ending'],
+    notes: base.notes.map((n, i) => (i === base.notes.length - 1 ? { ...n, dur: 2 } : { ...n })),
+  };
+  const quick = { ...base, id: `quick-${base.id}`, tags: [...base.tags, 'long-ending'] };
+  return [held, quick];
+}
+
+const FLOW_CTX = {
+  mode: 'major',
+  chordA: 'I',
+  chordB: 'V',
+  chordAIdx: chordIndex('major', 'I'),
+  chordBIdx: chordIndex('major', 'V'),
+  prevEndDeg: null,
+  tension: 3,
+  maxPeak: 15,
+  minPeak: 1,
+  maxLeap: 6,
+  preferSus: false,
+  preferPenta: false,
+  soloPeak: false,
+};
+
+test('selectFragment: フレーズ末は閉じる断片、フレーズ途中は閉じない断片を選ぶ', () => {
+  const base = DATA.melodies.filter((m) => passesFilters(m, FLOW_CTX, 1)).slice(0, 12);
+  assert.ok(base.length >= 6, `土台の断片が足りない: ${base.length}`);
+  const pool = base.flatMap(flowPair);
+
+  for (const [phraseEnd, want] of [[true, 'close-'], [false, 'flow-']]) {
+    const rng = makeRng(seedFromString(`flow-${phraseEnd}`));
+    for (let i = 0; i < 200; i++) {
+      const got = selectFragment(rng, pool, { ...FLOW_CTX, phraseEnd });
+      assert.ok(got.id.startsWith(want),
+        `phraseEnd=${phraseEnd} で ${got.id} が選ばれた（${want}* を期待）`);
+    }
+  }
+});
+
+test('selectFragment: 全断片が long-ending でも、伸ばす／伸ばさないで区別できる', () => {
+  const base = DATA.melodies.filter((m) => passesFilters(m, FLOW_CTX, 1)).slice(0, 12);
+  assert.ok(base.length >= 6, `土台の断片が足りない: ${base.length}`);
+  const pool = base.flatMap(holdPair);
+  assert.ok(pool.every(hasLongEnding), 'このプールは全断片が long-ending であること');
+
+  for (const [phraseEnd, want] of [[true, 'hold-'], [false, 'quick-']]) {
+    const rng = makeRng(seedFromString(`hold-${phraseEnd}`));
+    for (let i = 0; i < 200; i++) {
+      const got = selectFragment(rng, pool, { ...FLOW_CTX, phraseEnd });
+      assert.ok(got.id.startsWith(want),
+        `phraseEnd=${phraseEnd} で ${got.id} が選ばれた（${want}* を期待）`);
+    }
+  }
+});
+
+test('selectFragment: 息の流れの好みは、該当が無ければ絞らない', () => {
+  const base = DATA.melodies.filter((m) => passesFilters(m, FLOW_CTX, 1)).slice(0, 12);
+  const closingOnly = base.flatMap(flowPair).filter((m) => m.id.startsWith('close-'));
+  const flowingOnly = base.flatMap(flowPair).filter((m) => m.id.startsWith('flow-'));
+
+  // 閉じる断片しか無いプールでも、フレーズ途中のスロットは必ず何かを返す。
+  const rngA = makeRng(seedFromString('flow-empty-a'));
+  for (let i = 0; i < 50; i++) {
+    const got = selectFragment(rngA, closingOnly, { ...FLOW_CTX, phraseEnd: false });
+    assert.notEqual(got.id, 'fallback', 'フレーズ途中の絞り込みで候補が全滅した');
+  }
+  // 逆も同じ。
+  const rngB = makeRng(seedFromString('flow-empty-b'));
+  for (let i = 0; i < 50; i++) {
+    const got = selectFragment(rngB, flowingOnly, { ...FLOW_CTX, phraseEnd: true });
+    assert.notEqual(got.id, 'fallback', 'フレーズ末の絞り込みで候補が全滅した');
+  }
+});
+
+test('selectFragment: フレーズ途中はトニックで着地しない断片を優先する', () => {
+  // 終わりの度数だけが違う断片を並べ、途中のスロットが非トニックを採ることを見る。
+  const pool = DATA.melodies.filter((m) => passesFilters(m, FLOW_CTX, 1));
+  const tonics = pool.filter((m) => scaleDeg(m.endDeg) === 1);
+  const others = pool.filter((m) => scaleDeg(m.endDeg) !== 1);
+  assert.ok(tonics.length > 0 && others.length > 0, `終止音の散り方が足りない: ${tonics.length}/${others.length}`);
+  const rng = makeRng(seedFromString('flow-tonic'));
+  for (let i = 0; i < 200; i++) {
+    // endDegrees を渡さない＝役割の終止の好みが無い状態で、途中の好みだけを見る。
+    const got = selectFragment(rng, pool, { ...FLOW_CTX, phraseEnd: false });
+    assert.notEqual(scaleDeg(got.endDeg), 1, `${got.id} がトニックで閉じた`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// クライマックスの舞い上がり
+// ---------------------------------------------------------------------------
+
+test('soarsToPeak: 跳び上がって届き、直後が順次下降の形だけを真とする', () => {
+  const frag = (degs) => ({
+    id: 'x',
+    notes: degs.map((deg, i) => ({ deg, beat: i, dur: 1, vel: 0.6 })),
+    peakDeg: Math.max(...degs),
+    peakBeat: degs.indexOf(Math.max(...degs)),
+  });
+  // 跳び上がって（+5）順次下降（-1）
+  assert.equal(soarsToPeak(frag([5, 6, 11, 10, 8])), true);
+  // ちょうど4度の跳躍でも真
+  assert.equal(soarsToPeak(frag([5, 7, 11, 9, 8])), true);
+  // 跳躍が3度しかない
+  assert.equal(soarsToPeak(frag([5, 8, 11, 10, 8])), false);
+  // 順次で登ってきた
+  assert.equal(soarsToPeak(frag([8, 9, 10, 9, 8])), false);
+  // 跳び上がったが、直後も跳んで降りる（3度）
+  assert.equal(soarsToPeak(frag([5, 6, 11, 8, 7])), false);
+  // 跳び上がったが、直後が上行
+  assert.equal(soarsToPeak(frag([5, 6, 11, 11, 8])), false);
+  // 頂点が先頭・末尾なら「到達」も「降り」も無い
+  assert.equal(soarsToPeak(frag([11, 6, 5, 4, 3])), false);
+  assert.equal(soarsToPeak(frag([3, 4, 5, 6, 11])), false);
+  // 壊れた入力
+  assert.equal(soarsToPeak(null), false);
+  assert.equal(soarsToPeak({ notes: [] }), false);
+  assert.equal(soarsToPeak({ notes: [{ deg: 5, beat: 0, dur: 1 }] }), false);
+});
+
+test('selectFragment: クライマックスは舞い上がる断片を優先し、無ければ従来どおり', () => {
+  const climaxCtx = { ...FLOW_CTX, tension: 5, minPeak: 12, soloPeak: true, preferSoar: true };
+  const fitting = DATA.melodies.filter((m) => passesFilters(m, climaxCtx, 1));
+  assert.ok(fitting.length >= 5, `頂点の候補が少ない: ${fitting.length}`);
+
+  // 舞い上がる形へ作り替えた双子を混ぜる。頂点の直前を低くして跳躍を作り、
+  // 頂点の直後を1度下へ置いて順次下降にする（fit は作り直す）。
+  const soaring = [];
+  for (const m of fitting) {
+    const notes = m.notes.map((n) => ({ ...n }));
+    const i = notes.findIndex((n) => n.deg === m.peakDeg);
+    if (i <= 0 || i >= notes.length - 1) continue;
+    notes[i - 1] = { ...notes[i - 1], deg: m.peakDeg - 5 };
+    notes[i + 1] = { ...notes[i + 1], deg: m.peakDeg - 1 };
+    const { fit, sus } = computeFitSus(notes);
+    const twin = { ...m, id: `soar-${m.id}`, notes, fit, sus };
+    if (soarsToPeak(twin) && passesFilters(twin, climaxCtx, 1)) soaring.push(twin);
+  }
+  assert.ok(soaring.length >= 3, `舞い上がる双子が作れない: ${soaring.length}`);
+
+  // 舞い上がらない断片のほうが圧倒的多数でも、頂点は必ず舞い上がるほうを引く。
+  const pool = [...fitting, ...fitting, ...soaring];
+  const rng = makeRng(seedFromString('soar-pick'));
+  for (let i = 0; i < 200; i++) {
+    const got = selectFragment(rng, pool, climaxCtx);
+    assert.ok(soarsToPeak(got), `舞い上がらない断片が頂点に選ばれた: ${got.id}`);
+  }
+
+  // 舞い上がる断片が1つも無ければ、絞らずに従来どおり選ぶ。
+  const rng2 = makeRng(seedFromString('soar-none'));
+  for (let i = 0; i < 100; i++) {
+    const got = selectFragment(rng2, fitting, climaxCtx);
+    assert.notEqual(got.id, 'fallback', '舞い上がりの絞り込みで候補が全滅した');
+    assert.ok(got.peakDeg >= 12 && got.peakCount === 1);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 楽節計画が曲に効いているか（合成フィクスチャ）
+// ---------------------------------------------------------------------------
+
+test('曲は楽節計画を持ち、スロットのフレーズ末フラグと一致する', () => {
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars }));
+      const slots = slotsPerSection(song);
+      for (const sec of song.sections) {
+        assert.ok(Array.isArray(sec.phrasePlan), `${seed}/${bars} ${sec.name}: 計画が無い`);
+        assert.equal(sec.phrasePlan.reduce((a, b) => a + b, 0), slots,
+          `${seed}/${bars} ${sec.name}: 計画の合計がスロット数と違う`);
+        const want = phraseEndFlags(sec.phrasePlan, slots);
+        assert.deepEqual(sec.slots.map((sl) => sl.phraseEnd), want,
+          `${seed}/${bars} ${sec.name}: フレーズ末フラグが計画と食い違う`);
+        assert.equal(sec.slots[slots - 1].phraseEnd, true,
+          `${seed}/${bars} ${sec.name}: セクション末がフレーズ末でない`);
+      }
+      // 役割（a - a' - b - a''）は計画に関係なく従来どおり。
+      const roles = phraseRoles(slots).map((r) => r.name);
+      for (const sec of song.sections) {
+        assert.deepEqual(sec.slots.map((sl) => sl.role), roles, `${seed}/${bars}: 役割が壊れた`);
+      }
+    }
+  }
+});
+
+test('曲じゅうのフレーズが2小節ちょうどには揃わない', () => {
+  let sections = 0;
+  let asymmetric = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      for (const sec of composeSong(seed, DATA, S({ songBars: bars })).sections) {
+        sections++;
+        if (sec.phrasePlan.some((g) => g >= 2)) asymmetric++;
+      }
+    }
+  }
+  assert.ok(sections >= 100, `検査したセクションが少ない: ${sections}`);
+  const rate = asymmetric / sections;
+  assert.ok(rate >= 0.5,
+    `4小節フレーズを含むセクションが少なすぎる: ${(100 * rate).toFixed(1)}% (${asymmetric}/${sections})`);
+  assert.ok(rate <= 0.95, `2小節ぞろいのセクションが消えた: ${(100 * rate).toFixed(1)}%`);
+});
+
+test('フレーズ途中とフレーズ末で、選ばれる断片の終わり方が20ポイント以上違う', () => {
+  // 終止感だけが違う双子でプールを作る（音符と fit は同一）。
+  // 選ばれ方に差が出るなら、それは楽節計画が効いている証拠にしかならない。
+  const pool = DATA.melodies.flatMap(flowPair);
+  const byIdFlow = new Map(pool.map((m) => [m.id, m]));
+  const data = { melodies: pool, progressions: FIX_PROGRESSIONS };
+  const stat = { mid: { n: 0, open: 0 }, end: { n: 0, open: 0 } };
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, data, S({ songBars: bars }));
+      for (const sec of song.sections) {
+        for (const slot of sec.slots) {
+          // 選び直したスロットだけを見る（再登場・移調は選択をやり直していない）。
+          if (slot.source !== 'select') continue;
+          const frag = byIdFlow.get(slot.fragmentId);
+          if (!frag) continue;
+          const b = stat[slot.phraseEnd ? 'end' : 'mid'];
+          b.n++;
+          if (!hasLongEnding(frag)) b.open++;
+        }
+      }
+    }
+  }
+  assert.ok(stat.mid.n >= 50 && stat.end.n >= 50, `標本が少ない: ${stat.mid.n}/${stat.end.n}`);
+  const mid = stat.mid.open / stat.mid.n;
+  const end = stat.end.open / stat.end.n;
+  const show = `途中 ${(100 * mid).toFixed(1)}% (${stat.mid.open}/${stat.mid.n})`
+    + ` / 末 ${(100 * end).toFixed(1)}% (${stat.end.open}/${stat.end.n})`;
+  assert.ok(mid - end >= 0.2, `long-ending を持たない断片の差が20ポイント未満: ${show}`);
+});
+
+// ---------------------------------------------------------------------------
+// 息継ぎ（メロディーだけが1小節休む）
+// ---------------------------------------------------------------------------
+
+test('息継ぎは1曲に最大1回、A か A\' のフレーズ末スロットの2小節目に置かれる', () => {
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars }));
+      const slots = slotsPerSection(song);
+      const cs = climaxSlot(slots);
+      const marked = [];
+      song.sections.forEach((sec, si) => {
+        sec.slots.forEach((slot, k) => { if (slot.breath) marked.push({ si, k, sec }); });
+      });
+      assert.ok(marked.length <= 1, `${seed}/${bars}: 息継ぎが${marked.length}回`);
+      if (song.breathBar === null) {
+        assert.equal(marked.length, 0, `${seed}/${bars}: breathBar が無いのに印がある`);
+        continue;
+      }
+      assert.equal(marked.length, 1, `${seed}/${bars}: breathBar があるのに印が無い`);
+      const { si, k, sec } = marked[0];
+      assert.ok(si === 0 || si === 1, `${seed}/${bars}: 息継ぎが ${SECTION_NAMES[si]} にある`);
+      assert.equal(sec.slots[k].phraseEnd, true, `${seed}/${bars}: フレーズ途中で息継ぎした`);
+      // スロットの2小節目であること。
+      assert.equal(song.breathBar, sec.startBar + 2 * k + 1, `${seed}/${bars}: 息継ぎの小節がずれている`);
+      // 曲の最初と最後のスロットではない。
+      const g = si * slots + k;
+      assert.ok(g > 0 && g < 4 * slots - 1, `${seed}/${bars}: 曲の端のスロットで息継ぎした`);
+      // クライマックスのスロットとその前後でもない。
+      assert.ok(Math.abs(g - (2 * slots + cs)) > 1, `${seed}/${bars}: 頂点の周りで息継ぎした`);
+      // 再登場のスロットでもない（モチーフを欠けた形で帰らせない）。
+      assert.equal(sec.slots[k].reusedFrom, null, `${seed}/${bars}: 再登場のスロットを削った`);
+      // 息継ぎの小節でも伴奏・ベース・パッドは鳴り続ける。
+      const from = song.breathBar * 4;
+      assert.ok(song.accomp.some((n) => n.beat >= from && n.beat < from + 4), '伴奏が止まった');
+      assert.ok(song.bass.some((n) => n.beat >= from && n.beat < from + 4), 'ベースが止まった');
+      assert.ok(song.pad.some((p) => p.beat >= from && p.beat < from + 4), 'パッドが止まった');
+      // 頂点と最後の音は削らない。
+      assert.ok(song.climaxBeat < from || song.climaxBeat >= from + 4, '頂点を削った');
+      const tail = song.melody.reduce((a, b) => (b.beat >= a.beat ? b : a));
+      assert.ok(tail.beat < from || tail.beat >= from + 4, '最後の音を削った');
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 実データ統合テスト
 //
 // src/data/*.json は別途生成されるので、無い環境ではスキップする。
@@ -1583,8 +2108,7 @@ test('実データ: 無音の小節が無く、音域も外れない', realOpts,
   for (const bars of ['16', '32', '64']) {
     for (const seed of REAL_SEEDS.slice(0, 60)) {
       const song = composeSong(seed, REAL, S({ songBars: bars }));
-      const filled = new Set(song.melody.map((n) => Math.floor(n.beat / 4)));
-      for (let bar = 0; bar < song.bars; bar++) assert.ok(filled.has(bar), `${seed}: ${bar}小節が無音`);
+      assertNoSilentBar(song, `${seed}/${bars}`);
       for (const midi of allMidis(song)) assert.ok(midi >= 21 && midi <= 108, `音域外: ${midi}`);
       assert.equal(JSON.stringify(song), JSON.stringify(composeSong(seed, REAL, S({ songBars: bars }))));
     }
@@ -1812,4 +2336,232 @@ test('実データ: 曲は iv → I（VI → i）で閉じ、最後の音が主�
     `最後の音が主音でない曲が多い: ${(100 * melodyTonic / songs).toFixed(1)}%`);
   assert.ok(downbeat / songs >= 0.8,
     `弱起で始まる曲が多い: ${(100 * downbeat / songs).toFixed(1)}%`);
+});
+
+// ---------------------------------------------------------------------------
+// 実データ: 楽節計画・舞い上がり・息継ぎ
+//
+// 「曲が良くなったか」は600曲（200シード×3つの長さ）の実測でしか言えない。
+// ---------------------------------------------------------------------------
+
+const endingHoldOf = (m) => (m?.notes?.length ? Number(m.notes[m.notes.length - 1].dur) || 0 : 0);
+
+test('実データ: 楽節計画がフレーズを2小節ぞろいから外す', realOpts, () => {
+  const count = new Map();
+  let sections = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const slots = slotsPerSection(song);
+      for (const sec of song.sections) {
+        sections++;
+        assert.equal(sec.phrasePlan.reduce((a, b) => a + b, 0), slots,
+          `${seed}/${bars} ${sec.name}: 計画の合計が違う`);
+        assert.deepEqual(sec.slots.map((sl) => sl.phraseEnd), phraseEndFlags(sec.phrasePlan, slots),
+          `${seed}/${bars} ${sec.name}: フレーズ末フラグが計画と食い違う`);
+        const key = JSON.stringify(sec.phrasePlan);
+        count.set(key, (count.get(key) ?? 0) + 1);
+      }
+    }
+  }
+  assert.ok(sections >= 800, `セクションが少ない: ${sections}`);
+  let even = 0;
+  for (const [key, n] of count) if (!JSON.parse(key).some((g) => g >= 2)) even += n;
+  const four = 1 - even / sections;
+  const show = `4小節フレーズを含む ${(100 * four).toFixed(1)}% / 2小節ぞろい ${(100 * even / sections).toFixed(1)}%`;
+  // 大半のセクションが2小節で切り揃わないこと。ただし従来の形も残っていること。
+  assert.ok(four >= 0.6, `フレーズが2小節ぞろいのままだ: ${show}`);
+  assert.ok(even / sections >= 0.05, `2小節ぞろいの計画が消えた: ${show}`);
+});
+
+test('実データ: フレーズ途中は次へ流れ、フレーズ末で息継ぎする', realOpts, () => {
+  // フレーズ途中のスロットは終止感の無い断片を、フレーズ末は終止感のある断片を採る。
+  // 途中が閉じずに次の小節へ流れ込むから、2小節の断片2つが4小節の1フレーズに聴こえる。
+  //
+  // 選び直したスロット（source === 'select'）だけを見る。再登場と移調のスロットは
+  // 断片を選び直していないので、絞り込みの効き目は測れない。
+  const stat = {
+    mid: { n: 0, noTag: 0, quick: 0 },
+    end: { n: 0, noTag: 0, quick: 0 },
+  };
+  const pool = { tagged: 0, n: REAL.melodies.length };
+  for (const m of REAL.melodies) if (hasLongEnding(m)) pool.tagged++;
+
+  walkSlots(REAL_SEEDS, ['16', '32', '64'], ({ slot, fragment }) => {
+    if (!fragment || slot.source !== 'select') return;
+    const b = stat[slot.phraseEnd ? 'end' : 'mid'];
+    b.n++;
+    if (!hasLongEnding(fragment)) b.noTag++;
+    if (endingHoldOf(fragment) < 2) b.quick++;
+  });
+  assert.ok(stat.mid.n >= 300 && stat.end.n >= 300, `標本が少ない: ${stat.mid.n}/${stat.end.n}`);
+
+  const rate = (b, key) => stat[b][key] / stat[b].n;
+  const show = (key) => `途中 ${(100 * rate('mid', key)).toFixed(1)}% (${stat.mid[key]}/${stat.mid.n})`
+    + ` / 末 ${(100 * rate('end', key)).toFixed(1)}% (${stat.end[key]}/${stat.end.n})`;
+
+  // 断片プールが long-ending タグで区別できるデータなら、タグそのもので差が出ること。
+  // タグが全断片に付いている（または1つも無い）データでは、タグでは何も測れないので、
+  // 実装の第2段＝「最後の音を伸ばすかどうか」で同じ差を要求する。
+  const usable = pool.tagged > 0.05 * pool.n && pool.tagged < 0.95 * pool.n;
+  if (usable) {
+    assert.ok(rate('mid', 'noTag') - rate('end', 'noTag') >= 0.2,
+      `long-ending を持たない断片の差が20ポイント未満: ${show('noTag')}`);
+  } else {
+    assert.equal(rate('mid', 'noTag'), rate('end', 'noTag'),
+      `タグが区別に使えないはずなのに差が出ている（${pool.tagged}/${pool.n}）: ${show('noTag')}`);
+  }
+  assert.ok(rate('mid', 'quick') - rate('end', 'quick') >= 0.2,
+    `終止を伸ばすかどうかの差が20ポイント未満: ${show('quick')}`);
+  // フレーズ末はしっかり閉じ、途中はしっかり流れていること（片側だけでは意味が無い）。
+  assert.ok(rate('mid', 'quick') >= 0.6, `フレーズ途中が閉じすぎ: ${show('quick')}`);
+  assert.ok(rate('end', 'quick') <= 0.4, `フレーズ末が閉じていない: ${show('quick')}`);
+});
+
+test('実データ: クライマックスは舞い上がって頂点に届く', realOpts, () => {
+  // 頂点に効くのは高さではなく到達の仕方。跳び上がって着地し、順次で降りてくる。
+  let n = 0;
+  let soar = 0;
+  let single = 0;
+  let high = 0;
+  walkSlots(REAL_SEEDS, ['16', '32', '64'], ({ si, k, slots, slot, fragment }) => {
+    if (si !== 2 || k !== climaxSlot(slots)) return;
+    assert.notEqual(slot.source, 'fallback', 'クライマックスが fallback で埋まった');
+    if (!fragment) return;
+    n++;
+    if (fragment.peakCount === 1) single++;
+    if (fragment.peakDeg >= 12) high++;
+    if (soarsToPeak(fragment)) soar++;
+  });
+  assert.ok(n >= 400, `頂点の標本が少ない: ${n}`);
+  // peakDeg >= 12 と peakCount === 1 は必須のまま（舞い上がりはその中での優先）。
+  assert.equal(single, n, `頂点に peakCount > 1 の断片が入った: ${single}/${n}`);
+  assert.equal(high, n, `頂点に peakDeg < 12 の断片が入った: ${high}/${n}`);
+  const rate = soar / n;
+  assert.ok(rate >= 0.6,
+    `舞い上がって届く頂点が少ない: ${(100 * rate).toFixed(1)}% (${soar}/${n})`);
+});
+
+test('実データ: 息継ぎが1曲に最大1回、A か A\' のフレーズ末に置かれる', realOpts, () => {
+  let songs = 0;
+  let breaths = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      songs++;
+      const slots = slotsPerSection(song);
+      const cs = climaxSlot(slots);
+      const marked = [];
+      song.sections.forEach((sec, si) => {
+        sec.slots.forEach((slot, k) => { if (slot.breath) marked.push({ si, k, sec }); });
+      });
+      assert.ok(marked.length <= 1, `${seed}/${bars}: 息継ぎが${marked.length}回`);
+      if (song.breathBar === null) continue;
+      breaths++;
+      const { si, k, sec } = marked[0];
+      assert.ok(si === 0 || si === 1, `${seed}/${bars}: 息継ぎが ${SECTION_NAMES[si]} にある`);
+      assert.equal(sec.slots[k].phraseEnd, true, `${seed}/${bars}: フレーズ途中で息継ぎした`);
+      assert.equal(song.breathBar, sec.startBar + 2 * k + 1, `${seed}/${bars}: スロットの2小節目でない`);
+      const g = si * slots + k;
+      assert.ok(g > 0 && g < 4 * slots - 1, `${seed}/${bars}: 曲の端で息継ぎした`);
+      assert.ok(Math.abs(g - (2 * slots + cs)) > 1, `${seed}/${bars}: 頂点の周りで息継ぎした`);
+      assert.equal(sec.slots[k].reusedFrom, null, `${seed}/${bars}: 再登場のスロットを削った`);
+      assertNoSilentBar(song, `${seed}/${bars}`);
+    }
+  }
+  assert.ok(songs >= 200, `曲数が足りない: ${songs}`);
+  const rate = breaths / songs;
+  assert.ok(rate >= 0.8, `息継ぎがほとんど起きていない: ${(100 * rate).toFixed(1)}% (${breaths}/${songs})`);
+});
+
+test('実データ: ベースと伴奏が隣の小節へ滑らかにつながる', realOpts, () => {
+  // 各和音を独立にオクターブ正規化すると、下降ベースが最初の1歩で7度跳ね上がる。
+  // 前の小節を見てオクターブを選び直すと、平均の移動量がはっきり小さくなる。
+  const progById = new Map(REAL.progressions.map((p) => [p.id, p]));
+  const chordsOf = (song, si) => {
+    const prog = varyProgression(progById.get(song.sections[si].progressionId), SECTION_LEVELS[si]);
+    const out = [];
+    for (let r = 0; r < song.bars / 16; r++) for (const b of prog.bars) out.push(b.chord);
+    return out;
+  };
+  let after = 0;
+  let before = 0;
+  let accomp = 0;
+  let songs = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS.slice(0, 100)) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      songs++;
+      after += meanStep(song.bass.map((n) => n.midi));
+      before += meanStep(rawBassLine(song, chordsOf));
+      const lows = [];
+      for (let bar = 0; bar < song.bars; bar++) {
+        const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
+        lows.push(Math.min(...inBar.map((n) => n.midi)));
+      }
+      accomp += meanStep(lows);
+      for (const m of allMidis(song)) assert.ok(m >= 21 && m <= 108, `${seed}: 音域外 ${m}`);
+      // 層（ベース < 伴奏 <= パッド）が入れ替わっていないこと。
+      for (let bar = 0; bar < song.bars; bar++) {
+        const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
+        const lo = Math.min(...inBar.map((n) => n.midi));
+        assert.ok(song.bass[bar].midi < lo, `${seed}/${bar}: ベースが伴奏より上`);
+        assert.ok(lo <= Math.min(...song.pad[bar].midis), `${seed}/${bar}: 伴奏がパッドより上`);
+      }
+    }
+  }
+  assert.ok(songs >= 100, `曲数が足りない: ${songs}`);
+  const show = `修正後 ${(after / songs).toFixed(2)} / 修正前 ${(before / songs).toFixed(2)}`
+    + ` / 伴奏 ${(accomp / songs).toFixed(2)} 半音`;
+  assert.ok(after / songs <= 7, `隣接小節のベースが跳ね回っている: ${show}`);
+  assert.ok(accomp / songs <= 7, `隣接小節の伴奏が跳ね回っている: ${show}`);
+  // 正規化したままより確実に小さくなること。効き目がいちばん出るのは下降ベースの
+  // 進行で、その効果は下の「下降ベースの進行で、ベースが実際に下降する」で測る。
+  assert.ok(before / songs - after / songs >= 0.3, `正規化したままと大差ない: ${show}`);
+});
+
+// 「下降ベースの進行」＝隣り合う和音の根音が、音名として1〜4半音ずつ下がる形。
+// I - V/3 - vi - I/5 なら C→B→A→G で 1, 2, 2 半音。バラードの背骨。
+function isDescendingBass(chords, mode, tonicMidi) {
+  const pcs = chords.map((c) => ((bassMidi(c, mode, tonicMidi, 36) % 12) + 12) % 12);
+  for (let i = 1; i < pcs.length; i++) {
+    const d = ((pcs[i - 1] - pcs[i]) % 12 + 12) % 12;
+    if (d < 1 || d > 4) return false;
+  }
+  return true;
+}
+
+test('実データ: 下降ベースの進行で、ベースが実際に下降する', realOpts, () => {
+  const progById = new Map(REAL.progressions.map((p) => [p.id, p]));
+  let checked = 0;
+  let descending = 0;
+  let rawDescending = 0;
+  const samples = [];
+  const nonIncreasing = (line) => line.every((v, i) => i === 0 || v <= line[i - 1]);
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      // A（セクション0）と B（セクション2）は level 0 ＝ 進行そのまま。
+      // どちらもセクション頭の4小節が進行の4小節に対応する。
+      for (const si of [0, 2]) {
+        const prog = progById.get(song.sections[si].progressionId);
+        const chords = prog.bars.map((b) => b.chord);
+        if (!isDescendingBass(chords, song.mode, song.tonicMidi)) continue;
+        checked++;
+        const from = song.sections[si].startBar;
+        const line = song.bass.slice(from, from + 4).map((n) => n.midi);
+        if (nonIncreasing(line)) descending++;
+        else if (samples.length < 5) samples.push(`${seed}/${bars} ${chords.join('-')}: ${line.join(' → ')}`);
+        // 修正前（各和音を独立に正規化した並び）は、ここで跳ね上がっていたはず。
+        if (nonIncreasing(chords.map((c) => bassMidi(c, song.mode, song.tonicMidi, 36)))) rawDescending++;
+      }
+    }
+  }
+  assert.ok(checked >= 30, `下降ベースの進行を使った曲が少ない: ${checked}`);
+  const rate = descending / checked;
+  const rawRate = rawDescending / checked;
+  const show = `修正後 ${(100 * rate).toFixed(1)}% (${descending}/${checked})`
+    + ` / 修正前 ${(100 * rawRate).toFixed(1)}%`;
+  assert.ok(rate >= 0.95, `下降しない曲が多い: ${show}\n${samples.join('\n')}`);
+  assert.ok(rate > rawRate, `正規化したままと変わらない: ${show}`);
 });

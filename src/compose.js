@@ -54,6 +54,20 @@ const PAD_LOWEST = 55;
 const BASS_VEL = 0.5;
 const BASS_LOWEST = 36;
 
+// 声部進行（ボイスリーディング）で使う音域。
+//
+// theory.js の chordVoicing / bassMidi は和音を**1つずつ**
+// [lowest, lowest+12) へ正規化する。単体の規則としては正しいが、前の和音を見ないので
+// I - V/3 - vi - I/5 のような下降ベースが C3 → B3 → A3 → G3 と、
+// 最初の1歩だけ7度跳ね上がってから降りる形になる。下降ベースはバラードの背骨なので、
+// ここが跳ねると「じわじわ沈んでいく」という進行そのものが聴こえなくなる。
+//
+// そこで小節ごとに、直前の小節にいちばん近いオクターブを選び直す。
+// 範囲は E1〜G3（ベース）と C3〜C5（伴奏）。下限に張り付かないよう範囲で止める
+// （止めたところで跳躍が出るのは許容する。無限に下がるよりよい）。
+const BASS_RANGE = [28, 55];
+const ACCOMP_RANGE = [48, 72];
+
 // 終止の形。実際のピアノ曲は、終わりで左手の刻みを止めて和音を置く。
 // 刻み続けたまま終わると、耳は「まだ続く」と判断して曲が閉じない。
 // 最終小節だけ分散をやめて和音を保持し、パッドは小節をはみ出して余韻を作る。
@@ -62,6 +76,10 @@ const FINAL_PAD_DUR = 6;
 // 曲の最後の音は、最終小節の終わりまで伸ばす（短くても3拍）。
 // 長く伸びた主音の上に主和音が鳴る、これが「終わった」という感覚を作る。
 const FINAL_NOTE_MIN_DUR = 3;
+
+// フレーズ末で「息を吸う」ための、メロディーだけの1小節の休み。
+// 伴奏・ベース・パッドは鳴り続けるので音楽は止まらない。1曲に最大1回。
+const BREATH_SECTIONS = [0, 1];
 
 // 断片が1件も適合しなかったときに鳴らす音の強さ。
 const FALLBACK_VEL = [0.55, 0.5];
@@ -131,6 +149,33 @@ export function arpeggioIndex(i, voices) {
   const period = 2 * (voices - 1);
   const t = ((i % period) + period) % period;
   return t < voices ? t : period - t;
+}
+
+/**
+ * 直前の音にいちばん近いオクターブへ寄せる（声部進行）。
+ * 候補は ±2オクターブまで。[lo, hi] に収まるものだけを見て、同点なら低いほうを採る。
+ * prev が無い（曲の1小節目）なら、正規化された値をそのまま使う。
+ *
+ * 範囲に候補が1つも無いときは、範囲の中へオクターブ単位で押し込む。
+ * 跳躍は出るが、音域を外れて鳴らせなくなるよりよい。
+ */
+export function nearestOctave(midi, prev, range) {
+  const [lo, hi] = range;
+  if (prev === null || prev === undefined) return clamp(midi, lo, hi);
+  let best = null;
+  for (let j = -2; j <= 2; j++) {
+    const c = midi + 12 * j;
+    if (c < lo || c > hi) continue;
+    if (best === null) { best = c; continue; }
+    const d = Math.abs(c - prev);
+    const bd = Math.abs(best - prev);
+    if (d < bd || (d === bd && c < best)) best = c;
+  }
+  if (best !== null) return best;
+  let c = midi;
+  while (c < lo) c += 12;
+  while (c > hi) c -= 12;
+  return clamp(c, lo, hi);
 }
 
 /**
@@ -303,6 +348,143 @@ function hasPentatonic(m, mode) {
   return Array.isArray(tags) && tags.includes(PENTATONIC_TAG[mode]);
 }
 
+// ---------------------------------------------------------------------------
+// 楽節計画（フレーズの長さ）
+//
+// 断片は2小節なので、1スロット＝1断片＝1フレーズにすると、曲じゅうのフレーズが
+// 2小節ちょうどに切り揃う。2小節ごとに律儀に息継ぎされると、聴き手には
+// 「歌」ではなく「断片の列」に聴こえる。Yesterday の7小節フレーズが象徴するように、
+// 名バラードのフレーズは非対称で、息の長さが揃っていない。
+//
+// そこでセクションごとに「どのスロットまでを1フレーズとみなすか」を抽選する。
+// 数字は1フレーズが使うスロット数（1 = 2小節、2 = 4小節）。
+//
+// 断片そのものや楽節の役割（a / a' / b / a''）は変えない。変えるのは
+// 「どこで息継ぎするか」だけ。フレーズ末では終止感のある断片を、フレーズ途中では
+// 終止感の**無い**断片を選ぶ。途中のスロットが閉じずに次の小節へ流れ込むから、
+// 2小節の断片2つが1つの4小節フレーズとして聴こえる。
+// ---------------------------------------------------------------------------
+
+const PHRASE_PLANS_4 = [
+  { groups: [1, 1, 1, 1], weight: 2 }, // 2+2+2+2（従来）
+  { groups: [2, 1, 1], weight: 3 },    // 4+2+2
+  { groups: [1, 1, 2], weight: 3 },    // 2+2+4
+  { groups: [2, 2], weight: 2 },       // 4+4
+  { groups: [1, 2, 1], weight: 2 },    // 2+4+2
+];
+const PHRASE_PLANS_2 = [
+  { groups: [1, 1], weight: 2 },       // 2+2
+  { groups: [2], weight: 3 },          // 4
+];
+
+/**
+ * セクションのスロットをフレーズにまとめる計画を抽選する。
+ * slots は 2 / 4 / 8。8 は4スロットぶんの計画を2つ連結する
+ * （2周目に別の計画が出るので、後半で息の長さが変わる）。
+ *
+ * rng の消費は計画1つにつき1回。想定外の slots でも必ずスロット数と一致する
+ * 計画を返す（合計が slots に満たない計画は絶対に返さない）。
+ */
+export function phrasePlan(rng, slots) {
+  const out = [];
+  let left = Number.isFinite(slots) ? Math.max(0, Math.floor(slots)) : 0;
+  while (left >= 4) {
+    out.push(...pickWeighted(rng, PHRASE_PLANS_4, (p) => p.weight).groups);
+    left -= 4;
+  }
+  if (left >= 2) {
+    out.push(...pickWeighted(rng, PHRASE_PLANS_2, (p) => p.weight).groups);
+    left -= 2;
+  }
+  for (let i = 0; i < left; i++) out.push(1);
+  return out;
+}
+
+/**
+ * 計画から「そのスロットがフレーズ末か」を求める。
+ * グループの最後のスロットがフレーズ末で、それ以外は途中。
+ * セクションの最後のスロットは、計画が何であれ必ずフレーズ末にする。
+ */
+export function phraseEndFlags(plan, slots) {
+  const n = Number.isFinite(slots) ? Math.max(0, Math.floor(slots)) : 0;
+  const ends = new Array(n).fill(false);
+  let k = 0;
+  for (const g of Array.isArray(plan) ? plan : []) {
+    k += g;
+    if (k >= 1 && k <= n) ends[k - 1] = true;
+  }
+  if (n > 0) ends[n - 1] = true;
+  return ends;
+}
+
+// 「息継ぎのある終わり方」の判定。
+//
+// long-ending タグは analyze.js が「最後の音が1.5拍以上」で付ける。データの作り方に
+// よってはプールの全断片が持ってしまい（実測: 999/999）、タグだけでは
+// フレーズ末と途中の区別がつかない。そこでタグを第1段、最後の音の長さそのものを
+// 第2段に置き、タグが効くデータでも効かないデータでも区別がつくようにする。
+const LONG_ENDING_TAG = 'long-ending';
+const BREATH_HOLD = 2;
+
+function endingHold(m) {
+  const notes = m?.notes;
+  if (!Array.isArray(notes) || notes.length === 0) return 0;
+  return Number(notes[notes.length - 1].dur) || 0;
+}
+
+export function hasLongEnding(m) {
+  const tags = m?.tags;
+  return Array.isArray(tags) && tags.includes(LONG_ENDING_TAG);
+}
+
+// フレーズ末が欲しい断片：まず「タグ付き＋長く伸ばす」、次に「タグ付き」。
+const CLOSING_TIERS = [
+  (m) => hasLongEnding(m) && endingHold(m) >= BREATH_HOLD,
+  (m) => hasLongEnding(m),
+];
+// フレーズ途中が欲しい断片：まず「タグ無し」、次に「伸ばさない」。
+const FLOWING_TIERS = [
+  (m) => !hasLongEnding(m),
+  (m) => endingHold(m) < BREATH_HOLD,
+];
+
+// 楽節の a（アンカー）のスロットだけは、候補がこれを下回るなら息の流れで絞らない。
+//
+// a はそのまま a' と a'' へ移調されて、楽節3スロットぶんを支配する。ここで候補を
+// 痩せさせると、移調先の和音に乗る平行移動量が見つからなくなって楽節そのものが崩れる。
+// 実測（200シード×3つの長さ＝600曲、シードを別ブロックに変えても同じ傾向）:
+//   息の流れを掛けない          94.1%
+//   下限なしで無条件に掛ける    93.9%
+//   下限12                     94.6%   ← 掛けないときより上
+// それでいてフレーズ末との差は79ポイント残る（要求は20ポイント）。
+// 下限を 4/8/16/24/32 と振っても 12 がいちばん高く、かつ2つのシード集合で一致した。
+const ANCHOR_MIN_CANDIDATES = 12;
+
+// ---------------------------------------------------------------------------
+// クライマックスの「舞い上がり」
+//
+// Hey Jude の "better"、Can't Help Falling in Love の上昇。頂点に効くのは
+// 高さそのものではなく、**そこへどう到達したか**。大きく跳び上がって着地し、
+// そこから順次進行で降りてくる形が、いちばん息を呑ませる。
+// じわじわ上がって着いた同じ高さの音は、同じ効果を持たない。
+// ---------------------------------------------------------------------------
+const SOAR_LEAP = 4;  // 頂点へ跳び上がる度数差（4度以上）
+const SOAR_STEP = 2;  // 頂点の直後の順次下降（1〜2度）
+
+export function soarsToPeak(fragment) {
+  const notes = fragment?.notes;
+  if (!Array.isArray(notes) || notes.length < 3) return false;
+  const peak = Number.isFinite(fragment.peakDeg)
+    ? fragment.peakDeg
+    : Math.max(...notes.map((n) => n.deg));
+  let i = notes.findIndex((n) => n.deg === peak && n.beat === fragment.peakBeat);
+  if (i < 0) i = notes.findIndex((n) => n.deg === peak);
+  if (i <= 0 || i >= notes.length - 1) return false;
+  const rise = notes[i].deg - notes[i - 1].deg;
+  const fall = notes[i].deg - notes[i + 1].deg;
+  return rise >= SOAR_LEAP && fall >= 1 && fall <= SOAR_STEP;
+}
+
 /**
  * ctx が要求するフィルタを通った候補。厳しいレベルから試し、
  * 候補が見つかった時点で打ち切る（妥協は最小限に留める）。
@@ -321,13 +503,18 @@ export function fragmentCandidates(melodies, ctx) {
  * データにタグが無い環境でも安全に動くのが条件。
  *
  *   1. 対比      — 楽節の b は a と違う輪郭にする
- *   2. 終止      — 楽節のどこにいるかで「終わり方」を変える（下記 CADENCE_BY_ROLE）
- *   3. ペンタトニック — 大衆的で口ずさめる旋律の最大の要因
- *   4. 掛留      — 頂点の直前と陰りのコードの上。泣けるかどうかはここで決まる
+ *   2. 舞い上がり — クライマックスは「跳び上がって着地し、順次で降りる」形に限る
+ *   3. 終止      — 楽節のどこにいるかで「終わり方」を変える（下記 CADENCE_BY_ROLE）
+ *   4. 息の流れ   — フレーズ末は閉じ、フレーズ途中は閉じない（楽節計画）
+ *   5. ペンタトニック — 大衆的で口ずさめる旋律の最大の要因
+ *   6. 掛留      — 頂点の直前と陰りのコードの上。泣けるかどうかはここで決まる
  *
  * 終止をペンタトニック・掛留より先に掛けるのは、いちばん広い候補の中から
  * 選ばせるため。あとに回すと、絞り込まれた小さな集合の中に目当ての終止音が
  * 残っておらず「該当なし」で素通りしてしまう。
+ *
+ * 舞い上がりを終止より先に掛けるのは、クライマックスの1スロットだけの話だから。
+ * そこで最優先なのは「どう頂点へ届いたか」で、終止音の好みはその次でいい。
  */
 function narrowCandidates(candidates, ctx) {
   let out = candidates;
@@ -341,11 +528,34 @@ function narrowCandidates(candidates, ctx) {
     const onBeat = out.filter((m) => (m.notes?.[0]?.beat ?? 0) === 0);
     if (onBeat.length > 0) out = onBeat;
   }
+  // 頂点へは跳び上がって届き、そこから順次で降りる。
+  if (ctx.preferSoar) {
+    const soaring = out.filter(soarsToPeak);
+    if (soaring.length > 0) out = soaring;
+  }
   if (Array.isArray(ctx.endDegrees)) {
     for (const tier of ctx.endDegrees) {
       const closed = out.filter((m) => tier.includes(scaleDegreeOf(m.endDeg)));
       if (closed.length > 0) { out = closed; break; }
     }
+  }
+  // 楽節計画の要。フレーズ末は閉じ、フレーズ途中は閉じずに次の小節へ流し込む。
+  // 「該当が無ければ絞らない」に加えて、楽節の a では「痩せすぎるなら絞らない」。
+  const keep = ctx.isAnchor ? ANCHOR_MIN_CANDIDATES : 1;
+  const enough = (n) => n > 0 && n >= keep;
+  if (ctx.phraseEnd === true) {
+    for (const tier of CLOSING_TIERS) {
+      const closing = out.filter(tier);
+      if (enough(closing.length)) { out = closing; break; }
+    }
+  } else if (ctx.phraseEnd === false) {
+    for (const tier of FLOWING_TIERS) {
+      const flowing = out.filter(tier);
+      if (enough(flowing.length)) { out = flowing; break; }
+    }
+    // 途中でトニックに着地すると、そこで一度曲が閉じてしまう。
+    const open = out.filter((m) => scaleDegreeOf(m.endDeg) !== 1);
+    if (enough(open.length)) out = open;
   }
   // 陰りのコードの上では、掛留がその瞬間の主役。ペンタトニックより先に掛ける。
   // あとに回すと、ペンタトニックで絞ったあとの小さな集合に掛留が残っておらず、
@@ -822,7 +1032,10 @@ export function composeSong(seed, data, settings) {
   const bass = [];
   const pad = [];
   const motif = [];        // A で選ばれた断片（再登場のコピー元）
+  const breathSlots = [];  // 息継ぎを置ける「A / A' のフレーズ末スロット」
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
+  let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
+  let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -832,6 +1045,10 @@ export function composeSong(seed, data, settings) {
     // 4小節の進行を repeats 回まわしてセクションの長さにする。
     const barChords = [];
     for (let r = 0; r < repeats; r++) for (const b of prog.bars) barChords.push(b.chord);
+
+    // このセクションのフレーズの区切り方。ここで rng を1〜2回消費する。
+    const phrasing = phrasePlan(rng, slotCount);
+    const isPhraseEnd = phraseEndFlags(phrasing, slotCount);
 
     const slotRecords = [];
     const slotFragments = [];   // このセクションで実際に使った断片（導出のコピー元）
@@ -867,9 +1084,16 @@ export function composeSong(seed, data, settings) {
         preferSus: (s === 2 && k === cs - 1) || (dark && !isClimax),
         susOverPenta: dark && !isClimax,
         soloPeak: isClimax && strength > 0,
+        // 頂点へは「跳び上がって届き、順次で降りる」。peakDeg >= 12 と peakCount === 1 は
+        // 必須のまま、その中でこの形を持つ断片を優先する（無ければ従来どおり）。
+        preferSoar: isClimax,
         // 頂点は「そこで初めて届いた音」が最優先。ペンタトニックに寄せると
         // かえって頂点が埋もれるので、ここだけは絞らない。
         preferPenta: !isClimax,
+        // 楽節計画。フレーズ末なら閉じ、途中なら閉じずに次の小節へ流し込む。
+        phraseEnd: isPhraseEnd[k],
+        // 楽節の a（この断片が a' / a'' へ移調される）かどうか。
+        isAnchor: role.anchor === null,
         // b は a と違う輪郭にして対比を作る。
         avoidContour: role.name === 'b' && anchor ? anchor.contour : null,
         // 楽節のどこにいるかで終わり方を変える（問いかけ／答え／締め）。
@@ -965,22 +1189,54 @@ export function composeSong(seed, data, settings) {
         derivedFrom,
         offset,
         source,
+        phraseEnd: isPhraseEnd[k],
+        breath: false,
       });
       prevEndDeg = fragment.endDeg;
+
+      // 息継ぎを置ける場所を控えておく。実際に置くのは全セクションを組んだあと。
+      //  - A / A' のフレーズ末スロット（＝もともと息が切れる場所）
+      //  - 曲の最初と最後のスロットは避ける（出だしと終止は削らない）
+      //  - クライマックスのスロットとその前後は避ける（頂点の周りは削らない）
+      //  - 再登場のスロットは避ける（モチーフを欠けた形で帰らせない）
+      const globalSlot = s * slotCount + k;
+      const climaxGlobal = 2 * slotCount + cs;
+      if (BREATH_SECTIONS.includes(s) && isPhraseEnd[k]
+        && globalSlot > 0 && globalSlot < 4 * slotCount - 1
+        && Math.abs(globalSlot - climaxGlobal) > 1
+        && source !== 'recall') {
+        breathSlots.push({ sectionIdx: s, slotIdx: k, bar: startBar + 2 * k + 1 });
+      }
     }
 
     for (let b = 0; b < barChords.length; b++) {
       const chord = barChords[b];
       const beat = (startBar + b) * 4;
       const isFinalBar = startBar + b === bars - 1;
+      // ベースは直前の小節にいちばん近いオクターブへ。
+      // これで I - V/3 - vi - I/5 が7度跳ね上がらずに素直に下降する。
+      const bassRaw = bassMidi(chord, mode, tonicMidi, BASS_LOWEST);
+      const bassNote = nearestOctave(bassRaw, prevBass, BASS_RANGE);
+      prevBass = bassNote;
+      bass.push({ midi: bassNote, beat, dur: 4, vel: BASS_VEL });
+
+      // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
+      // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
+      const raw = chordVoicing(chord, mode, tonicMidi, ACCOMP_LOWEST);
+      const low = nearestOctave(raw[0], prevAccomp,
+        [Math.max(ACCOMP_RANGE[0], bassNote + 1), ACCOMP_RANGE[1]]);
+      prevAccomp = low;
+      const shift = low - raw[0];
+      const voicing = shift === 0 ? raw : raw.map((v) => v + shift);
+      // パッドは伴奏と同じ和音なので、同じぶんだけ一緒に動かす。
+      // 伴奏だけを持ち上げるとパッドを追い越して層が崩れる。
+      const padVoicing = chordVoicing(chord, mode, tonicMidi, PAD_LOWEST);
       pad.push({
-        midis: chordVoicing(chord, mode, tonicMidi, PAD_LOWEST),
+        midis: shift === 0 ? padVoicing : padVoicing.map((v) => v + shift),
         beat,
         dur: isFinalBar ? FINAL_PAD_DUR : 4,
         vel: PAD_VEL,
       });
-      bass.push({ midi: bassMidi(chord, mode, tonicMidi, BASS_LOWEST), beat, dur: 4, vel: BASS_VEL });
-      const voicing = chordVoicing(chord, mode, tonicMidi, ACCOMP_LOWEST);
       if (isFinalBar) {
         // 刻みをやめて和音を置く。midi は単音しか読まない再生系のための代表音で、
         // 実際に鳴らしたい全構成音は midis に入れる。
@@ -1003,8 +1259,26 @@ export function composeSong(seed, data, settings) {
       name: SECTION_NAMES[s],
       progressionId: prog.id,
       startBar,
+      phrasePlan: phrasing,
       slots: slotRecords,
     });
+  }
+
+  // 息継ぎ。1曲に最大1回、A か A' のフレーズ末スロットの2小節目から
+  // メロディーだけを抜く。伴奏・ベース・パッドは鳴り続けるので音楽は止まらない。
+  // 歌い手が息を吸う一瞬で、バラードではここが「歌っている」感覚そのものを作る。
+  let breathBar = null;
+  if (breathSlots.length > 0) {
+    const chosen = pick(rng, breathSlots);
+    const from = chosen.bar * 4;
+    const kept = melody.filter((n) => n.beat < from || n.beat >= from + 4);
+    // メロディーが丸ごと消える異常な場合は諦める（無音の曲は作らない）。
+    if (kept.length > 0 && kept.length < melody.length) {
+      melody.length = 0;
+      for (const n of kept) melody.push(n);
+      breathBar = chosen.bar;
+      sections[chosen.sectionIdx].slots[chosen.slotIdx].breath = true;
+    }
   }
 
   // 頂点の拍。演奏側はここだけテヌートを掛けるので、同点なら最初の1つを指す。
@@ -1052,6 +1326,7 @@ export function composeSong(seed, data, settings) {
     bars,
     totalBeats: bars * 4,
     climaxBeat,
+    breathBar,
     sections,
     melody,
     accomp,
