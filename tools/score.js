@@ -4,6 +4,7 @@
 
 import {
   analyzeFragment, distinctDurations, durationRatio, hasSyncopation, hasRest,
+  stepRatioOf, thirdRatioOf, leapRatioOf, leapThenStepRatio,
 } from './analyze.js';
 
 const round1 = (v) => Math.round(v * 10) / 10;
@@ -20,9 +21,16 @@ const BONUS = {
   'stable-start': 5,
 };
 
-// 名曲のメロディーの音程分布に合わせた加点。
-// 跳躍だらけも順次だらけも記憶に残らない。過半数が順次進行なのが「歌」の統計。
-const STEP_RATIO = { min: 0.55, max: 0.8, bonus: 12 };
+// 名旋律57曲(781音)のコーパス実測値に合わせた加減点。
+// 度数差1 = 2度(順次進行), 2 = 3度, 3以上 = 4度以上。
+//   順次進行 69.6% / 3度 18.5% / 4度以上 5.5% / 跳躍の直後が順次 61.9%
+// 跳躍だらけも順次だらけも記憶に残らない。この帯に入るかどうかが「歌」の統計。
+const STEP_RATIO = { min: 0.6, max: 0.8, bonus: 12 };
+const THIRD_RATIO = { min: 0.1, max: 0.3, bonus: 8 };
+// 4度以上がコーパスの2倍(10%)を超えたら、超えたぶんに比例して減点する。
+const LEAP_RATIO = { max: 0.1, penalty: 60 };
+// 「跳んだら順次で埋め戻す」。名旋律の大原則で、これが歌える線とそうでない線を分ける。
+const LEAP_THEN_STEP = { min: 0.6, bonus: 10 };
 
 // ペンタトニックは大衆性の核心なので最大の加点。
 // {1,3,5} だけの断片は major/minor 両方のタグを持つが、加点は一度だけ。
@@ -87,11 +95,19 @@ export function scoreFragment(notes, meta) {
     }
   }
 
-  // 順次進行(2度以内)の割合。名曲の音程分布に一致する帯だけを加点する。
+  // 音程の分布をコーパスの実測値と突き合わせる。
   if (intervals.length > 0) {
-    const steps = intervals.filter((d) => Math.abs(d) > 0 && Math.abs(d) <= 2).length;
-    const ratio = steps / intervals.length;
-    if (ratio >= STEP_RATIO.min && ratio <= STEP_RATIO.max) score += STEP_RATIO.bonus;
+    const step = stepRatioOf(intervals);
+    if (step >= STEP_RATIO.min && step <= STEP_RATIO.max) score += STEP_RATIO.bonus;
+
+    const third = thirdRatioOf(intervals);
+    if (third >= THIRD_RATIO.min && third <= THIRD_RATIO.max) score += THIRD_RATIO.bonus;
+
+    const leap = leapRatioOf(intervals);
+    if (leap > LEAP_RATIO.max) score -= (leap - LEAP_RATIO.max) * LEAP_RATIO.penalty;
+
+    const filled = leapThenStepRatio(intervals);
+    if (filled !== null && filled >= LEAP_THEN_STEP.min) score += LEAP_THEN_STEP.bonus;
   }
 
   const span = Number.isFinite(m.span) ? m.span : 0;

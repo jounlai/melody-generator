@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeRng } from '../src/rng.js';
-import { RHYTHMS, CONTOUR_SHAPE, buildDegrees, generateCandidate } from '../tools/generate.js';
+import {
+  RHYTHMS,
+  CONTOUR_SHAPE,
+  buildDegrees,
+  generateCandidate,
+  containsFormula,
+  CORPUS_FORMULAS,
+  CADENCES,
+  FORMULAS,
+  PATTERNS,
+} from '../tools/generate.js';
 
 const SEEDS = [1, 7, 42, 99, 123, 2024, 31337, 555, 8080, 64738];
 
@@ -118,6 +128,112 @@ test('RHYTHMS の6割程度は後半1小節が前半と同形', () => {
   const ratio = mirrored / RHYTHMS.length;
   assert.ok(ratio >= 0.55, `モチーフ反復型が少ない: ${mirrored}/${RHYTHMS.length}`);
   assert.ok(ratio <= 0.75, `モチーフ反復型が多すぎる: ${mirrored}/${RHYTHMS.length}`);
+});
+
+// ---------------------------------------------------------------------------
+// 旋律型（名旋律57曲のコーパス由来）
+// ---------------------------------------------------------------------------
+
+test('FORMULAS はコーパスの273型を丸ごと持つ', () => {
+  assert.equal(CORPUS_FORMULAS.length, PATTERNS.formulas.length);
+  assert.ok(CORPUS_FORMULAS.length >= 200, `語彙が少ない: ${CORPUS_FORMULAS.length}`);
+  const corpusIds = new Set(PATTERNS.formulas.map((f) => f.steps.join(',')));
+  for (const f of CORPUS_FORMULAS) {
+    assert.ok(corpusIds.has(f.id), `コーパスに無い型: ${f.id}`);
+    assert.equal(f.steps[0], 0, `先頭が0でない: ${f.id}`);
+    assert.equal(f.len, f.steps.length);
+    // 重みは平方根で緩和する。生の重みのままだと最頻の型が抽選を独占する。
+    assert.ok(Math.abs(f.eff - Math.sqrt(f.weight)) < 1e-9, `実効重みが平方根でない: ${f.id}`);
+  }
+  // コーパスの語彙は最大でも5度までで、6度以上の上行跳躍('sigh'の種)が無い。
+  // そのぶんだけ手書きの型を足してある。
+  const extra = FORMULAS.filter((f) => !corpusIds.has(f.id));
+  assert.ok(extra.length <= 6, `手書きの型が多すぎる: ${extra.length}`);
+  assert.ok(
+    extra.some((f) => f.steps.some((s, i) => i > 0 && Math.abs(s - f.steps[i - 1]) >= 5)),
+    '6度以上の跳躍を持つ型が無い',
+  );
+});
+
+test('CADENCES はコーパスの終止形で、下降で着地する形が主', () => {
+  assert.equal(CADENCES.length, PATTERNS.cadences.length);
+  assert.ok(CADENCES.length >= 10, `終止形が少ない: ${CADENCES.length}`);
+  const down = CADENCES.filter((c) => c.steps[c.steps.length - 1] < 0);
+  assert.ok(down.length * 2 >= CADENCES.length, `下降で終わる終止形が少ない: ${down.length}`);
+});
+
+test('containsFormula は相対形でコーパスの型を見つける', () => {
+  // [0,-1,-2] はコーパス最頻の型。どの高さに置いても見つかること。
+  assert.ok(containsFormula([9, 8, 7]));
+  assert.ok(containsFormula([3, 5, 12, 11, 10, 4]));
+  assert.equal(containsFormula([1, 8, 2, 9]), false);
+  assert.equal(containsFormula([5, 5]), false);
+});
+
+test('生成断片の6割以上がコーパスの旋律型を含む', () => {
+  const rng = makeRng(20260816);
+  let hit = 0;
+  const total = 1000;
+  for (let i = 0; i < total; i++) {
+    if (containsFormula(generateCandidate(rng).notes.map((n) => n.deg))) hit++;
+  }
+  assert.ok(hit / total >= 0.6, `コーパスの型を含む断片が少ない: ${hit}/${total}`);
+});
+
+test('最頻の型 [0,-1,-2] の採用率が12%以下に緩和されている', () => {
+  const rng = makeRng(4242);
+  const use = new Map();
+  let draws = 0;
+  for (let i = 0; i < 3000; i++) {
+    for (const id of generateCandidate(rng).formulas ?? []) {
+      use.set(id, (use.get(id) ?? 0) + 1);
+      draws++;
+    }
+  }
+  assert.ok(draws > 0, '旋律型が1度も引かれていない');
+  const top = (use.get('0,-1,-2') ?? 0) / draws;
+  assert.ok(top <= 0.12, `[0,-1,-2] に偏っている: ${(top * 100).toFixed(1)}%`);
+  // 語彙が増えた意味があるか（抽選が一部の型に集中していないか）
+  assert.ok(use.size >= 100, `使われた型が少ない: ${use.size}種`);
+});
+
+test('1つの断片の中で同じ旋律型を2回使わない', () => {
+  const rng = makeRng(31337);
+  for (let i = 0; i < 2000; i++) {
+    const cand = generateCandidate(rng);
+    // ゼクエンツ・完全反復は「同じ形の反復」そのものなので対象外。
+    if (!cand.path.startsWith('formula:')) continue;
+    if (cand.path.endsWith('sequence') || cand.path.endsWith('repeat')) continue;
+    const ids = cand.formulas ?? [];
+    assert.equal(new Set(ids).size, ids.length, `型が重複している: ${ids.join(' ')}`);
+  }
+});
+
+test('終止形の経路ではコーパスの cadences を使う', () => {
+  const rng = makeRng(777);
+  const cadIds = new Set(CADENCES.map((c) => `cad:${c.id}`));
+  let cadencePaths = 0;
+  for (let i = 0; i < 2000; i++) {
+    const cand = generateCandidate(rng);
+    if (cand.path !== 'formula:cadence') continue;
+    cadencePaths++;
+    const ids = cand.formulas ?? [];
+    const last = ids[ids.length - 1];
+    assert.ok(cadIds.has(last), `終止形で終わっていない: ${ids.join(' ')}`);
+  }
+  assert.ok(cadencePaths > 100, `終止形の経路が少ない: ${cadencePaths}`);
+});
+
+test('長い下降形は1つの断片に2回引かれない', () => {
+  const rng = makeRng(2718);
+  const fall = new Map(FORMULAS.map((f) => [f.id, f.steps.reduce((a, b) => a + b, 0)]));
+  for (let i = 0; i < 2000; i++) {
+    const cand = generateCandidate(rng);
+    if (!cand.path.startsWith('formula:')) continue;
+    // 終止形(cad:)は下降で着地するのが本来の姿なので数えない。
+    const long = (cand.formulas ?? []).filter((id) => (fall.get(id) ?? 0) <= -3);
+    assert.ok(long.length <= 1, `長い下降形が重なっている: ${cand.formulas.join(' ')}`);
+  }
 });
 
 test('CONTOUR_SHAPE は6種類あり、値が 0〜1 に収まる', () => {
@@ -247,11 +363,11 @@ test('generateCandidate は音価の一定な断片を作らない', () => {
 
 // 旋律型の経路では、開始音(その断片をどの高さに置くか)は1小節につき一度だけ決める。
 // これが音ごとに決まると、音ごとに置き場所が変わって旋律型の形が壊れる。
-// 「音ごとに乱数を引いていないこと」を乱数の消費回数で見張る。
-// (vel は仕様上1音1回引くので、その分は差し引いて数える)
+// 経路と引いた型の数が同じなら、音数が6音でも13音でも乱数の消費は変わらないはず。
+// (vel だけは仕様上1音1回引くので、その分を差し引いて数える)
 test('旋律型の断片は開始音を音ごとに引き直さない', () => {
-  const byPath = new Map();
-  for (let seed = 1; seed <= 2000; seed++) {
+  const groups = new Map();
+  for (let seed = 1; seed <= 3000; seed++) {
     const base = makeRng(seed);
     let draws = 0;
     const rng = () => {
@@ -260,17 +376,26 @@ test('旋律型の断片は開始音を音ごとに引き直さない', () => {
     };
     const cand = generateCandidate(rng);
     if (!cand.path.startsWith('formula:')) continue;
-    const extra = draws - cand.notes.length; // vel のぶんを除いた消費
-    if (!byPath.has(cand.path)) byPath.set(cand.path, []);
-    byPath.get(cand.path).push(extra);
-    assert.ok(extra <= 25, `${cand.path} が乱数を使いすぎ: ${extra} (音数 ${cand.notes.length})`);
+
+    const key = `${cand.path}|型${(cand.formulas ?? []).length}`;
+    if (!groups.has(key)) groups.set(key, { draws: [], lens: new Set() });
+    const g = groups.get(key);
+    g.draws.push(draws - cand.notes.length);
+    g.lens.add(cand.notes.length);
   }
-  assert.ok(byPath.size > 0, '旋律型の断片が1つも出ていない');
-  for (const [path, list] of byPath) {
-    const spread = Math.max(...list) - Math.min(...list);
-    // 音数は6〜16音まで開くので、音ごとに引いていれば必ず10前後の差が出る。
-    assert.ok(spread <= 8, `${path} の乱数消費が音数につれて増えている: 幅 ${spread}`);
+  assert.ok(groups.size > 0, '旋律型の断片が1つも出ていない');
+
+  let checked = 0;
+  for (const [key, g] of groups) {
+    if (g.lens.size < 2) continue; // 音数が1種類だけの群は比較にならない
+    checked++;
+    const spread = Math.max(...g.draws) - Math.min(...g.draws);
+    assert.ok(
+      spread <= 2,
+      `${key}: 音数 ${[...g.lens].sort((a, b) => a - b).join(',')} で乱数の消費が ${spread} も違う`,
+    );
   }
+  assert.ok(checked >= 4, `音数の違う群が少なくて検査になっていない: ${checked}`);
 });
 
 test('generateCandidate を1000回で6種類の輪郭がすべて出現する', () => {

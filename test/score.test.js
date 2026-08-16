@@ -7,6 +7,10 @@ import {
   detectTags,
   tensionOf,
   analyzeFragment,
+  stepRatioOf,
+  thirdRatioOf,
+  leapRatioOf,
+  leapThenStepRatio,
 } from '../tools/analyze.js';
 import { scoreFragment } from '../tools/score.js';
 
@@ -195,6 +199,73 @@ test('analyzeFragment は最高音の重複を peakCount に数える', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 6c. 音程の分布（名旋律57曲のコーパス実測値への較正）
+//     度数差1 = 2度(順次進行), 2 = 3度, 3以上 = 4度以上。
+//     コーパス: 順次 0.696 / 3度 0.185 / 4度以上 0.055 / 跳躍後に順次 0.619
+// ---------------------------------------------------------------------------
+
+test('音程の割合を度数差ごとに数える', () => {
+  const iv = [1, -1, 2, 1, -3, 1]; // 2度4つ / 3度1つ / 4度1つ
+  assert.equal(stepRatioOf(iv), 4 / 6);
+  assert.equal(thirdRatioOf(iv), 1 / 6);
+  assert.equal(leapRatioOf(iv), 1 / 6);
+  assert.equal(stepRatioOf([]), 0);
+});
+
+test('leapThenStepRatio は跳躍の直後が順次進行かを数える', () => {
+  // 跳躍(3度以上 = 度数差2以上)は index 0 と 2。0の直後は 1(順次)、2の直後は 3(4度)。
+  assert.equal(leapThenStepRatio([2, 1, -3, -3]), 1 / 2);
+  assert.equal(leapThenStepRatio([2, 1, 2, 1]), 1); // 跳んだら必ず埋め戻す
+  assert.equal(leapThenStepRatio([1, 1, 1]), null); // 跳躍が無ければ判定不能
+  // 最後の音程は「直後」が無いので跳躍として数えない
+  assert.equal(leapThenStepRatio([1, 1, 4]), null);
+});
+
+test('コーパスの音程分布に近い断片は、跳躍だらけの断片より高い', () => {
+  // 度数 5,6,8,7,8,5,6,5 -> 音程 [1,2,-1,1,-3,1,-1]
+  // 順次 5/7 = 0.71(帯の中) / 3度 1/7 = 0.14(帯の中) / 4度以上 1/7
+  // 3度も4度も直後が順次 -> leapThenStep = 1.0
+  const SINGABLE = [
+    n(5, 0, 0.5), n(6, 0.5, 0.5), n(8, 1, 1), n(7, 2, 0.5), n(8, 2.5, 1.5),
+    n(5, 4, 1), n(6, 5, 1), n(5, 6, 2),
+  ];
+  const meta = analyzeFragment(SINGABLE);
+  assert.equal(meta.stepRatio, 5 / 7);
+  assert.equal(meta.thirdRatio, 1 / 7);
+  assert.equal(meta.leapRatio, 1 / 7);
+  assert.equal(meta.leapThenStep, 1);
+
+  // 同じ音数・同じリズムで、跳躍ばかりにした版
+  const LEAPY = [
+    n(5, 0, 0.5), n(9, 0.5, 0.5), n(4, 1, 1), n(10, 2, 0.5), n(3, 2.5, 1.5),
+    n(11, 4, 1), n(4, 5, 1), n(12, 6, 2),
+  ];
+  const leapy = analyzeFragment(LEAPY);
+  assert.equal(leapy.stepRatio, 0);
+  assert.ok(leapy.leapRatio > 0.9, `4度以上の割合が低い: ${leapy.leapRatio}`);
+  assert.ok(
+    scoreFragment(SINGABLE, meta) > scoreFragment(LEAPY, leapy) + 50,
+    `歌える断片が優位でない: ${scoreFragment(SINGABLE, meta)} vs ${scoreFragment(LEAPY, leapy)}`,
+  );
+});
+
+test('跳躍したあと順次で埋め戻す断片は、埋め戻さない断片より高い', () => {
+  // どちらも 4度上行を1つ持ち、リズムも音数も同じ。違いは跳躍の後だけ。
+  const FILLED = [n(5, 0, 1), n(8, 1, 0.5), n(7, 1.5, 0.5), n(6, 2, 2),
+    n(5, 4, 1), n(8, 5, 0.5), n(7, 5.5, 0.5), n(6, 6, 2)];
+  const OPEN = [n(5, 0, 1), n(8, 1, 0.5), n(11, 1.5, 0.5), n(14, 2, 2),
+    n(5, 4, 1), n(8, 5, 0.5), n(11, 5.5, 0.5), n(14, 6, 2)];
+  const a = analyzeFragment(FILLED);
+  const b = analyzeFragment(OPEN);
+  assert.equal(a.leapThenStep, 1);
+  assert.equal(b.leapThenStep, 0);
+  assert.ok(
+    scoreFragment(FILLED, a) > scoreFragment(OPEN, b),
+    `埋め戻す形が優位でない: ${scoreFragment(FILLED, a)} vs ${scoreFragment(OPEN, b)}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 7. tensionOf
 // ---------------------------------------------------------------------------
 
@@ -244,10 +315,12 @@ test('良い断片は悪い断片より高得点になる', () => {
 
   // 50 + single-peak(8) + long-ending(8) + resolve-down(6) + stable-start(5)
   //    + stable-end(10) + penta(16) + arch(5) - 音価2種類(8) = 100
+  // (音程は 3度が 3/5 = 0.6 で 3度の帯(0.10〜0.30)から外れ、
+  //  順次進行も 2/5 = 0.4 で帯(0.60〜0.80)の外なので、音程の加点は無い)
   assert.equal(good, 100);
-  // 50 - 跳躍と連続跳躍(146) - 音域超過(12) + 密度(10)
-  //    - 音価1種類(22) + stable-start(5) - wave(6) = -121
-  assert.equal(bad, -121);
+  // 50 - 跳躍と連続跳躍(146) - 音域超過(12) + 密度(10) - 音価1種類(22)
+  //    + stable-start(5) - wave(6) - 4度以上が 6/7 = 0.857((0.857-0.1)*60 = 45.4)
+  assert.equal(bad, -166.4);
   assert.ok(good > bad, `good=${good} は bad=${bad} より高いはず`);
 });
 

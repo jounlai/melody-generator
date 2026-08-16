@@ -7,7 +7,7 @@
 // 乱数はすべて引数の rng を経由する(Math.random は使わない)。
 //
 // 設計の柱は4つ。優先順位の高い順に:
-//   1. 旋律型  : バッハからJ-POPまで共通の一般的な旋律語彙(FORMULAS)から組み立てる。
+//   1. 旋律型  : パブリックドメインの名旋律57曲から抽出した語彙(FORMULAS)で組み立てる。
 //                輪郭が合っていても中身が音楽の語彙になっていないと、
 //                「ランダムな音程の並び」にしか聴こえない。
 //   2. リズム  : 音価が均一だと、音程が何であろうと童謡にしか聴こえない。
@@ -19,7 +19,20 @@
 //   4. 大衆性  : ペンタトニック(五音音階)へ寄せる。J-POP・童謡・民謡を貫く
 //                「口ずさめる」の核心。ただし旋律型の形のほうが優先。
 
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randInt, pick, shuffle } from '../src/rng.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// パブリックドメインの名旋律57曲(781音)から抽出した語彙。
+// formulas = 度数オフセット列とコーパスでの出現回数、cadences = フレーズの終わり方。
+// rhythmCells は使わない(上位が [1,1] [0.5,0.5] の等分割で、
+// これを取り込むと音価が均一化して「童謡」に逆戻りする。取り込むのは音程の語彙だけ)。
+export const PATTERNS = JSON.parse(
+  readFileSync(resolve(HERE, 'data/patterns.json'), 'utf8'),
+);
 
 const BAR = 4;
 const MIN_DEG = 1;
@@ -132,61 +145,145 @@ export function pickRhythm(rng) {
 }
 
 // ---------------------------------------------------------------------------
-// 旋律型ライブラリ
+// 旋律型ライブラリ(コーパス由来)
 // ---------------------------------------------------------------------------
 // 最初の音からの度数オフセットで持つ。こうすると任意の高さに置ける。
-// 順次進行系と刺繍音系の重みが高いのは、名曲のメロディーの過半数が
-// 順次進行でできているという統計的事実に合わせているため。
-// 特定の曲のものではなく、バッハからJ-POPまで共通の一般的な語彙。
+// 中身は名旋律57曲から抽出した273型で、順次進行と刺繍音が上位を占める
+// (コーパス実測: 2度 69.6% / 3度 18.5% / 4度以上 5.5%)。
+//
+// 生の出現回数をそのまま重みにすると、最頻の [0,-1,-2](186回)だけで
+// 抽選の4分の1を占めてしまい、語彙が増えたのにかえって単調になる。
+// そこで3段構えで散らす:
+//   1. 長さ(3〜6音)を先に決める。決め方はリズム型が要求する音数に合わせる
+//      (ちょうど埋まる長さを優先し、埋まらない長さは引かない)。
+//   2. 重みは平方根で圧縮する(186 -> 13.6、22 -> 4.7)。
+//   3. 同じ型は1断片に2回使わない(ゼクエンツ・完全反復は形の反復そのものなので対象外)。
 
-export const FORMULAS = [
-  // --- 順次上行（歌い出しの定番）---
-  { id: 'asc-scale', steps: [0, 1, 2, 3], weight: 3 },
-  { id: 'asc-1235', steps: [0, 1, 2, 4], weight: 4 }, // ド-レ-ミ-ソ
-  { id: 'asc-scale5', steps: [0, 1, 2, 3, 4], weight: 3 },
-  // --- 順次下行（終止の定番）---
-  { id: 'desc-54321', steps: [0, -1, -2, -3, -4], weight: 4 }, // ソ-ファ-ミ-レ-ド
-  { id: 'desc-321', steps: [0, -1, -2], weight: 4 }, // ミ-レ-ド
-  { id: 'desc-8765', steps: [0, -1, -2, -3], weight: 3 },
-  // --- アルペジオ（和音を歌う）---
-  { id: 'arp-up', steps: [0, 2, 4], weight: 3 }, // ド-ミ-ソ
-  { id: 'arp-up-oct', steps: [0, 2, 4, 7], weight: 2 }, // ド-ミ-ソ-ド
-  { id: 'arp-down', steps: [0, -2, -4], weight: 2 },
-  { id: 'arp-updown', steps: [0, 2, 4, 2], weight: 3 },
-  // --- 刺繍音・回音（最も頻出。歌の「揺れ」を作る）---
-  { id: 'neighbor-up', steps: [0, 1, 0], weight: 4 }, // ミ-ファ-ミ
-  { id: 'neighbor-dn', steps: [0, -1, 0], weight: 4 },
-  { id: 'turn', steps: [0, 1, 0, -1, 0], weight: 3 }, // 回音
-  { id: 'turn-down', steps: [0, 1, 0, -1, -2], weight: 4 }, // 回音から下降して着地
-  // --- 跳躍してから順次で埋め戻す（「ため息」の形。泣ける）---
-  { id: 'leap6-fill', steps: [0, 5, 4, 3, 2], weight: 4 }, // 6度上行→順次下降
-  { id: 'leap-oct-fill', steps: [0, 7, 6, 5], weight: 3 }, // オクターブ上行→下降
-  { id: 'leap4-fill', steps: [0, 3, 2, 1], weight: 3 },
-  // --- 跳ね返り（上がって下がって戻る）---
-  { id: 'arch-small', steps: [0, 1, 2, 1, 0], weight: 3 },
-  { id: 'arch-mid', steps: [0, 2, 3, 2, 0], weight: 3 },
-  // --- 同音反復から動く（語りかけの形）---
-  { id: 'repeat-then-up', steps: [0, 0, 1, 2], weight: 3 },
-  { id: 'repeat-then-down', steps: [0, 0, -1, -2], weight: 3 },
-  // --- 終止形（フレーズの締め）---
-  { id: 'cadence-231', steps: [0, -1, -3], weight: 3 },
-  { id: 'cadence-171', steps: [0, -1, 0], weight: 2 },
+const sqrtWeight = (w) => Math.sqrt(Math.max(w, 1));
+
+function toFormula(p) {
+  return {
+    id: p.steps.join(','),
+    steps: p.steps,
+    weight: p.weight,
+    eff: sqrtWeight(p.weight), // 抽選に使う実効重み
+    len: p.steps.length,
+    fall: p.steps.reduce((a, b) => a + b, 0), // 総和。-3 以下なら「長い下降形」
+  };
+}
+
+// コーパスに無いが手放せない型。コーパスの音程は最大でも5度で、
+// 6度以上の上行跳躍が1つも無い。跳躍上行から順次下降で埋め戻す形('sigh')は
+// 「泣ける」断片の中核なので、この4つだけは手書きのまま残す。
+// 重みはコーパスの中位に合わせて、語彙全体を歪ませない程度にする。
+const LEAP_FORMULAS = [
+  { steps: [0, 5, 4, 3, 2], weight: 16 }, // 6度上行 -> 順次下降
+  { steps: [0, 7, 6, 5], weight: 12 }, // オクターブ上行 -> 下降
+  { steps: [0, 2, 4, 7], weight: 9 }, // 分散和音でオクターブまで届く
+  { steps: [0, 2, 4, 2], weight: 9 },
 ];
 
-// フレーズを閉じるための型。2小節目を「着地」で終える経路で使う。
-export const CADENCE_FORMULAS = FORMULAS.filter((f) => /^(cadence|desc)-/.test(f.id));
+export const CORPUS_FORMULAS = PATTERNS.formulas.map(toFormula);
+export const FORMULAS = [...CORPUS_FORMULAS, ...LEAP_FORMULAS.map(toFormula)];
 
-/** 重み付きで旋律型を1つ引く */
-export function pickFormula(rng, pool = FORMULAS) {
-  const list = pool.length > 0 ? pool : FORMULAS;
+// フレーズを閉じるための型。2小節目を「着地」で終える経路で使う。
+// コーパスの終止形は下降で着地する形が支配的で、これが「閉じた」感じを作る。
+export const CADENCES = PATTERNS.cadences.map(toFormula);
+
+// 長さ別の索引。層化抽選のために先に作っておく。
+const BY_LEN = new Map();
+for (const f of FORMULAS) {
+  if (!BY_LEN.has(f.len)) BY_LEN.set(f.len, []);
+  BY_LEN.get(f.len).push(f);
+}
+export const FORMULA_LENGTHS = [...BY_LEN.keys()].sort((a, b) => a - b);
+const MIN_FORMULA_LEN = FORMULA_LENGTHS[0];
+
+// 度数列にコーパスの型が(相対形で)含まれるかを判定するための索引。
+const CORPUS_KEYS = new Set(CORPUS_FORMULAS.map((f) => f.id));
+
+/** 度数列 degs のどこかにコーパス由来の旋律型が現れるか */
+export function containsFormula(degs) {
+  if (!Array.isArray(degs)) return false;
+  for (let i = 0; i < degs.length; i++) {
+    for (const len of FORMULA_LENGTHS) {
+      if (i + len > degs.length) break;
+      let key = '0';
+      for (let k = 1; k < len; k++) key += `,${degs[i + k] - degs[i]}`;
+      if (CORPUS_KEYS.has(key)) return true;
+    }
+  }
+  return false;
+}
+
+// 「ちょうど埋まる長さ」を優先する度合い。型の切れ目とフレーズの切れ目が
+// 揃っていないと、途中で言いかけて止めたように聴こえる。
+const EXACT_BIAS = 3;
+
+/**
+ * 残り room 音を埋めるのに使ってよい型の長さを1つ選ぶ。
+ * - room ちょうど: そこで型が終わってフレーズが閉じる
+ * - 残りが3音以上になる長さ: 次も型で埋められる
+ * どちらも無ければ null(呼び出し側が最短の型を途中で切って埋める)。
+ */
+function pickLength(rng, room) {
+  const exact = [];
+  const chain = [];
+  for (const len of FORMULA_LENGTHS) {
+    if (len > room) break;
+    if (len === room) exact.push(len);
+    else if (room - len + 1 >= MIN_FORMULA_LEN) chain.push(len);
+  }
+  if (exact.length === 0 && chain.length === 0) return null;
+
+  let r = rng() * (exact.length * EXACT_BIAS + chain.length);
+  for (const len of exact) {
+    r -= EXACT_BIAS;
+    if (r < 0) return len;
+  }
+  for (const len of chain) {
+    r -= 1;
+    if (r < 0) return len;
+  }
+  return exact[0] ?? chain[chain.length - 1];
+}
+
+/** 実効重みで1つ引く。allow が全部を弾いたら null(乱数は消費しない)。 */
+function weightedPick(rng, list, allow) {
   let total = 0;
-  for (const f of list) total += f.weight;
+  for (const f of list) if (allow(f)) total += f.eff;
+  if (total <= 0) return null;
+
   let r = rng() * total;
+  let last = null;
   for (const f of list) {
-    r -= f.weight;
+    if (!allow(f)) continue;
+    last = f;
+    r -= f.eff;
     if (r < 0) return f;
   }
-  return list[list.length - 1];
+  return last; // 浮動小数の取りこぼし
+}
+
+/**
+ * 制約つきで型を1つ引く。制約は「効くなら効かせる」で、
+ * 全部弾いてしまうときだけ順に外す(候補ゼロで生成が止まるほうが害が大きい)。
+ * 乱数の消費は pickLength の1回 + weightedPick の1回で固定。
+ */
+function drawFormula(rng, room, state) {
+  const len = pickLength(rng, room);
+  const bucket = BY_LEN.get(len ?? MIN_FORMULA_LEN);
+  const fresh = (f) => !state.used.has(f.id);
+  const rising = (f) => f.fall > -3;
+
+  return weightedPick(rng, bucket, (f) => fresh(f) && (!state.banDescent || rising(f)))
+    ?? weightedPick(rng, bucket, fresh)
+    ?? weightedPick(rng, bucket, () => true);
+}
+
+/** 断片1件ぶんの抽選状態。同じ型の再利用と下降形の連続をここで見張る。 */
+export function newDrawState() {
+  return { used: new Set(), banDescent: false };
 }
 
 /**
@@ -194,16 +291,19 @@ export function pickFormula(rng, pool = FORMULAS) {
  * 型を継ぎ足すときは前の型の終点を次の型の起点として共有する。
  * 返り値の used は採用した型の id(統計とテスト用)。
  */
-export function formulaLine(rng, n, pool = FORMULAS) {
+export function formulaLine(rng, n, state = newDrawState()) {
   const rel = [0];
   const used = [];
   let guard = 0;
 
-  while (rel.length < n && guard++ < 8) {
+  while (rel.length < n && guard++ < 6) {
     const room = n - rel.length + 1; // 起点を共有するぶん +1
-    const fits = pool.filter((f) => f.steps.length <= room);
-    const f = pickFormula(rng, fits.length > 0 ? fits : pool);
+    const f = drawFormula(rng, room, state);
     used.push(f.id);
+    state.used.add(f.id);
+    // 長い下降形を1つ使ったら、この断片ではもう引かない。
+    // 下降しかしない断片は、どれだけ語彙が正しくても退屈になる。
+    if (f.fall <= -3) state.banDescent = true;
     const base = rel[rel.length - 1];
     for (let i = 1; i < f.steps.length && rel.length < n; i++) {
       rel.push(base + f.steps[i] - f.steps[0]);
@@ -212,7 +312,34 @@ export function formulaLine(rng, n, pool = FORMULAS) {
   // 保険(型が尽きるほど長いリズムは無いが、念のため順次で埋める)
   while (rel.length < n) rel.push(rel[rel.length - 1] + (rel.length % 2 === 0 ? 1 : -1));
 
-  return { rel: rel.slice(0, n), used };
+  const line = rel.slice(0, n);
+  if (line[line.length - 1] - line[0] <= -3) state.banDescent = true;
+  return { rel: line, used };
+}
+
+/**
+ * 終止形で閉じる長さ n の相対度数列。
+ * 終止形は必ず「最後の4音」に置く。フレーズが閉じたかどうかは着地で決まるので、
+ * 音数が足りなければ頭を削り、余るぶんは手前を旋律型で埋める。
+ * 下降形の連続禁止はここには効かせない(終止形は下降で着地するのが本来の姿)。
+ */
+export function cadenceLine(rng, n, state = newDrawState()) {
+  const cad = weightedPick(rng, CADENCES, (f) => !state.used.has(f.id))
+    ?? weightedPick(rng, CADENCES, () => true);
+  const steps = cad.steps;
+  const id = `cad:${cad.id}`;
+  state.used.add(cad.id);
+
+  if (n <= steps.length) {
+    const tail = steps.slice(steps.length - n);
+    const base = tail[0];
+    return { rel: tail.map((s) => s - base), used: [id] };
+  }
+
+  const head = formulaLine(rng, n - steps.length + 1, state);
+  const base = head.rel[head.rel.length - 1];
+  const rel = head.rel.concat(steps.slice(1).map((s) => base + s - steps[0]));
+  return { rel, used: [...head.used, id] };
 }
 
 // ---------------------------------------------------------------------------
@@ -591,7 +718,9 @@ function formulaCandidate(rng, kind, contour, wantSus) {
   const n2 = rhythm.length - n1;
 
   // 1小節目: 旋律型を継ぎ足して埋め、跳躍の連続だけならしてから音階へ寄せる。
-  const first = formulaLine(rng, n1, FORMULAS);
+  // state は断片1件ぶんの抽選状態(同じ型の再利用禁止・下降形の連続禁止)を持ち回る。
+  const state = newDrawState();
+  const first = formulaLine(rng, n1, state);
   const used = first.used.slice();
   const start = placeStart(first.rel, drawStart(rng), kind);
   let head = snapKeepingShape(smoothLeaps(first.rel.map((r) => r + start)), kind);
@@ -609,9 +738,9 @@ function formulaCandidate(rng, kind, contour, wantSus) {
     }
     degs = head.concat(head.map((d) => d + shift));
   } else {
-    // 2小節目は着地(終止型)か、別の型。前の音から近いところに置く。
+    // 2小節目は着地(終止形)か、別の型。前の音から近いところに置く。
     const endStable = mode === 'cadence';
-    const second = formulaLine(rng, n2, endStable ? CADENCE_FORMULAS : FORMULAS);
+    const second = endStable ? cadenceLine(rng, n2, state) : formulaLine(rng, n2, state);
     used.push(...second.used);
     const near = clampDeg(head[head.length - 1] + (endStable ? 1 : randInt(rng, -1, 2)));
     const tailStart = placeStart(second.rel, near, kind, endStable);

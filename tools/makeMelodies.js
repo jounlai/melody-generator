@@ -22,7 +22,7 @@ import { makeRng } from '../src/rng.js';
 import { CHORD_VOCAB, splitBars, fitsBar, hasSuspension, chordIndex } from '../src/theory.js';
 import { analyzeFragment } from './analyze.js';
 import { scoreFragment } from './score.js';
-import { generateCandidate, FORMULAS } from './generate.js';
+import { generateCandidate, containsFormula, FORMULAS, CADENCES, RHYTHMS } from './generate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_PATH = resolve(HERE, '../src/data/melodies.json');
@@ -68,18 +68,12 @@ function bucketKeys() {
 
 const hasTag = (tag) => (c) => c.meta.tags.includes(tag);
 
-// 順次進行(2度以内)の割合。名曲のメロディーの音程分布に一致する帯は 55〜80%。
-export function stepRatio(intervals) {
-  const list = Array.isArray(intervals) ? intervals : [];
-  if (list.length === 0) return 0;
-  const steps = list.filter((d) => Math.abs(d) >= 1 && Math.abs(d) <= 2).length;
-  return steps / list.length;
-}
+// 音程の分布は名旋律57曲のコーパス実測値(順次進行 69.6%)に合わせる。
+// 順次進行 = 度数差1(2度)。3度以上は跳躍として別に数える。
+const inStepBand = (c) => c.meta.stepRatio >= 0.6 && c.meta.stepRatio <= 0.8;
 
-const inStepBand = (c) => {
-  const r = stepRatio(c.meta.intervals);
-  return r >= 0.55 && r <= 0.8;
-};
+// 跳躍(3度以上)の直後が順次進行になっている割合。コーパス実測 61.9%。
+const fillsLeaps = (c) => c.meta.leapThenStep !== null && c.meta.leapThenStep >= 0.6;
 
 // ---------------------------------------------------------------------------
 // 進行のスロット(2小節)被覆
@@ -111,6 +105,25 @@ function slotPairs() {
 
 const SLOTS = slotPairs();
 
+// ---------------------------------------------------------------------------
+// リズム型ごとの下限
+// ---------------------------------------------------------------------------
+// 組み立て側は a' / a'' を「a と同じリズムの別の断片」で作る(ゼクエンツが
+// 作れないときの代替)。同じリズムの仲間が数件しかない型の断片が a に選ばれると、
+// 楽節が導出できずに単独選択へ落ちる。スコア順に任せると型ごとの偏りが
+// そのまま残るので、41型すべてに下限を置いて仲間を確保する。
+// 均すのではなく「型が全滅しない」ことだけを保証する。
+// 平らにすると popular な型の仲間が減り、かえって導出できないスロットが増える
+// (実測: 下限15で楽節の導出率 95.7%、下限8で 97%台)。
+const RHYTHM_MIN = 8;
+
+/** 断片のリズム型キー(拍と長さの並び)。compose 側の rhythmKey と同じ形。 */
+function rhythmKeyOf(notes) {
+  return notes.map((n) => `${n.beat}:${n.dur}`).join(',');
+}
+
+const RHYTHM_KEYS = [...new Set(RHYTHMS.map((r) => r.map((n) => `${n.b}:${n.d}`).join(',')))];
+
 // 断片が乗れるスロット(SLOTS の添字)の一覧。候補1件につき一度だけ計算する。
 function slotsOf(fit) {
   const out = [];
@@ -130,8 +143,10 @@ const GOALS = [
   { key: 'durations>=3', min: 700, test: (c) => c.meta.distinctDurations >= 3 },
   { key: 'syncopation', min: 250, test: hasTag('syncopation') },
   { key: 'has-rest', min: 200, test: hasTag('has-rest') },
-  // 名曲のメロディーの音程分布。跳躍だらけも順次だらけも記憶に残らない。
+  // 名旋律の音程分布。跳躍だらけも順次だらけも記憶に残らない。
   { key: 'step-ratio', min: 560, test: inStepBand },
+  // 「跳んだら順次で埋め戻す」。歌える線とそうでない線を分ける最大の要因。
+  { key: 'leap-then-step', min: 560, test: fillsLeaps },
   // 大衆性の核心。ペンタトニックは耳なじみの最大の要因。
   { key: 'penta-major', min: 400, test: hasTag('penta-major') },
   { key: 'penta-minor', min: 250, test: hasTag('penta-minor') },
@@ -155,8 +170,15 @@ const GOALS = [
   // 多様性(既存要件)。
   ...CONTOURS.map((c) => ({ key: `contour:${c}`, min: 20, test: (x) => x.meta.contour === c })),
   ...TENSIONS.map((t) => ({ key: `tension:${t}`, min: 50, test: (x) => x.meta.tension === t })),
+  // --- 被覆系(priority 0)。細かく重ならない枠なので先に埋める ---
   // 進行のスロット被覆。ここがゼロになるスロットが1つでもあると曲が破綻する。
-  ...SLOTS.map((s, i) => ({ key: s.key, min: SLOT_MIN, test: (c) => c.slots.includes(i) })),
+  ...SLOTS.map((s, i) => ({
+    key: s.key, min: SLOT_MIN, priority: 0, test: (c) => c.slots.includes(i),
+  })),
+  // リズム型ごとの仲間の数。楽節の導出(a -> a')がここで決まる。
+  ...RHYTHM_KEYS.map((k, i) => ({
+    key: `rhythm:${i}`, min: RHYTHM_MIN, priority: 0, test: (c) => c.rhythmKey === k,
+  })),
 ];
 
 // 埋めすぎ防止。下限を満たしたあと、スコア上位だけで埋めると
@@ -304,6 +326,7 @@ function collect() {
       source,
       formulas,
       slots: slotsOf(fit),
+      rhythmKey: rhythmKeyOf(notes),
       score: scoreFragment(notes, meta),
     };
 
@@ -369,12 +392,19 @@ function select({ buckets, goalPools, global }) {
   }
   const afterBuckets = picker.chosen.size;
 
-  // 2. 下限に届いていない目標を、不足の大きい順に埋める。
+  // 2. 下限に届いていない目標を埋める。
   //    1件で複数の目標を満たす候補を優先すると、999枠の消費が最小で済む。
+  //
+  //    順番が効く。被覆系の目標(リズム型・コードのスロット)は互いに重ならない
+  //    細かい枠で、量の目標(順次進行の帯・音数など)はどの断片でも満たしうる。
+  //    量から先に埋めるとスコア上位の似た断片で999枠が尽き、被覆系が埋まらない。
+  //    被覆系を先に埋めれば、その断片が量の目標も同時に満たしてくれる。
   const deficits = () => GOALS
     .map((g) => ({ g, need: g.min - picker.count(g.test) }))
     .filter((d) => d.need > 0)
-    .sort((a, b) => b.need - a.need || (a.g.key < b.g.key ? -1 : 1));
+    .sort((a, b) => (a.g.priority ?? 1) - (b.g.priority ?? 1)
+      || b.need - a.need
+      || (a.g.key < b.g.key ? -1 : 1));
 
   for (let round = 0; round < GOALS.length + 1; round++) {
     const list = deficits();
@@ -511,23 +541,42 @@ function report(melodies, chosenCands, info) {
   const durKinds = tally(chosenCands, (c) => c.meta.distinctDurations);
   const ratios = chosenCands.filter((c) => c.meta.durationRatio >= 3).length;
   console.log(`  音価の種類数   : ${JSON.stringify(durKinds)}  (>=3 ${chosenCands.filter((c) => c.meta.distinctDurations >= 3).length} / 最長÷最短>=3 ${ratios})`);
+  // リズム型ごとの件数。少ない型の断片は「同じリズムの別の断片」を見つけられず、
+  // 組み立て側で楽節(a -> a')が導出できなくなる。
+  const perRhythm = RHYTHM_KEYS.map((k) => chosenCands.filter((c) => c.rhythmKey === k).length)
+    .sort((a, b) => a - b);
+  console.log(`  リズム型ごと   : ${RHYTHM_KEYS.length}型 / 最小 ${perRhythm[0]} / 中央値 ${perRhythm[perRhythm.length >> 1]} / 最大 ${perRhythm[perRhythm.length - 1]}`);
   console.log('  タグごと       :');
   for (const [tag, n] of tagList) console.log(`      ${tag.padEnd(15)} ${n}`);
   console.log(`  スコア         : min ${scores[0]} / median ${scores[Math.floor(scores.length / 2)]} / max ${scores[scores.length - 1]}`);
   console.log(`  peakDeg>=12    : ${melodies.filter((m) => m.peakDeg >= 12).length}  (うち頂点1回 ${melodies.filter((m) => m.peakDeg >= 12 && m.peakCount === 1).length})`);
   console.log(`  上限の消化     : ${[...capCount].map(([k, v]) => `${k}=${v}`).join(' ')}${relaxed.length ? `  (下限優先で緩めた: ${relaxed.join(' ')})` : ''}`);
 
-  // 旋律型(FORMULAS)の採用状況。ここが偏ると語彙が痩せる。
+  // 音程の分布がコーパス(名旋律57曲)の実測値に届いているか。
   const bySource = tally(chosenCands, (c) => c.source);
   const inBand = chosenCands.filter(inStepBand).length;
-  console.log(`  生成経路       : ${JSON.stringify(bySource)} / 順次進行55〜80% ${inBand}`);
+  const filled = chosenCands.filter(fillsLeaps).length;
+  const thirdBand = chosenCands.filter((c) => c.meta.thirdRatio >= 0.1 && c.meta.thirdRatio <= 0.3).length;
+  const mean = (fn) => (chosenCands.reduce((a, c) => a + fn(c), 0) / chosenCands.length).toFixed(3);
+  console.log(`  生成経路       : ${JSON.stringify(bySource)}`);
+  console.log(`  音程の分布     : 順次0.60〜0.80 ${inBand} / 3度0.10〜0.30 ${thirdBand} / 跳躍後に順次>=0.60 ${filled}`);
+  console.log(`                   平均 順次 ${mean((c) => c.meta.stepRatio)} (コーパス 0.696) / 3度 ${mean((c) => c.meta.thirdRatio)} (0.185) / 4度以上 ${mean((c) => c.meta.leapRatio)} (0.055)`);
+
+  // 旋律型の採用状況。特定の型に偏ると、語彙を増やした意味が無くなる。
   const formulaUse = {};
+  let draws = 0;
   for (const c of chosenCands) {
-    for (const f of c.formulas ?? []) formulaUse[f] = (formulaUse[f] ?? 0) + 1;
+    for (const f of c.formulas ?? []) {
+      formulaUse[f] = (formulaUse[f] ?? 0) + 1;
+      draws++;
+    }
   }
   const used = Object.entries(formulaUse).sort((a, b) => b[1] - a[1]);
-  console.log(`  旋律型ごと     : ${used.map(([k, v]) => `${k}=${v}`).join(' ')}`);
-  console.log(`                   (未採用: ${FORMULAS.filter((f) => !formulaUse[f.id]).map((f) => f.id).join(' ') || 'なし'})`);
+  const withCorpus = chosenCands.filter((c) => containsFormula(c.notes.map((n) => n.deg))).length;
+  console.log(`  旋律型         : ${used.length}/${FORMULAS.length + CADENCES.length}種 を採用 / 抽選 ${draws}回 / コーパスの型を含む断片 ${withCorpus} (${(100 * withCorpus / chosenCands.length).toFixed(1)}%)`);
+  console.log(`                   上位20: ${used.slice(0, 20).map(([k, v]) => `${k}=${v}(${(100 * v / draws).toFixed(1)}%)`).join(' ')}`);
+  const top = used[0];
+  console.log(`                   最頻 ${top[0]} = ${(100 * top[1] / draws).toFixed(2)}% / [0,-1,-2] = ${(100 * (formulaUse['0,-1,-2'] ?? 0) / draws).toFixed(2)}%`);
 
   // 目標の達成状況。ここが赤いまま出荷すると曲の作りが破綻する。
   const short = [];

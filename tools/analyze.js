@@ -72,6 +72,52 @@ function intervalsOf(degs) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// 音程の分布（名旋律57曲のコーパス実測値に対する較正用）
+// ---------------------------------------------------------------------------
+// 度数差1 = 2度（順次進行）, 2 = 3度, 3 = 4度, 4 = 5度。
+// コーパス実測: 2度 69.6% / 3度 18.5% / 4度以上 5.5% / 同音 6.4%、
+// そして「跳躍したら次は順次で埋め戻す」が 61.9%。
+// 名旋律のメロディーはこの分布にきれいに収まる。
+
+/** 順次進行（2度）の割合 */
+export function stepRatioOf(intervals) {
+  const list = Array.isArray(intervals) ? intervals : [];
+  if (list.length === 0) return 0;
+  return list.filter((d) => Math.abs(d) === 1).length / list.length;
+}
+
+/** 3度の割合。跳躍のなかで最も頻度が高く、歌に膨らみを与える */
+export function thirdRatioOf(intervals) {
+  const list = Array.isArray(intervals) ? intervals : [];
+  if (list.length === 0) return 0;
+  return list.filter((d) => Math.abs(d) === 2).length / list.length;
+}
+
+/** 4度以上の跳躍の割合。多いと歌えなくなる */
+export function leapRatioOf(intervals) {
+  const list = Array.isArray(intervals) ? intervals : [];
+  if (list.length === 0) return 0;
+  return list.filter((d) => Math.abs(d) >= 3).length / list.length;
+}
+
+/**
+ * 跳躍（3度以上）の直後が順次進行になっている割合。
+ * 跳躍しっぱなしの線は歌えない。「跳んだら埋め戻す」は名旋律の大原則。
+ * 跳躍が1つも無い断片は判定不能なので null を返す。
+ */
+export function leapThenStepRatio(intervals) {
+  const list = Array.isArray(intervals) ? intervals : [];
+  let leaps = 0;
+  let filled = 0;
+  for (let i = 0; i + 1 < list.length; i++) {
+    if (Math.abs(list[i]) < 2) continue;
+    leaps++;
+    if (Math.abs(list[i + 1]) === 1) filled++;
+  }
+  return leaps === 0 ? null : filled / leaps;
+}
+
 /** 方向転換回数（0の音程は無視して符号の変化を数える） */
 function turnsOf(intervals) {
   const signs = intervals.filter((d) => d !== 0).map((d) => Math.sign(d));
@@ -238,6 +284,7 @@ export function analyzeFragment(notes) {
       startDeg: 0, endDeg: 0, range: [0, 0], span: 0,
       peakDeg: 0, peakBeat: 0, peakCount: 0,
       density: 0, distinctDurations: 0, durationRatio: 1,
+      stepRatio: 0, thirdRatio: 0, leapRatio: 0, leapThenStep: null,
       intervals: [], contour: 'question', tags: [], tension: 1,
     };
   }
@@ -260,6 +307,12 @@ export function analyzeFragment(notes) {
     // リズムの単調さの主指標。1種類しか音価が無い断片は童謡の正体。
     distinctDurations: distinctDurations(list),
     durationRatio: round2(durationRatio(list)),
+    // 音程の分布。コーパス(名旋律57曲)の実測値と突き合わせて採点する。
+    // 帯の境目で採点とテストがずれないよう、ここでは丸めない。
+    stepRatio: stepRatioOf(intervals),
+    thirdRatio: thirdRatioOf(intervals),
+    leapRatio: leapRatioOf(intervals),
+    leapThenStep: leapThenStepRatio(intervals),
     intervals,
     contour: detectContour(degs),
   };

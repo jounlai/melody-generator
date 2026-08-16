@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHORD_VOCAB, splitBars, fitsBar, chordIndex } from '../src/theory.js';
-import { distinctDurations } from '../tools/analyze.js';
+import { distinctDurations, analyzeFragment } from '../tools/analyze.js';
+import { containsFormula } from '../tools/generate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_PATH = resolve(HERE, '../src/data/melodies.json');
@@ -37,13 +38,9 @@ const median = (values) => {
   return a[Math.floor(a.length / 2)];
 };
 
-// 順次進行(2度以内)の割合。名曲のメロディーの音程分布に一致する帯は 55〜80%。
-const stepRatioOf = (m) => {
-  const degs = m.notes.map((n) => n.deg);
-  const intervals = degs.slice(1).map((d, i) => d - degs[i]);
-  if (intervals.length === 0) return 0;
-  return intervals.filter((d) => Math.abs(d) >= 1 && Math.abs(d) <= 2).length / intervals.length;
-};
+// 音程の分布は名旋律57曲のコーパス実測値に合わせて数える。
+// 度数差1 = 2度(順次進行, コーパス 0.696) / 2 = 3度(0.185) / 3以上 = 4度以上(0.055)。
+const metaOf = (m) => analyzeFragment(m.notes);
 
 test('断片はちょうど999件', () => {
   assert.ok(Array.isArray(melodies));
@@ -212,9 +209,28 @@ test('inner-sequence が300件・inner-repeat が120件以上ある(動機の成
   assert.ok(withTag('inner-repeat').length >= 120, `inner-repeat が ${withTag('inner-repeat').length} 件しかない`);
 });
 
-test('順次進行の割合が55〜80%の断片が400件以上ある', () => {
-  const band = melodies.filter((m) => stepRatioOf(m) >= 0.55 && stepRatioOf(m) <= 0.8);
-  assert.ok(band.length >= 400, `音程分布が名曲の帯に入る断片が ${band.length} 件しかない`);
+test('順次進行の割合が0.60〜0.80の断片が500件以上ある', () => {
+  const band = melodies.filter((m) => {
+    const r = metaOf(m).stepRatio;
+    return r >= 0.6 && r <= 0.8;
+  });
+  assert.ok(band.length >= 500, `音程分布がコーパスの帯に入る断片が ${band.length} 件しかない`);
+});
+
+test('跳躍のあと順次進行で埋め戻す断片が500件以上ある', () => {
+  const filled = melodies.filter((m) => {
+    const r = metaOf(m).leapThenStep;
+    return r !== null && r >= 0.6;
+  });
+  assert.ok(filled.length >= 500, `跳躍を埋め戻す断片が ${filled.length} 件しかない`);
+});
+
+test('コーパス由来の旋律型を含む断片が60%以上ある', () => {
+  const hit = melodies.filter((m) => containsFormula(m.notes.map((n) => n.deg)));
+  assert.ok(
+    hit.length >= melodies.length * 0.6,
+    `コーパスの型を含む断片が ${hit.length}/${melodies.length} しかない`,
+  );
 });
 
 test('音数の中央値が8以上で、10音以上の断片が350件以上ある', () => {
