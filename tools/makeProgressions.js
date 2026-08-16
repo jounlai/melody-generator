@@ -4,15 +4,20 @@
 // 方針は「大衆的に人気のある進行を軸に組む」。
 // 基礎カタログの先頭に小室進行・アクシス進行・王道進行といった定番中の定番を置き
 // (popularity 5)、そこから素直な変形 — 2小節目の転回形化 / 終止のテンション付加 /
-// 偽終止化 / サブドミナントマイナー化 — の4種類だけを広げる。
+// 偽終止化 / セカンダリードミナント化 / サブドミナントマイナー化 — の5種類だけを広げる。
 // 変形は原形より popularity を1下げるので、カタログ上位がそのまま出現頻度の上位になる。
+//
+// バラードの背骨は3つ。カタログにはこれを明示的に入れてある。
+//   - セカンダリードミナント (V/vi=III7, V/ii=VI7, V/V=II7, V/IV=I7, V/iii=VII7)
+//   - 転回形を連ねた下降ベース (V/7, IM7/3, iii/3, vi/3, i/7, III/3 …)
+//   - ii-V の連鎖
 //
 // メジャー55件・マイナー44件(計99件)。Math.random() は使わない(完全に決定論的)。
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHORD_VOCAB, parseChord } from '../src/theory.js';
+import { CHORD_VOCAB, parseChord, bassMidi } from '../src/theory.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_PATH = resolve(HERE, '../src/data/progressions.json');
@@ -22,6 +27,10 @@ const MINOR_COUNT = 44;
 
 // popularity >= 4 の最低件数。これを割るなら「よくある感じ」にならないので生成を失敗させる。
 const MIN_POPULAR = 50;
+
+// バラードの背骨の最低件数。ここを割ると「名曲のあの感じ」が出ない。
+const MIN_SECONDARY = 15;   // セカンダリードミナントを含む進行
+const MIN_DESCENDING = 10;  // ベースが3小節以上つづけて下がる進行
 
 // ---------------------------------------------------------------------------
 // 基礎カタログ
@@ -45,12 +54,30 @@ const CATALOG = [
   { mode: 'major', pop: 5, name: '下降ベースのバラード常套句', bars: ['vi', 'V', 'IV', 'V'] },
   { mode: 'major', pop: 5, name: 'ツーファイブワン', bars: ['ii7', 'V7', 'IM7', 'IM7'] },
   { mode: 'major', pop: 5, name: '全終止の基本形', bars: ['I', 'IV', 'V', 'I'] },
+  // --- major: セカンダリードミナント(V/vi・V/ii・V/V・V/IV) ---
+  // 音階外の音を1つだけ含む借用和音。バラードで胸が締めつけられる瞬間はたいていこれ。
+  { mode: 'major', pop: 5, name: 'イエスタデイ型', bars: ['I', 'iii7', 'III7', 'vi'] },
+  { mode: 'major', pop: 5, name: 'V/IV からサブドミナントマイナー', bars: ['I', 'I7', 'IV', 'iv'] },
+  { mode: 'major', pop: 5, name: 'V/V 経由のツーファイブ', bars: ['vi', 'II7', 'ii7', 'V7'] },
+  { mode: 'major', pop: 5, name: '循環コードの豪華版', bars: ['IM7', 'VI7', 'ii7', 'V7'] },
+  { mode: 'major', pop: 5, name: '丸の内進行に近い形', bars: ['IV', 'III7', 'vi', 'I7'] },
+  // --- major: 下降ベース ---
+  // 転回形を連ねてベースを順次下降させる。愛の賛歌型の常套句。
+  // ベースが C-B-A-G と順次下降する。バラードの下降ベースの原型。
+  // V/7（7thがベース）だと C-F-A-G になって下降しないので V/3 が正しい。
+  { mode: 'major', pop: 5, name: '下降ベースの定番', bars: ['I', 'V/3', 'vi', 'I/5'] },
+  { mode: 'major', pop: 5, name: '下降ベースからサブドミナントマイナー', bars: ['IM7', 'IM7/3', 'IV', 'iv'] },
+  { mode: 'major', pop: 5, name: 'ゆるやかな下降', bars: ['I', 'iii/3', 'IV', 'IV/3'] },
+  { mode: 'major', pop: 5, name: 'vi からの下降ベース', bars: ['vi', 'vi/3', 'IV', 'V'] },
   // --- major: よく使われる ---
   { mode: 'major', pop: 4, name: '王道進行のテンション形', bars: ['IVM7', 'V', 'iii', 'vi'] },
   { mode: 'major', pop: 4, name: '順次上行', bars: ['I', 'iii', 'IV', 'V'] },
   { mode: 'major', pop: 4, name: 'サブドミナントマイナー', bars: ['IV', 'iv', 'I', 'I'] },
   { mode: 'major', pop: 4, name: '3度堆積', bars: ['IM7', 'iii7', 'vi7', 'IV'] },
   { mode: 'major', pop: 4, name: 'IV-iv 挟み', bars: ['I', 'IVM7', 'iv', 'I'] },
+  // --- major: ii-V の連鎖(バカラック系の色) ---
+  { mode: 'major', pop: 4, name: 'ツーファイブのテンション形', bars: ['ii9', 'V9', 'IM7', 'IM7'] },
+  { mode: 'major', pop: 4, name: 'ツーファイブの連鎖', bars: ['ii7', 'V7', 'iii7', 'VI7'] },
   // --- major: 色物・陰り担当(数は控えめに) ---
   { mode: 'major', pop: 3, name: 'bVI 借用', bars: ['I', 'V', 'vi', 'bVI'] },
   { mode: 'major', pop: 3, name: 'ミクソリディアン借用', bars: ['I', 'bVII', 'IV', 'I'] },
@@ -65,6 +92,11 @@ const CATALOG = [
   { mode: 'minor', pop: 5, name: '短調の循環', bars: ['i', 'iv', 'VII', 'III'] },
   { mode: 'minor', pop: 5, name: '下行バス', bars: ['i', 'VII', 'VI', 'V'] },
   { mode: 'minor', pop: 5, name: 'VI-VII-i', bars: ['i', 'VI', 'VII', 'i'] },
+  // --- minor: 下降ベースとセカンダリードミナント ---
+  { mode: 'minor', pop: 5, name: '短調の下降ベース', bars: ['i', 'i/7', 'VI', 'III'] },
+  { mode: 'minor', pop: 5, name: 'V/v を経由する短調', bars: ['i', 'II7', 'v', 'i'] },
+  { mode: 'minor', pop: 5, name: 'V/III を経由する短調', bars: ['i', 'VII7', 'III', 'iv'] },
+  { mode: 'minor', pop: 5, name: '転回形で着地する短調', bars: ['VI', 'VII', 'III/3', 'i'] },
   // --- minor: よく使われる ---
   { mode: 'minor', pop: 4, name: '平行長調へ', bars: ['i', 'v', 'VI', 'III'] },
   { mode: 'minor', pop: 4, name: '3度上行', bars: ['i', 'III', 'VII', 'iv'] },
@@ -90,7 +122,7 @@ function baseForm(symbol) {
 }
 
 // ---------------------------------------------------------------------------
-// 変形テーブル(4種類だけ。原形と素直な変形で99件を埋める)
+// 変形テーブル(5種類だけ。原形と素直な変形で99件を埋める)
 // ---------------------------------------------------------------------------
 
 // テンション付加(記号が完全一致したときだけ適用)。
@@ -104,6 +136,18 @@ const SDM = { major: 'iv', minor: 'VI' };
 
 // 偽終止の着地先。
 const DECEPTIVE_TARGET = { major: 'vi', minor: 'VI' };
+
+// 3小節目の和音へ向かうセカンダリードミナント(その和音を一時的な主和音とみなした V7)。
+// 2小節目をこれに差し替えると、音階外の音が1つ入って進行に陰りが差す。
+// 主和音(I / i)自身の V は「セカンダリー」ではないので入れない。
+const SECONDARY_DOMINANT = {
+  major: {
+    ii: 'VI7', iii: 'VII7', IV: 'I7', V: 'II7', vi: 'III7',
+  },
+  minor: {
+    III: 'VII7', v: 'II7', VII: 'IV7',
+  },
+};
 
 const VARIANTS = [
   // 原形。penalty 0。
@@ -140,6 +184,19 @@ const VARIANTS = [
       : null),
   },
 
+  // 2小節目を「3小節目へ向かうセカンダリードミナント」へ差し替える。
+  // I - vi - IV - V が I - I7 - IV - V に、vi - IV - V - I が vi - II7 - V - I になる。
+  // 骨格(1・3・4小節目)は原形のまま残り、2小節目だけが借用和音になる。
+  {
+    id: 'sec',
+    penalty: 1,
+    label: 'の変形(セカンダリードミナント)',
+    apply: (bars, mode) => {
+      const sd = SECONDARY_DOMINANT[mode][baseForm(bars[2])];
+      return sd ? [bars[0], sd, bars[2], bars[3]] : null;
+    },
+  },
+
   // 最終小節をサブドミナントマイナー系へ。
   // 直前が V の長調(V -> iv)と、同じ和音が隣り合う形は避ける。
   {
@@ -162,8 +219,17 @@ const TENSION_TABLE = {
   V: 4, bVI: 4,
 };
 
+// 大文字ローマ数字 + 短7度。V7 だけは本来のドミナントなので除く。
+// 借用の緊張があるので、基本形の緊張度ではなく V と同じ 4 を与える。
+function isSecondaryDominant(symbol) {
+  const c = parseChord(symbol);
+  return c.quality === '7' && !c.minor && !c.flat && c.rootDeg !== 5;
+}
+
 function tensionOf(bars) {
-  return bars.map((sym) => TENSION_TABLE[baseForm(sym)] ?? 2);
+  return bars.map((sym) => (
+    isSecondaryDominant(sym) ? 4 : TENSION_TABLE[baseForm(sym)] ?? 2
+  ));
 }
 
 function cadenceOf(bars) {
@@ -173,6 +239,19 @@ function cadenceOf(bars) {
   if (a === 'V' && (b === 'I' || b === 'i')) return 'authentic';
   if ((a === 'IV' && b === 'I') || (a === 'iv' && (b === 'I' || b === 'i'))) return 'plagal';
   return 'open';
+}
+
+// ベースが3小節以上つづけて単調非増加か。転回形を連ねた下降ベースはここに出る。
+// bassMidi は1オクターブの窓に丸めるので、値は主音を下端とした相対音高。
+function descendingBarCount(bars, mode) {
+  const line = bars.map((sym) => bassMidi(sym, mode, 60, 36));
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < line.length; i++) {
+    run = line[i] <= line[i - 1] ? run + 1 : 1;
+    if (run > best) best = run;
+  }
+  return best;
 }
 
 function inVocab(bars, mode) {
@@ -187,18 +266,24 @@ function clampPop(pop) {
 // 生成
 // ---------------------------------------------------------------------------
 
-// 変形の優先順(VARIANTS の並び)ごとに、カタログの順(=人気の順)で走査する。
-// 原形が最初に来るので、定番32個は必ず全部残る。そのあと転回形 → テンション →
-// 偽終止 → サブドミナントマイナー の順に埋まっていき、件数に達したところで打ち切る。
+// 候補の並び＝選抜の優先順。
+//
+//   1. 原形(カタログ順)を全部。カタログは51件で定員99件より少ないので、
+//      popularity 5 の定番も新しく足したバラード進行も、押し出されることはない。
+//   2. そのあと変形。変形は「種類ごとにカタログ順」で並べたうえで種類を輪番に取る
+//      (転回形 → テンション → 偽終止 → セカンダリードミナント → サブドミナント
+//      マイナー → 転回形 → …)。1種類がカタログ全部ぶんの枠を独占すると、
+//      後ろの種類が1件も残らない(偽終止もセカンダリードミナントも消える)。
+//
 // 選抜は完全に決定論的。
 function generate() {
-  const candidates = [];
-  for (const variant of VARIANTS) {
+  const [origins, ...variantGroups] = VARIANTS.map((variant) => {
+    const group = [];
     CATALOG.forEach((base, baseIndex) => {
       const bars = variant.apply(base.bars, base.mode);
       if (!bars || bars.length !== 4) return;
       if (!inVocab(bars, base.mode)) return;
-      candidates.push({
+      group.push({
         mode: base.mode,
         bars,
         baseIndex,
@@ -207,6 +292,15 @@ function generate() {
         popularity: clampPop(base.pop - variant.penalty),
       });
     });
+    return group;
+  });
+
+  const candidates = [...origins];
+  const deepest = Math.max(0, ...variantGroups.map((g) => g.length));
+  for (let i = 0; i < deepest; i++) {
+    for (const group of variantGroups) {
+      if (group[i]) candidates.push(group[i]);
+    }
   }
 
   // 重複排除。先に来たほう(＝原形、あるいは人気の高い原形から派生したほう)が勝つ。
@@ -265,6 +359,20 @@ function verify(items) {
   if (popular < MIN_POPULAR) {
     throw new Error(`popularity>=4 が ${popular} 件しかありません(必要 ${MIN_POPULAR} 件)`);
   }
+
+  const secondary = items.filter(
+    (p) => p.bars.some((b) => isSecondaryDominant(b.chord)),
+  ).length;
+  if (secondary < MIN_SECONDARY) {
+    throw new Error(`セカンダリードミナントが ${secondary} 件しかありません(必要 ${MIN_SECONDARY} 件)`);
+  }
+
+  const descending = items.filter(
+    (p) => descendingBarCount(p.bars.map((b) => b.chord), p.mode) >= 3,
+  ).length;
+  if (descending < MIN_DESCENDING) {
+    throw new Error(`下降ベースが ${descending} 件しかありません(必要 ${MIN_DESCENDING} 件)`);
+  }
   for (const p of items) {
     if (!Number.isInteger(p.popularity) || p.popularity < 1 || p.popularity > 5) {
       throw new Error(`${p.id}: popularity が範囲外 (${p.popularity})`);
@@ -290,6 +398,12 @@ for (const p of progressions) pops[p.popularity] = (pops[p.popularity] ?? 0) + 1
 const sdmCount = progressions.filter(
   (p) => p.mode === 'major' && p.bars.some((b) => baseForm(b.chord) === 'iv'),
 ).length;
+const secondaryCount = progressions.filter(
+  (p) => p.bars.some((b) => isSecondaryDominant(b.chord)),
+).length;
+const descendingCount = progressions.filter(
+  (p) => descendingBarCount(p.bars.map((b) => b.chord), p.mode) >= 3,
+).length;
 const histogram = [5, 4, 3, 2, 1]
   .map((n) => `${n}:${pops[n] ?? 0}`)
   .join(' / ');
@@ -302,6 +416,8 @@ console.log(`  cadence : ${JSON.stringify(cadences)}`);
 console.log(`  popularity (5→1) : ${histogram}`);
 console.log(`  popularity >= 4  : ${progressions.filter((p) => p.popularity >= 4).length} 件`);
 console.log(`  major with subdominant-minor (iv): ${sdmCount}`);
+console.log(`  secondary dominant : ${secondaryCount} 件`);
+console.log(`  descending bass    : ${descendingCount} 件`);
 console.log('  定番の収録状況:');
 for (const base of CATALOG) {
   const bars = base.bars.join(' - ');

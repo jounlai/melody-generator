@@ -26,7 +26,7 @@ const MIN_NOTES_PER_PIECE = 8;
 const MIN_FORMULAS = 200;
 const MIN_CADENCES = 10;
 const MIN_RHYTHM_CELLS = 20;
-const MIN_SOARS = 15;
+const MIN_SOARS = 40;
 // 名旋律は順次進行が主体。この帯を外れたら採譜そのものが疑わしい。
 const STEPWISE_BAND = { min: 0.4, max: 0.8 };
 // 地域ごとに見るときは語法の幅があるので少し広く取る。
@@ -253,7 +253,7 @@ test('rhythmCells が20種類以上あり、長さ2〜4で dur が正の数', ()
   }
 });
 
-test('soars が15種類以上あり、長さ4〜6の0始まりオフセットである', () => {
+test('soars が40種類以上あり、長さ4〜6の0始まりオフセットである', () => {
   assert.ok(Array.isArray(patterns.soars));
   assert.ok(
     patterns.soars.length >= MIN_SOARS,
@@ -310,18 +310,23 @@ test('全 soars が定義(大跳躍→最高音→順次下降2音以上)を実�
 });
 
 test('舞い上がりの判定は境界で正しく効く', () => {
-  // 5度上行 → 順次で2音下降。これが定義そのもの。
+  // 4度上行 → 順次で2音下降。これが定義そのもの。
+  assert.ok(isSoarWindow([0, 3, 2, 1]));
+  // 5度・6度の跳躍も当然入る。
   assert.ok(isSoarWindow([0, 4, 3, 2]));
-  // 跳躍が3(=4度)では足りない。
-  assert.ok(!isSoarWindow([0, 3, 2, 1]));
+  assert.ok(isSoarWindow([0, 5, 4, 3]));
+  // 跳躍が2(=3度)では足りない。3度は「跳び上がり」ではなく埋め草。
+  assert.ok(!isSoarWindow([0, 2, 1, 0]));
   // 下降が1音しか続かない。
   assert.ok(!isSoarWindow([0, 4, 3, 4]));
   // 到達点が最高音でない(あとでさらに上がる)。
-  assert.ok(!isSoarWindow([0, 4, 5, 4, 3]));
+  assert.ok(!isSoarWindow([0, 3, 5, 4, 3]));
   // 跳躍後が跳躍(3度を超える下降)なら順次ではない。
   assert.ok(!isSoarWindow([0, 4, 1, 0]));
-  // 3度(度数差2)までは「順次」に含める。
+  // 下降側は3度(度数差2)までを「順次」に含める。
   assert.ok(isSoarWindow([0, 5, 3, 2]));
+  // 下降が4度なら順次ではない。
+  assert.ok(!isSoarWindow([0, 5, 1, 0]));
 });
 
 // ---------------------------------------------------------------------------
@@ -382,9 +387,12 @@ test('byRegion が全地域を覆い、どの地域も stepwiseRatio が 0.35〜
       + 'この地域の採譜を見直すこと',
     );
     assert.ok(value.meanRange > 0, `${region}: meanRange が正でない`);
+    // 0 の地域が出たら、その地域の採譜か soars の定義がおかしいサイン。
+    // (実際これで韓国民謡の完全4度跳躍を潰していた採譜ミスが見つかった)
     assert.ok(
-      Number.isInteger(value.soarCount) && value.soarCount >= 0,
-      `${region}: soarCount が非負整数でない`,
+      Number.isInteger(value.soarCount) && value.soarCount >= 1,
+      `region="${region}" の soarCount が ${value.soarCount}。`
+      + 'どの伝統にも舞い上がりはあるはずで、0 は採譜か定義を疑うべき',
     );
   }
   assert.equal(total, CORPUS.length);

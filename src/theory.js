@@ -18,7 +18,8 @@ export function degToMidi(deg, mode, tonicMidi) {
 }
 
 const ROMAN = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7 };
-const CHORD_RE = /^(b?)([ivIV]+)(M7|7|sus4|add9)?(?:\/(3|5|7))?$/;
+// 品質の並びは長いものが先。'add9' より先に '9' を置くと 'Iadd9' が壊れる。
+const CHORD_RE = /^(b?)([ivIV]+)(M7|sus4|add9|7|9)?(?:\/(3|5|7))?$/;
 
 export function parseChord(symbol) {
   const m = CHORD_RE.exec(symbol);
@@ -43,6 +44,8 @@ function intervalsFor({ minor, quality }) {
     case '7': return [0, third, 7, 10];
     case 'sus4': return [0, 5, 7];
     case 'add9': return [0, third, 7, 14];
+    // 9th。長三和音なら属九(V9)、短三和音ならマイナー9th(ii9)。どちらも7thは短7度。
+    case '9': return [0, third, 7, 10, 14];
     default: throw new Error(`unknown quality: ${quality}`);
   }
 }
@@ -50,7 +53,11 @@ function intervalsFor({ minor, quality }) {
 export function chordSemitones(symbol, mode) {
   const c = parseChord(symbol);
   const root = degToSemitone(c.rootDeg, mode) - (c.flat ? 1 : 0);
-  return intervalsFor(c).map((i) => root + i);
+  const ivs = intervalsFor(c);
+  // 第3転回形(/7)は7thが最低音になる形。三和音のままでは7thが無いので短7度を補う。
+  // V/7 は V7 の第3転回形(G7/F)、i/7 は i7 の第3転回形(Am7/G)。
+  const withSeventh = c.inversion === 7 && ivs.length < 4 ? [...ivs, 10] : ivs;
+  return withSeventh.map((i) => root + i);
 }
 
 export function chordPitchClasses(symbol, mode) {
@@ -83,16 +90,43 @@ export function bassMidi(symbol, mode, tonicMidi, lowestMidi = 36) {
 }
 
 // 断片の適合判定を事前計算するための語彙。progressions.json はこの範囲だけを使う。
+//
+// !!! 既存の要素の順序は絶対に変えないこと !!!
+// melodies.json の fit / sus はこの配列の「添字」で保存されている。
+// 途中に挿入したり並べ替えたりすると、全断片の適合情報が別のコードを指す。
+// 追加は必ず末尾へ append する（末尾追加なら既存の添字は動かない）。
 export const CHORD_VOCAB = {
   major: [
+    // --- ここから20個は初版の並び。1つも動かさない ---
     'I', 'IM7', 'I/3', 'I/5', 'ii', 'ii7', 'iii', 'iii7',
     'IV', 'IVM7', 'IV/3', 'iv', 'V', 'V7', 'V/3', 'Vsus4',
     'vi', 'vi7', 'bVI', 'bVII',
+    // --- ここから追加分 ---
+    // セカンダリードミナント。大文字ローマ数字＋短7度で、根音の上に長三和音を積む。
+    // 音階外の音（Cメジャーの III7 なら G#）が入るのが本質で、これが陰りを作る。
+    'VI7',   // V/ii
+    'VII7',  // V/iii
+    'II7',   // V/V
+    'III7',  // V/vi
+    'I7',    // V/IV
+    // 下降ベースライン用の転回形。
+    'V/7',   // V7 の第3転回形(G7/F)
+    'ii/3', 'vi/3', 'iii/3', 'IM7/3', 'IVM7/3',
+    // テンション1つぶんの色。
+    'ii9', 'V9',
   ],
   minor: [
+    // --- ここから18個は初版の並び。1つも動かさない ---
     'i', 'i7', 'i/3', 'i/5', 'isus4', 'III', 'IIIM7', 'iv',
     'iv7', 'iv/3', 'v', 'v7', 'V', 'V7', 'VI', 'VIM7',
     'VI/3', 'VII',
+    // --- ここから追加分 ---
+    'II7',   // V/v
+    'VII7',  // V/III
+    'IV7',   // V/VII
+    'i/7',   // i7 の第3転回形(Am7/G)
+    'III/3', 'VII/3', 'iv/5',
+    'iv9', 'V9',
   ],
 };
 

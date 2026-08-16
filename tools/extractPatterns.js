@@ -36,8 +36,10 @@ export const RHYTHM_MAX_LEN = 4;
 export const SOAR_MIN_LEN = 4;
 export const SOAR_MAX_LEN = 6;
 export const SOAR_MIN_WEIGHT = 1;
-// 舞い上がりと認める上行跳躍の最小の度数差。4 = 5度以上の跳躍。
-export const SOAR_MIN_LEAP = 4;
+// 舞い上がりと認める上行跳躍の最小の度数差。3 = 4度以上の跳躍。
+// ポップバラードが頂点へ飛び込むときの跳躍は4度・5度・6度が中心なので、
+// ここを4(=5度以上)にすると4度の跳躍を丸ごと取りこぼす。
+export const SOAR_MIN_LEAP = 3;
 // 跳んだあと順次で降り続ける音の最小数。
 export const SOAR_MIN_DESCENT = 2;
 // 「順次」として許す下降幅(度数差)。1 = 2度、2 = 3度。

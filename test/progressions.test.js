@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CHORD_VOCAB } from '../src/theory.js';
+import { CHORD_VOCAB, bassMidi } from '../src/theory.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_PATH = resolve(HERE, '../src/data/progressions.json');
@@ -11,9 +11,39 @@ const progressions = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
 
 const CADENCES = ['deceptive', 'authentic', 'plagal', 'open'];
 
-// 転回形・テンションを取り除いた基本形。
+// 転回形・テンションを取り除いた基本形。'IVM7' -> 'IV', 'ii9' -> 'ii', 'I/3' -> 'I'
 function baseForm(symbol) {
-  return symbol.replace(/(M7|7|sus4|add9)?(\/(3|5|7))?$/, '');
+  return symbol.replace(/(M7|add9|sus4|7|9)?(\/(3|5|7))?$/, '');
+}
+
+// セカンダリードミナント（その度数を根音とする長三和音＋短7度）。
+// major: VI7=V/ii, VII7=V/iii, II7=V/V, III7=V/vi, I7=V/IV
+// minor: II7=V/v, VII7=V/III, IV7=V/VII
+const SECONDARY_DOMINANTS = new Set(['VI7', 'VII7', 'II7', 'III7', 'I7', 'IV7']);
+
+function hasSecondaryDominant(p) {
+  return p.bars.some((b) => SECONDARY_DOMINANTS.has(b.chord));
+}
+
+// 各小節のベース音。転回形が効くので、下降ベースはここに出る。
+// bassMidi は1オクターブの窓（36〜47）に丸めるので、値は主音を下端とした相対音高。
+function bassLine(p) {
+  return p.bars.map((b) => bassMidi(b.chord, p.mode, 60, 36));
+}
+
+// 単調非増加が何小節続くか（4なら4小節ずっと下がりっぱなし）。
+function longestNonIncreasingRun(line) {
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < line.length; i++) {
+    run = line[i] <= line[i - 1] ? run + 1 : 1;
+    if (run > best) best = run;
+  }
+  return best;
+}
+
+function hasDescendingBass(p) {
+  return longestNonIncreasingRun(bassLine(p)) >= 3;
 }
 
 function chordsOf(p) {
@@ -39,6 +69,18 @@ const MAJOR_STANDARDS = [
   [['vi', 'V', 'IV', 'V'], '下降ベースのバラード常套句'],
   [['ii7', 'V7', 'IM7', 'IM7'], 'ツーファイブワン'],
   [['I', 'IV', 'V', 'I'], '全終止の基本形'],
+  // セカンダリードミナント系。名曲のバラードで胸が締めつけられる瞬間の正体。
+  [['I', 'iii7', 'III7', 'vi'], 'イエスタデイ型'],
+  [['I', 'I7', 'IV', 'iv'], 'V/IV からサブドミナントマイナー'],
+  [['vi', 'II7', 'ii7', 'V7'], 'V/V 経由のツーファイブ'],
+  [['IM7', 'VI7', 'ii7', 'V7'], '循環コードの豪華版'],
+  [['IV', 'III7', 'vi', 'I7'], '丸の内進行に近い形'],
+  // 下降ベース系。転回形を連ねてベースを順次下降させる。
+  // V/7 は7thがベースなので C-F-A-G となり下降しない。V/3 で C-B-A-G にする
+  [['I', 'V/3', 'vi', 'I/5'], '下降ベースの定番'],
+  [['IM7', 'IM7/3', 'IV', 'iv'], '下降ベースからサブドミナントマイナー'],
+  [['I', 'iii/3', 'IV', 'IV/3'], 'ゆるやかな下降'],
+  [['vi', 'vi/3', 'IV', 'V'], 'vi からの下降ベース'],
 ];
 
 const MINOR_STANDARDS = [
@@ -50,6 +92,10 @@ const MINOR_STANDARDS = [
   [['i', 'iv', 'VII', 'III'], '短調の循環'],
   [['i', 'VII', 'VI', 'V'], '下行バス'],
   [['i', 'VI', 'VII', 'i'], 'VI-VII-i'],
+  [['i', 'i/7', 'VI', 'III'], '短調の下降ベース'],
+  [['i', 'II7', 'v', 'i'], 'V/v を経由する短調'],
+  [['i', 'VII7', 'III', 'iv'], 'V/III を経由する短調'],
+  [['VI', 'VII', 'III/3', 'i'], '転回形で着地する短調'],
 ];
 
 const POPULAR_4 = [
@@ -58,6 +104,9 @@ const POPULAR_4 = [
   ['major', ['IV', 'iv', 'I', 'I']],
   ['major', ['IM7', 'iii7', 'vi7', 'IV']],
   ['major', ['I', 'IVM7', 'iv', 'I']],
+  // ii-V の連鎖（バカラック系）。
+  ['major', ['ii9', 'V9', 'IM7', 'IM7']],
+  ['major', ['ii7', 'V7', 'iii7', 'VI7']],
   ['minor', ['i', 'v', 'VI', 'III']],
   ['minor', ['i', 'III', 'VII', 'iv']],
 ];
@@ -133,6 +182,54 @@ test('サブドミナントマイナーを含む進行が5件以上ある', () =
 test('偽終止が3件以上ある', () => {
   const deceptive = progressions.filter((p) => p.cadence === 'deceptive');
   assert.ok(deceptive.length >= 3, `偽終止が ${deceptive.length} 件しかない`);
+});
+
+// ---------------------------------------------------------------------------
+// バラードの背骨（セカンダリードミナントと下降ベース）
+// ---------------------------------------------------------------------------
+
+test('セカンダリードミナントを含む進行が15件以上ある', () => {
+  const sd = progressions.filter(hasSecondaryDominant);
+  assert.ok(
+    sd.length >= 15,
+    `セカンダリードミナントが ${sd.length} 件しかない\n${sd.map(chordsOf).join('\n')}`,
+  );
+});
+
+test('セカンダリードミナントは長調・短調の両方にある', () => {
+  for (const mode of ['major', 'minor']) {
+    const n = progressions.filter((p) => p.mode === mode && hasSecondaryDominant(p)).length;
+    assert.ok(n >= 2, `${mode} のセカンダリードミナントが ${n} 件しかない`);
+  }
+});
+
+test('V/vi（major の III7）を含む進行が2件以上ある', () => {
+  // Yesterday の A7。いちばん効く1つなので、これだけは単独で数える。
+  const n = progressions.filter(
+    (p) => p.mode === 'major' && p.bars.some((b) => b.chord === 'III7'),
+  ).length;
+  assert.ok(n >= 2, `III7 が ${n} 件しかない`);
+});
+
+test('下降ベースの進行が10件以上ある', () => {
+  // 各小節のベース音（bassMidi）が3小節以上つづけて単調非増加になっているもの。
+  const desc = progressions.filter(hasDescendingBass);
+  assert.ok(
+    desc.length >= 10,
+    `下降ベースが ${desc.length} 件しかない\n${desc.map(chordsOf).join('\n')}`,
+  );
+});
+
+test('下降ベースは長調・短調の両方にある', () => {
+  for (const mode of ['major', 'minor']) {
+    const n = progressions.filter((p) => p.mode === mode && hasDescendingBass(p)).length;
+    assert.ok(n >= 3, `${mode} の下降ベースが ${n} 件しかない`);
+  }
+});
+
+test('4小節を通してベースが一度も上がらない進行がある', () => {
+  const full = progressions.filter((p) => longestNonIncreasingRun(bassLine(p)) === 4);
+  assert.ok(full.length >= 1, `4小節通しの下降ベースが1件もない`);
 });
 
 // ---------------------------------------------------------------------------
