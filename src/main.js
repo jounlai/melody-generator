@@ -14,6 +14,7 @@ import {
 } from './settings.js';
 import { createEngine } from './synth.js';
 import { createPlayer } from './player.js';
+import { renderScore, keySignature } from './notation.js';
 import { loadStoredSettings, storeSettings, createSettingsPanel } from './ui.js';
 
 const NOTE_NAMES = [
@@ -27,6 +28,18 @@ const PROGRESSIONS_URL = new URL('./data/progressions.json', import.meta.url);
 
 const DEF_BY_KEY = new Map(PARAM_DEFS.map((d) => [d.key, d]));
 
+/** プレイヘッドを枠のどこに置くか。中央よりやや左に置くと先が読める */
+const FOLLOW_RATIO = 0.4;
+
+/** 手で動かしたあと、自動追従に戻るまでの時間 */
+const USER_SCROLL_HOLD_MS = 3000;
+
+/** 自分で動かしたスクロールと手で動かされたスクロールを見分ける許容差（px） */
+const SCROLL_EPSILON = 2;
+
+/** 追従の追いつき具合。1 に近いほど機敏で、小さいほどぬるりと動く */
+const SCROLL_EASE = 0.25;
+
 /** 曲コードに載るキー（＝曲の内容を決めるパラメータ）だけを抜き出す */
 const CODE_KEYS = PARAM_DEFS.filter((d) => d.code).map((d) => d.key);
 
@@ -38,14 +51,28 @@ function pickComposeParams(source) {
   return out;
 }
 
-/** 「C 長調 ・ 68 BPM ・ 32小節」の形にする */
+/** 楽譜と同じ調名。notation.js が出せなくても表示は続けたいので握りつぶす */
+function keyLabel(song) {
+  try {
+    const label = String(keySignature(song?.tonicMidi, song?.mode)?.label ?? '').trim();
+    return label || null;
+  } catch (err) {
+    console.warn('調名を出せませんでした', err);
+    return null;
+  }
+}
+
+/** 「ハ長調（C） ・ 68 BPM ・ 32小節」の形にする */
 function describeSong(song) {
   const tonic = Math.round(Number(song?.tonicMidi));
   const name = Number.isFinite(tonic) ? NOTE_NAMES[((tonic % 12) + 12) % 12] : '?';
   const mode = song?.mode === 'minor' ? '短調' : '長調';
   const tempo = Math.round(Number(song?.tempo)) || 0;
   const bars = Number(song?.bars) || 0;
-  return `${name} ${mode} ・ ${tempo} BPM ・ ${bars}小節`;
+  // 調名は楽譜の調号と同じ呼び方（ハ長調）で出す。括弧の中は和音を追う人向けの音名。
+  const label = keyLabel(song);
+  const key = label ? `${label}（${name}）` : `${name} ${mode}`;
+  return `${key} ・ ${tempo} BPM ・ ${bars}小節`;
 }
 
 /** input でも div でも同じように書けるようにする */
@@ -77,6 +104,8 @@ function init() {
     nowPlaying: byId('now-playing'),
     settingsPanel: byId('settings-panel'),
     status: byId('status'),
+    scoreView: byId('score-view'),
+    scoreToggle: byId('score-toggle'),
   };
 
   // ---- 状態 -----------------------------------------------------------
@@ -160,9 +189,239 @@ function init() {
     });
   }
 
+  // ---- 楽譜 ------------------------------------------------------------
+  // 描くのは曲ごとに一度きり。毎フレームやるのはプレイヘッドの移動と、
+  // 鳴り始めた／鳴り終わった音符の付け外しだけにする。
+  const score = {
+    visible: true,
+    /** @type {((beat: number) => number) | null} */
+    beatToX: null,
+    /** @type {number[]} 小節の開始 x 座標。beatToX が無いときの補間に使う */
+    barX: [],
+    /** @type {HTMLElement | null} */
+    playhead: null,
+    /**
+     * 拍位置の昇順に並べた音符。前から順に舐めるだけで済むので、
+     * 1000 個あっても毎フレーム見るのは新しく鳴り始めたぶんだけ。
+     * @type {Array<{ el: Element, beat: number, end: number }>}
+     */
+    notes: [],
+    /** notes のうち、ここより手前は「もう鳴り始めた」と判定済み */
+    cursor: 0,
+    /** いま is-playing が付いている音符。同時に鳴るのはせいぜい数個 */
+    active: [],
+    /** 直前のフレームの拍位置。null は「今は何も鳴っていない」 */
+    lastPos: null,
+    /** 自分で入れたスクロール位置。手で動かされたかの判定に使う */
+    autoScrollLeft: -1,
+    /** この時刻までは自動追従を止める */
+    holdUntil: 0,
+  };
+
+  const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+  const raf = typeof globalThis.requestAnimationFrame === 'function'
+    ? globalThis.requestAnimationFrame.bind(globalThis)
+    : null;
+
+  function nowMs() {
+    return globalThis.performance?.now?.() ?? Date.now();
+  }
+
+  function clearHighlight() {
+    for (const note of score.active) note.el.classList.remove('is-playing');
+    score.active.length = 0;
+  }
+
+  /** 楽譜を捨てて、代わりに一言だけ置く */
+  function showScorePlaceholder(text) {
+    if (!els.scoreView) return;
+    const p = document.createElement('p');
+    p.className = 'score-empty';
+    p.textContent = text;
+    els.scoreView.innerHTML = '';
+    els.scoreView.appendChild(p);
+    score.beatToX = null;
+    score.barX = [];
+    score.playhead = null;
+    score.notes = [];
+    score.active = [];
+    score.cursor = 0;
+    score.lastPos = null;
+  }
+
+  function buildScore(song) {
+    if (!els.scoreView) return;
+    let rendered;
+    try {
+      rendered = renderScore(song);
+    } catch (err) {
+      // 楽譜が描けないだけで音は鳴らせる。再生は止めない。
+      console.error('楽譜を描けませんでした', err);
+      showScorePlaceholder('この曲の楽譜は表示できませんでした');
+      return;
+    }
+
+    const canvas = document.createElement('div');
+    canvas.className = 'score-canvas';
+    // notation.js が返す文字列はエスケープ済み（あちら側のテストで保証）
+    canvas.innerHTML = String(rendered?.svg ?? '');
+
+    const playhead = document.createElement('div');
+    playhead.className = 'score-playhead';
+    playhead.hidden = true;
+    canvas.appendChild(playhead);
+
+    els.scoreView.innerHTML = '';
+    els.scoreView.appendChild(canvas);
+
+    const notes = [];
+    for (const el of canvas.querySelectorAll('.note')) {
+      const beat = Number(el.getAttribute('data-beat'));
+      if (!Number.isFinite(beat)) continue;
+      const dur = Number(el.getAttribute('data-dur'));
+      notes.push({ el, beat, end: beat + (Number.isFinite(dur) && dur > 0 ? dur : 0) });
+    }
+    notes.sort((a, b) => a.beat - b.beat);
+
+    score.beatToX = typeof rendered?.beatToX === 'function' ? rendered.beatToX : null;
+    score.barX = Array.isArray(rendered?.barX) ? rendered.barX : [];
+    score.playhead = playhead;
+    score.notes = notes;
+    score.active = [];
+    score.cursor = 0;
+    score.lastPos = null;
+    score.holdUntil = 0;
+    els.scoreView.scrollLeft = 0;
+    score.autoScrollLeft = els.scoreView.scrollLeft;
+  }
+
+  /** 拍位置 → 楽譜上の x。beatToX が無い版でも小節線から補間して出す */
+  function beatX(beat) {
+    if (score.beatToX) {
+      const x = Number(score.beatToX(beat));
+      if (Number.isFinite(x)) return x;
+    }
+    const bars = score.barX;
+    if (bars.length >= 2) {
+      const inBars = beat / 4;
+      const i = Math.max(0, Math.min(bars.length - 2, Math.floor(inBars)));
+      const a = Number(bars[i]);
+      const b = Number(bars[i + 1]);
+      if (Number.isFinite(a) && Number.isFinite(b)) return a + (b - a) * (inBars - i);
+    }
+    return null;
+  }
+
+  function updateHighlight(pos) {
+    const notes = score.notes;
+    if (score.lastPos === null || pos < score.lastPos) {
+      // 曲の切り替わりやスキップで位置が戻ったとき。索引を頭からやり直す。
+      // 曲に一度きりなので、毎フレームの負担にはならない。
+      clearHighlight();
+      score.cursor = 0;
+    }
+    let i = score.cursor;
+    while (i < notes.length && notes[i].beat <= pos) {
+      const note = notes[i];
+      // 追いついた時点ですでに鳴り終わっている音符は、付けずに読み飛ばす
+      if (note.end > pos) {
+        note.el.classList.add('is-playing');
+        score.active.push(note);
+      }
+      i += 1;
+    }
+    score.cursor = i;
+
+    const active = score.active;
+    let kept = 0;
+    for (let r = 0; r < active.length; r += 1) {
+      const note = active[r];
+      if (note.end > pos) active[kept++] = note;
+      else note.el.classList.remove('is-playing');
+    }
+    active.length = kept;
+  }
+
+  function followScroll(x) {
+    const view = els.scoreView;
+    if (!view) return;
+    if (nowMs() < score.holdUntil) return; // 手で動かした直後は追いかけない
+    const width = view.clientWidth;
+    const max = view.scrollWidth - width;
+    if (!(max > 0)) return;
+    const target = Math.max(0, Math.min(max, x - width * FOLLOW_RATIO));
+    const current = view.scrollLeft;
+    const diff = target - current;
+    if (Math.abs(diff) < 0.5) return;
+    // reduced motion のときは補間せず、その場に飛ばす
+    view.scrollLeft = reducedMotion?.matches ? target : current + diff * SCROLL_EASE;
+    score.autoScrollLeft = view.scrollLeft;
+  }
+
+  /** 何も鳴っていないときの後片付け。すでに片付いていれば何もしない */
+  function idleScore() {
+    if (score.lastPos === null) return;
+    clearHighlight();
+    score.cursor = 0;
+    score.lastPos = null;
+    if (score.playhead) score.playhead.hidden = true;
+  }
+
+  function frame() {
+    if (raf) raf(frame);
+    // 隠しているあいだは何も計算しない
+    if (!score.visible || !els.scoreView) return;
+    const pos = player?.getPositionBeats?.() ?? null;
+    if (pos === null) {
+      idleScore();
+      return;
+    }
+    updateHighlight(pos);
+    const x = beatX(pos);
+    if (score.playhead && x !== null) {
+      score.playhead.hidden = false;
+      score.playhead.style.transform = `translateX(${x}px)`;
+      followScroll(x);
+    }
+    score.lastPos = pos;
+  }
+
+  function setScoreVisible(visible) {
+    score.visible = visible;
+    if (els.scoreView) els.scoreView.hidden = !visible;
+    if (els.scoreToggle) {
+      els.scoreToggle.textContent = visible ? '楽譜を隠す' : '楽譜を出す';
+      els.scoreToggle.setAttribute('aria-expanded', visible ? 'true' : 'false');
+    }
+    // 隠すあいだに付けっぱなしにしない。出したら次のフレームで付け直す。
+    if (!visible) idleScore();
+  }
+
+  if (els.scoreToggle) {
+    els.scoreToggle.addEventListener('click', () => setScoreVisible(!score.visible));
+  }
+
+  if (els.scoreView) {
+    const holdFollow = () => {
+      score.holdUntil = nowMs() + USER_SCROLL_HOLD_MS;
+    };
+    els.scoreView.addEventListener('wheel', holdFollow, { passive: true });
+    els.scoreView.addEventListener('touchstart', holdFollow, { passive: true });
+    els.scoreView.addEventListener('touchmove', holdFollow, { passive: true });
+    els.scoreView.addEventListener('keydown', holdFollow);
+    els.scoreView.addEventListener('scroll', () => {
+      // 自分で入れた値と違っていれば、動かしたのは人間。つまみのドラッグもここで拾う。
+      if (Math.abs(els.scoreView.scrollLeft - score.autoScrollLeft) > SCROLL_EPSILON) {
+        holdFollow();
+      }
+    }, { passive: true });
+    if (raf) raf(frame);
+  }
+
   // ---- 曲が切り替わったとき -------------------------------------------
   function handleSongChange(song) {
     if (!song) return;
+    buildScore(song);
     const code = encodeSongCode(song.seed, settings);
     setFieldValue(els.songCode, code);
 

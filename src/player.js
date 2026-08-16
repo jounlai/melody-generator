@@ -192,6 +192,14 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
     }
   }
 
+  /** 今の曲の長さ（拍）。totalBeats が無い曲でも小節数から出す */
+  function songTotalBeats() {
+    const total = Number(song?.totalBeats);
+    if (Number.isFinite(total) && total > 0) return total;
+    const bars = Number(song?.bars);
+    return Number.isFinite(bars) && bars > 0 ? bars * 4 : 0;
+  }
+
   return {
     /**
      * 再生を開始する。seed を省略すると新しいランダムな曲になる。
@@ -239,6 +247,30 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
 
     getCurrentSong() {
       return song;
+    },
+
+    /**
+     * 今鳴っている曲の、曲頭からの拍位置。楽譜の追従表示のために使う。
+     *
+     * 「今なにも指していない」状態は全部 null にまとめる。停止中、助走ぶんで
+     * まだ一音も鳴っていない間、曲の終端を過ぎて次の曲を待っている余韻の間。
+     * 呼ぶ側は null をそのまま「プレイヘッドを消す」と読めばよい。
+     *
+     * song と songStartAt は beginSong の中で同じ同期処理として差し替わるので、
+     * 曲の切り替わりに割り込んで古い開始時刻と新しい曲を混ぜて読むことはない。
+     *
+     * @returns {number | null}
+     */
+    getPositionBeats() {
+      if (!playing || !song) return null;
+      const tempo = Number(song.tempo);
+      if (!Number.isFinite(tempo) || tempo <= 0) return null;
+      const beats = (audioCtx.currentTime - songStartAt) * (tempo / 60);
+      // LEAD_IN_SEC ぶんは負になる。曲はまだ始まっていない。
+      if (!Number.isFinite(beats) || beats < 0) return null;
+      const total = songTotalBeats();
+      if (total > 0 && beats > total) return null;
+      return beats;
     },
 
     /**

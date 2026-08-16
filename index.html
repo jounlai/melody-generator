@@ -29,6 +29,8 @@
 
   body {
     margin: 0;
+    /* 楽譜はこの中の枠だけが横に流れる。ページ全体は決して横に伸びない */
+    overflow-x: clip;
     background: var(--bg);
     color: var(--text);
     font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic",
@@ -158,6 +160,104 @@
     overflow-wrap: anywhere;
   }
 
+  /* ---- 楽譜（このページの主役） ---- */
+
+  /*
+   * ページの左右余白ぶんだけ外へ広げて、楽譜を一番大きく見せる。
+   * 100vw ではなく余白の実寸を打ち消しているので、スクロールバーが出ている
+   * ブラウザでもページ全体に横スクロールは生まれない。
+   */
+  /* notation.js が返す <svg class="score"> と衝突しない名前にしてある */
+  .score-section { margin-inline: calc(-1 * clamp(20px, 5vw, 32px)); }
+
+  .score-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-inline: clamp(20px, 5vw, 32px);
+  }
+
+  .score-head h2 { margin-bottom: 14px; }
+
+  #score-toggle {
+    flex: none;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    background: transparent;
+  }
+
+  #score-view {
+    /* 楽譜の線と符頭の色。notation.js は currentColor と --score-ink を見る */
+    --score-ink: #d5dce2;
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: clamp(200px, 34vh, 300px);
+    color: var(--score-ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    /* 手で送りたい人のために横スクロールバーは残す */
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-behavior: auto;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  #score-view[hidden] { display: none; }
+
+  #score-view::-webkit-scrollbar { height: 10px; }
+  #score-view::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+  }
+
+  /* 楽譜は原寸のまま置く。縮めると SVG の x 座標と画面上の位置がずれる */
+  .score-canvas {
+    position: relative;
+    flex: none;
+  }
+
+  .score-canvas svg { display: block; }
+
+  #score-view .note.is-playing {
+    --score-ink: var(--accent);
+    color: var(--accent);
+  }
+
+  .score-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--accent);
+    opacity: 0.8;
+    pointer-events: none;
+  }
+
+  .score-playhead[hidden] { display: none; }
+
+  .score-empty {
+    flex: none;
+    margin: auto;
+    padding: 24px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+    text-align: center;
+  }
+
+  .score-note {
+    margin: 12px 0 0;
+    padding-inline: clamp(20px, 5vw, 32px);
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+
   /* ---- 曲コード ---- */
 
   .code-row {
@@ -181,7 +281,8 @@
 
   #song-code:read-only { cursor: text; }
 
-  .note {
+  /* 楽譜の中の <g class="note"> に当たらないよう、要素まで絞る */
+  p.note {
     margin: 14px 0 0;
     color: var(--muted);
     font-size: 0.78rem;
@@ -351,6 +452,19 @@
         <button id="skip" type="button">次の曲へ</button>
       </div>
       <div id="now-playing" aria-live="polite">まだ再生していません</div>
+    </section>
+
+    <section class="score-section" aria-labelledby="score-head">
+      <div class="score-head">
+        <h2 id="score-head">楽譜</h2>
+        <button id="score-toggle" type="button" aria-expanded="true" aria-controls="score-view">
+          楽譜を隠す
+        </button>
+      </div>
+      <div id="score-view" tabindex="0" role="group" aria-label="楽譜（横にスクロールできます）">
+        <p class="score-empty">再生すると、ここに楽譜が出ます。</p>
+      </div>
+      <p class="score-note">再生に合わせて流れます。手で送ると、3秒だけ追従を止めます。</p>
     </section>
 
     <section aria-labelledby="code-head">
