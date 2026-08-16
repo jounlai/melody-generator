@@ -8,6 +8,7 @@
     "test": "node --test test/",
     "data:progressions": "node tools/makeProgressions.js",
     "data:melodies": "node tools/makeMelodies.js",
-    "data": "npm run data:progressions && npm run data:melodies"
+    "data": "npm run data:progressions && npm run data:melodies",
+    "bundle": "node tools/bundle.js"
   }
 }
