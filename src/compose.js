@@ -48,6 +48,7 @@ const ACCOMP_OFFSETS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
 const ACCOMP_DUR = 0.75;
 // 音数が倍になるぶん、1音あたりは弱くする。
 const ACCOMP_VEL = 0.3;
+const BEATS_PER_BAR = 4;
 const ACCOMP_LOWEST = 48;
 const PAD_VEL = 0.3;
 const PAD_LOWEST = 55;
@@ -67,6 +68,24 @@ const BASS_LOWEST = 36;
 // （止めたところで跳躍が出るのは許容する。無限に下がるよりよい）。
 const BASS_RANGE = [28, 55];
 const ACCOMP_RANGE = [48, 72];
+
+// ---------------------------------------------------------------------------
+// 声部の上下関係
+//
+// 上の ACCOMP_RANGE は「絶対的な音域」でしかなく、旋律がどこを歌っているかを
+// 見ていない。実測すると、旋律の音の 33.8% が伴奏かパッドに追い越されていた
+// （60曲・既定設定）。伴奏が旋律の上を横切ると主従が入れ替わり、
+// どれだけ良い旋律を書いても埋もれて聴こえなくなる。
+// ピアノ譜で左手が右手を越えるのは、越えること自体を聴かせたいときだけである。
+//
+// そこで小節ごとに「その小節で旋律がいちばん低いところ」を天井にして、
+// 伴奏とパッドはその下に押し込む。LAYER_GAP は天井との間に空ける最小の隙間。
+// 2半音空けておけば、旋律の最低音と伴奏の最高音が同度・半音で混ざらない。
+// ---------------------------------------------------------------------------
+const LAYER_GAP = 2;
+// 旋律が休んでいる小節の天井。旋律が無い小節まで下げる理由が無いので、
+// 伴奏の本来の上限をそのまま使う。
+const NO_MELODY_CEILING = ACCOMP_RANGE[1];
 
 // 終止の形。実際のピアノ曲は、終わりで左手の刻みを止めて和音を置く。
 // 刻み続けたまま終わると、耳は「まだ続く」と判断して曲が閉じない。
@@ -1131,6 +1150,105 @@ function slotMelodyNotes(fragment, ctx, slotStartBeat, barTonics) {
   return notes;
 }
 
+// 掛留を検査するときに「表に出ている」とみなす旋律音。
+// 小節の強拍にあるか、1.5拍以上伸びる音。fitsBar が非和声音に解決を要求するのと
+// 同じ条件で、要するに聴き手が旋律として聴き取る音のこと。
+const EXPOSED_DUR = 1.5;
+
+/**
+ * 持続音（パッド）から、その小節の旋律と半音でぶつかる音を落とす。
+ *
+ * 強拍の半音衝突は実測で強拍の20.1%あるが、その80%は非和声音で、
+ * さらにその99%は次の音へ順次解決している。つまり掛留であり、
+ * このプログラムが狙って作っている「陰り」そのものなので触ってはいけない。
+ *
+ * 潰すべきなのは残りの、旋律が和声音なのに濁っている4.0%のほう。
+ * 主犯は4拍伸びるパッドで、たとえば IM7 の第7音は主音の半音下にあり、
+ * 旋律が主音を歌うあいだ鳴り続けると、解決しないまま唸り続ける。
+ * アルペジオなら一瞬で消えるが、持続音は消えない。だからパッドだけを削る。
+ *
+ * 2音を切るところまでは削らない（和音が和音でなくなる）。
+ */
+export function withoutRub(midis, melody, bar) {
+  const from = bar * 4;
+  const exposed = [];
+  for (const n of melody) {
+    if (n.beat < from || n.beat >= from + 4) continue;
+    if (n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) exposed.push(n.midi);
+  }
+  if (exposed.length === 0) return midis;
+  const rubs = (m) => exposed.some((x) => {
+    const d = (((m - x) % 12) + 12) % 12;
+    return d === 1 || d === 11;
+  });
+  const kept = midis.filter((m) => !rubs(m));
+  return kept.length >= 2 ? kept : midis;
+}
+
+/**
+ * その小節で伴奏とパッドが越えてはいけない高さ。
+ * 旋律の最低音から LAYER_GAP ぶん下。旋律が休んでいる小節は制限しない。
+ */
+export function melodyCeiling(melody, bar) {
+  const from = bar * 4;
+  let low = Infinity;
+  for (const n of melody) {
+    if (n.beat < from || n.beat >= from + 4) continue;
+    if (n.midi < low) low = n.midi;
+  }
+  return low === Infinity ? NO_MELODY_CEILING : low - LAYER_GAP;
+}
+
+/**
+ * 和音を、天井の下へ収まる位置に置く。
+ *
+ * !!! 音名は絶対に変えない !!! 動かしてよいのはオクターブ単位の移動と、
+ * 上の音を鳴らさないこと（省略）の2つだけ。半音単位で押し込むと、
+ * その和音は別の和音になってしまう（nearestOctave は範囲が12半音を切ると
+ * 音名を変える丸め方をするので、天井の計算に直接は使えない）。
+ *
+ * 手順は上から順に、効き目の大きい順:
+ *   1. 声部進行のために、前の小節に近いオクターブを選ぶ
+ *   2. 天井を越えていたら、下限に触れるまでオクターブ単位で下げる
+ *   3. それでも越えるなら、越える音を上から鳴らさない（最低2音は残す）
+ *
+ * 3 で薄くなるのは許容する。旋律が埋もれるほうが害が大きく、
+ * 和音の性格は残った音とベースとパッドが受け持つ。
+ *
+ * 下限は2つある。prefLo は「普段いてほしい音域の下端」で、floor は
+ * 「旋律を避けるためなら、ここまでは降りてよい」という限界。分けておかないと、
+ * 旋律が低く歌う小節で伴奏が降りられず、旋律の上に取り残される。
+ *
+ * @param {number[]} midis chordVoicing の戻り値（昇順）
+ * @param {number|null} prev 直前の小節の最低音。無ければ null
+ * @param {number} prefLo 普段の下限（声部進行はこの範囲で選ぶ）
+ * @param {number} hi 最低音の上限
+ * @param {number} ceiling 最高音がこれを越えないようにする
+ * @param {number} floor 天井を避けるために降りてよい限界
+ */
+export function placeUnder(midis, prev, prefLo, hi, ceiling, floor = prefLo) {
+  const span = midis[midis.length - 1] - midis[0];
+  // 候補はオクターブ移動だけ。nearestOctave は範囲が12半音を切ると
+  // 端へ丸めて音名を変えてしまうので、ここでは使わない。
+  let best = null;
+  for (let k = -4; k <= 4; k++) {
+    const base = midis[0] + 12 * k;
+    if (base < floor) continue;
+    // 重みの順がそのまま優先順位。天井を守ることが最優先で、
+    // 普段の音域も声部進行も、そのあとで効かせる。
+    const over = Math.max(0, base + span - ceiling);
+    const outside = base < prefLo ? prefLo - base : base > hi ? base - hi : 0;
+    const move = prev === null ? 0 : Math.abs(base - prev);
+    const score = over * 1000 + outside * 10 + move;
+    if (!best || score < best.score) best = { base, score };
+  }
+  if (!best) return midis.slice();
+  let out = midis.map((m) => m + (best.base - midis[0]));
+  // それでも越えるなら、越える音を上から鳴らさない（最低2音は残す）。
+  while (out.length > 2 && out[out.length - 1] > ceiling) out = out.slice(0, -1);
+  return out;
+}
+
 /**
  * 小節ごとの和音を、実際に鳴っている高さで書き出す。楽譜のコードネームの材料。
  * 記号（I / vi / iv）ではなく実音から作るので、転回形も転調もそのまま名前に出る。
@@ -1432,28 +1550,39 @@ export function composeSong(seed, data, settings) {
 
       // 転回形では最低音が根音とは限らないので、根音は記号から取り直す。
       const rootMidi = barTonic + chordSemitones(chord, mode)[0];
+      // その小節で旋律がいちばん低いところ。伴奏とパッドはこれより下に置く。
+      const ceiling = melodyCeiling(melody, startBar + b);
+
       // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
       // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
       const raw = chordVoicing(chord, mode, barTonic, ACCOMP_LOWEST);
-      const low = nearestOctave(raw[0], prevAccomp,
-        [Math.max(ACCOMP_RANGE[0], bassNote + 1), ACCOMP_RANGE[1]]);
-      prevAccomp = low;
-      const shift = low - raw[0];
-      const voicing = shift === 0 ? raw : raw.map((v) => v + shift);
-      // パッドは伴奏と同じ和音なので、同じぶんだけ一緒に動かす。
-      // 伴奏だけを持ち上げるとパッドを追い越して層が崩れる。
-      const padVoicing = chordVoicing(chord, mode, barTonic, PAD_LOWEST);
+      const accompLo = Math.max(ACCOMP_RANGE[0], bassNote + 1);
+      // 旋律が低く歌う小節では、普段の音域を割ってでもその下へ降りる。
+      // 降りる限界はベースと同じ高さまで。同じ音を重ねるのは左手の普通の書き方で、
+      // 土台が入れ替わるのは「ベースより下へ潜る」ときだけ。ここを1つ上に
+      // 締めると、旋律が低い小節で伴奏が降りられず、実測で8%が旋律の上に残った。
+      const accompFloor = Math.min(accompLo, bassNote);
+      const voicing = placeUnder(raw, prevAccomp, accompLo, ACCOMP_RANGE[1], ceiling, accompFloor);
+      prevAccomp = voicing[0];
+      // パッドは伴奏と同じ和音を、伴奏の上に薄く重ねる持続音。
+      const padVoicing = withoutRub(
+        placeUnder(chordVoicing(chord, mode, barTonic, PAD_LOWEST),
+          null, voicing[0], ACCOMP_RANGE[1], ceiling, voicing[0]),
+        melody, startBar + b);
       // 楽譜のコードネームの材料。実際に鳴る積み方（voicing）から名前を作る。
       barInfo[startBar + b] = {
         bar: startBar + b,
         symbol: chord,
         tonicMidi: barTonic,
         rootMidi,
-        voicing: voicing.slice(),
+        // コードネームは「実際に鳴っている音の集まり」から作る。
+        // 天井に収めるために伴奏の上の音を省いた小節でも、パッドが持っていれば
+        // 和音としては鳴っているので、両方を合わせて名前を決める。
+        voicing: [...new Set([...voicing, ...padVoicing])].sort((x, y) => x - y),
         bassNote,
       };
       pad.push({
-        midis: shift === 0 ? padVoicing : padVoicing.map((v) => v + shift),
+        midis: padVoicing,
         beat,
         dur: isFinalBar ? FINAL_PAD_DUR : 4,
         vel: PAD_VEL,
@@ -1467,10 +1596,15 @@ export function composeSong(seed, data, settings) {
         continue;
       }
       for (let i = 0; i < ACCOMP_OFFSETS.length; i++) {
+        const at = ACCOMP_OFFSETS[i];
         accomp.push({
           midi: voicing[arpeggioIndex(i, voicing.length)],
-          beat: beat + ACCOMP_OFFSETS[i],
-          dur: ACCOMP_DUR,
+          beat: beat + at,
+          // 最後の8分だけは小節線で切る。ACCOMP_DUR はペダルのように隣と重ねる
+          // ための長さだが、小節の終わりでそれをやると前の和音が次の小節へ
+          // 0.25拍はみ出す。和音が変わったところへ古い和音が残るので、
+          // 強拍の半音衝突の27%がここから出ていた。
+          dur: Math.min(ACCOMP_DUR, BEATS_PER_BAR - at),
           vel: ACCOMP_VEL,
         });
       }
