@@ -402,13 +402,24 @@ function notatedDivs(note) {
   return TYPE_DIVS[type] * (dots === 1 ? 1.5 : 1);
 }
 
-test('MusicXML: duration と type/dot が一致する', realOpts, () => {
+test('MusicXML: duration と type/dot が一致し、音価が拍に乗る', realOpts, () => {
   for (const bars of LENGTHS) {
     for (const seed of SEEDS) {
-      for (const note of findAll(parseXml(toMusicXML(song(seed, bars))), 'note')) {
-        assert.equal(Number(textOf(note, 'duration')), notatedDivs(note),
-          `${seed}/${bars}: duration と type が食い違う`);
-      }
+      measuresOf(toMusicXML(song(seed, bars))).forEach((measure, i) => {
+        const pos = { 1: 0, 2: 0 };
+        for (const child of measure.children) {
+          if (child.name !== 'note') continue;
+          const staff = textOf(child, 'staff');
+          const divs = Number(textOf(child, 'duration'));
+          assert.equal(divs, notatedDivs(child),
+            `${seed}/${bars} 小節${i + 1}: duration と type が食い違う`);
+          // 付点音符は素の音価の位置から始める（付点2分が裏拍から始まると読めない）
+          const base = TYPE_DIVS[textOf(child, 'type')];
+          assert.equal(pos[staff] % base, 0,
+            `${seed}/${bars} 小節${i + 1}: ${textOf(child, 'type')} が ${pos[staff]}/16 から始まっている`);
+          if (!hasChild(child, 'chord')) pos[staff] += divs;
+        }
+      });
     }
   }
 });
@@ -444,6 +455,24 @@ test('MusicXML: 1つの音価で書けない長さはタイで割る', () => {
   assert.equal(first[0].children.filter((c) => c.name === 'tie')[0].attrs.type, 'start');
   const ties = first.flatMap((n) => n.children.filter((c) => c.name === 'tie').map((c) => c.attrs.type));
   assert.equal(ties.filter((t) => t === 'start').length, ties.filter((t) => t === 'stop').length);
+});
+
+test('MusicXML: 強い拍をまたぐ音は読める形に割れる', () => {
+  // 2拍目から3拍伸びる音は「4分＋2分」のタイ。付点4分から割り始めると読めない。
+  const s = fakeSong({
+    bars: 1,
+    totalBeats: 4,
+    melody: [{ midi: 60, beat: 1, dur: 3, vel: 0.5 }],
+    // 伴奏の 0.75 拍は付点8分1つのまま（8分＋16分のタイにしない）
+    accomp: [{ midi: 48, beat: 0.5, dur: 0.75, vel: 0.3 }],
+  });
+  const measure = measuresOf(toMusicXML(s))[0];
+  const shape = (staff) => measure.children
+    .filter((c) => c.name === 'note' && textOf(c, 'staff') === staff)
+    .map((c) => `${hasChild(c, 'rest') ? 'r' : 'n'}${textOf(c, 'duration')}`);
+  assert.deepEqual(shape('1'), ['r4', 'n4', 'n8'], '2拍目からの3拍が読める形に割れていない');
+  // 休符も同じ規則で敷き詰める（16分 → 8分 → 2分 と拍の強いほうへ寄せる）
+  assert.deepEqual(shape('2'), ['r2', 'n3', 'r1', 'r2', 'r8'], '付点8分が割られている');
 });
 
 test('MusicXML: 音が1つも無くても小節は休符で埋まる', () => {
