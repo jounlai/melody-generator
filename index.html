@@ -258,6 +258,43 @@
     font-size: 0.78rem;
   }
 
+  /* ---- 楽譜の書き出し（脇役。再生ボタンより控えめに） ---- */
+
+  .score-export {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+    padding-inline: clamp(20px, 5vw, 32px);
+  }
+
+  .score-export button {
+    /* 幅が足りなければ縮んで、それでも足りなければ次の行へ落ちる */
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 7px 14px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    background: transparent;
+  }
+
+  .score-export button:hover:not(:disabled) { color: var(--text); }
+
+  /* 押せないボタンが hover で明るくならないように、共通の hover を打ち消す */
+  .score-export button:disabled,
+  .score-export button:disabled:hover {
+    color: var(--muted);
+    border-color: var(--line);
+  }
+
+  .score-export-help {
+    margin: 12px 0 0;
+    padding-inline: clamp(20px, 5vw, 32px);
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.9;
+  }
+
   /* ---- 曲コード ---- */
 
   .code-row {
@@ -465,6 +502,14 @@
         <p class="score-empty">再生すると、ここに楽譜が出ます。</p>
       </div>
       <p class="score-note">再生に合わせて流れます。手で送ると、3秒だけ追従を止めます。</p>
+      <div class="score-export" role="group" aria-label="楽譜の書き出し">
+        <button id="export-musicxml" type="button" aria-describedby="export-help" disabled>楽譜をダウンロード (MusicXML)</button>
+        <button id="export-midi" type="button" aria-describedby="export-help" disabled>MIDIをダウンロード</button>
+      </div>
+      <p class="score-export-help" id="export-help">
+        MusicXML は MuseScore（無料）や Finale、Sibelius で開くと五線譜として表示・印刷できます。<br>
+        MIDI は DAW や音楽ソフトで鳴らしたり編集したりできます。
+      </p>
     </section>
 
     <section aria-labelledby="code-head">

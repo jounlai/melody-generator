@@ -15,6 +15,7 @@ import {
 import { createEngine } from './synth.js';
 import { createPlayer } from './player.js';
 import { renderScore, keySignature } from './notation.js';
+import { toMusicXML, toMidi, suggestFilename } from './export.js';
 import { loadStoredSettings, storeSettings, createSettingsPanel } from './ui.js';
 
 const NOTE_NAMES = [
@@ -93,6 +94,122 @@ async function fetchJson(url) {
   return res.json();
 }
 
+// ---- ファイルの保存 ----------------------------------------------------
+// このページは1枚の HTML として配られ、ダブルクリック（file://）で開かれる。
+// その状況では blob: からのダウンロードを断るブラウザがあるので、
+// 失敗したら data: URL に切り替えて必ず手元に届くようにする。
+
+const MUSICXML_MIME = 'application/vnd.recordare.musicxml+xml';
+const MIDI_MIME = 'audio/midi';
+
+/**
+ * blob: URL を解放するまでの猶予。click() の直後に消すと、
+ * ダウンロードが始まる前に URL が無効になるブラウザがある。
+ */
+const OBJECT_URL_TTL_MS = 250;
+
+/** 文字列を UTF-8 のバイト列にする（日本語の曲名などを壊さないため） */
+function textToBytes(text) {
+  const source = String(text);
+  if (typeof TextEncoder === 'function') return new TextEncoder().encode(source);
+  // TextEncoder が無い環境向け。encodeURIComponent が作る %XX は UTF-8 の1バイト。
+  const escaped = encodeURIComponent(source);
+  const out = [];
+  for (let i = 0; i < escaped.length; i += 1) {
+    if (escaped[i] === '%') {
+      out.push(parseInt(escaped.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      out.push(escaped.charCodeAt(i));
+    }
+  }
+  return new Uint8Array(out);
+}
+
+/**
+ * バイト列を base64 にする。
+ * btoa が受け取れるのは「1文字 = 1バイト」の文字列だけなので、
+ * Uint8Array を一度その形に直してから渡す。引数の個数には上限があるため小分けにする。
+ */
+function bytesToBase64(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const encode = globalThis.btoa;
+  if (typeof encode !== 'function') {
+    throw new Error('この環境では base64 に変換できません');
+  }
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < u8.length; i += CHUNK) {
+    binary += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+  }
+  return encode(binary);
+}
+
+/** @param {Uint8Array | string} payload */
+function toDataUrl(payload, mime) {
+  const bytes = typeof payload === 'string' ? textToBytes(payload) : payload;
+  return `data:${mime};base64,${bytesToBase64(bytes)}`;
+}
+
+/** ダウンロード用のリンクを作って押す。文書に入れないと反応しないブラウザがある */
+function clickDownloadLink(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  try {
+    a.click();
+  } finally {
+    a.remove();
+  }
+}
+
+function revokeSoon(url) {
+  const revoke = () => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn('blob URL を解放できませんでした', err);
+    }
+  };
+  if (typeof setTimeout === 'function') setTimeout(revoke, OBJECT_URL_TTL_MS);
+  else revoke();
+}
+
+/**
+ * ファイルを1つ保存させる。blob: が駄目なら data: URL でやり直す。
+ * どちらも駄目なら例外はそのまま投げる（呼び出し側が画面に出す）。
+ *
+ * @param {Uint8Array | string} payload
+ * @param {string} filename
+ * @param {string} mime
+ */
+function downloadFile(payload, filename, mime) {
+  let objectUrl = null;
+  try {
+    const blob = new Blob([payload], { type: mime });
+    objectUrl = URL.createObjectURL(blob);
+  } catch (err) {
+    console.warn('blob URL を作れませんでした。data: URL で保存します', err);
+    objectUrl = null;
+  }
+
+  if (objectUrl) {
+    try {
+      clickDownloadLink(objectUrl, filename);
+      return;
+    } catch (err) {
+      console.warn('blob URL から保存できませんでした。data: URL で保存し直します', err);
+    } finally {
+      revokeSoon(objectUrl);
+    }
+  }
+
+  clickDownloadLink(toDataUrl(payload, mime), filename);
+}
+
 function init() {
   const byId = (id) => document.getElementById(id);
   const els = {
@@ -106,6 +223,8 @@ function init() {
     status: byId('status'),
     scoreView: byId('score-view'),
     scoreToggle: byId('score-toggle'),
+    exportMusicXml: byId('export-musicxml'),
+    exportMidi: byId('export-midi'),
   };
 
   // ---- 状態 -----------------------------------------------------------
@@ -418,10 +537,56 @@ function init() {
     if (raf) raf(frame);
   }
 
+  // ---- 楽譜の書き出し --------------------------------------------------
+  const exportButtons = [els.exportMusicXml, els.exportMidi].filter(Boolean);
+
+  /** 書き出せる曲。まだ一度も再生していなければ null */
+  function exportableSong() {
+    return player?.getCurrentSong?.() ?? null;
+  }
+
+  // 曲が無いあいだは押せないようにしておく。止めたあとは、楽譜が画面に
+  // 残っているのだから、そのまま保存できたほうが自然なので押せるままにする。
+  function updateExportButtons() {
+    const ready = Boolean(exportableSong());
+    for (const button of exportButtons) button.disabled = !ready;
+  }
+
+  /** @param {'musicxml' | 'mid'} ext */
+  function exportSong(ext) {
+    const song = exportableSong();
+    if (!song) {
+      setStatus('先に再生してください', 2500);
+      return;
+    }
+    let filename = `piano.${ext}`;
+    try {
+      const suggested = String(suggestFilename(song, ext) ?? '').trim();
+      if (suggested) filename = suggested;
+      if (ext === 'mid') downloadFile(toMidi(song), filename, MIDI_MIME);
+      else downloadFile(String(toMusicXML(song)), filename, MUSICXML_MIME);
+    } catch (err) {
+      // 握りつぶさない。失敗したことと理由を必ず画面に出す。
+      console.error('保存できませんでした', err);
+      setStatus(`保存できませんでした: ${err.message}`);
+      return;
+    }
+    setStatus(`${filename} を保存しました`, 2000);
+  }
+
+  if (els.exportMusicXml) {
+    els.exportMusicXml.addEventListener('click', () => exportSong('musicxml'));
+  }
+  if (els.exportMidi) {
+    els.exportMidi.addEventListener('click', () => exportSong('mid'));
+  }
+  updateExportButtons();
+
   // ---- 曲が切り替わったとき -------------------------------------------
   function handleSongChange(song) {
     if (!song) return;
     buildScore(song);
+    updateExportButtons();
     const code = encodeSongCode(song.seed, settings);
     setFieldValue(els.songCode, code);
 
