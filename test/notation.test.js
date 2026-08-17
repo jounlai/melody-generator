@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   keySignature,
+  keyTimeline,
   spellNote,
   durationSymbol,
   splitAtBarlines,
@@ -55,6 +56,106 @@ function groupChunk(svg, marker) {
     i = close + 4;
   }
   return null;
+}
+
+/** <g class="note"> のブロックを全部切り出して、層・拍・臨時記号を取り出す */
+function noteGroups(svg) {
+  const out = [];
+  let i = 0;
+  for (;;) {
+    const start = svg.indexOf('<g class="note"', i);
+    if (start < 0) break;
+    let depth = 0;
+    let p = start;
+    let end = svg.length;
+    while (p < svg.length) {
+      const open = svg.indexOf('<g', p);
+      const close = svg.indexOf('</g>', p);
+      if (close < 0) break;
+      if (open >= 0 && open < close) {
+        depth++;
+        p = open + 2;
+        continue;
+      }
+      depth--;
+      if (depth === 0) {
+        end = close + 4;
+        break;
+      }
+      p = close + 4;
+    }
+    const block = svg.slice(start, end);
+    const head = /data-layer="([^"]*)" data-beat="([-\d.]+)"/.exec(block);
+    assert.ok(head, `音符の属性が読めない: ${block.slice(0, 80)}`);
+    out.push({
+      layer: head[1],
+      beat: Number(head[2]),
+      accidentals: [...block.matchAll(/data-acc="([^"]*)"/g)].map((m) => m[1]),
+    });
+    i = end;
+  }
+  return out;
+}
+
+/** 小節 from 以降の音符を「層@拍:臨時記号」の並びにする。描き方の比較用 */
+function fingerprint(svg, fromBar) {
+  return noteGroups(svg)
+    .filter((n) => n.beat >= fromBar * 4)
+    .map((n) => `${n.layer}@${n.beat}:${n.accidentals.join('')}`);
+}
+
+function accidentalCount(svg, fromBar) {
+  return noteGroups(svg)
+    .filter((n) => n.beat >= fromBar * 4)
+    .reduce((sum, n) => sum + n.accidentals.length, 0);
+}
+
+/** 転調する曲だけを集める。転調は抽選なので、集まらなければテスト側で気づけるようにする */
+function modulatedSongs(bars = '32') {
+  return SEEDS.map((seed) => song(seed, bars)).filter((s) => s.modulation);
+}
+
+/**
+ * 合成した転調曲。実データが無くても動く。
+ * atBar から先の音を shift 半音上げ、契約どおりの modulation / sections を付ける。
+ */
+function modSynth(tonicMidi, shift, mode = 'major', bars = 4, atBar = 2) {
+  // 主和音の4音（1 3 5 7）。どの調でも音階内に収まるので、
+  // 臨時記号が出たら「調の取り違え」だと分かる。
+  const steps = mode === 'minor' ? [0, 3, 7, 10] : [0, 4, 7, 11];
+  const notes = [];
+  const lows = [];
+  for (let b = 0; b < bars; b++) {
+    const up = b >= atBar ? shift : 0;
+    for (let k = 0; k < 4; k++) {
+      notes.push({ midi: tonicMidi + 12 + steps[k] + up, beat: b * 4 + k, dur: 1, vel: 0.5 });
+    }
+    lows.push({ midi: tonicMidi - 12 + up, beat: b * 4, dur: 4, vel: 0.5 });
+  }
+  return {
+    seed: 'modsynth',
+    mode,
+    tonicMidi,
+    tempo: 80,
+    bars,
+    totalBeats: bars * 4,
+    climaxBeat: 0,
+    breathBar: null,
+    sections: [
+      { name: 'A', progressionId: 'x', startBar: 0, tonicMidi, slots: [] },
+      { name: "A''", progressionId: 'x', startBar: atBar, tonicMidi: tonicMidi + shift, slots: [] },
+    ],
+    modulation: {
+      atBar,
+      semitones: shift,
+      fromTonicMidi: tonicMidi,
+      toTonicMidi: tonicMidi + shift,
+    },
+    melody: notes,
+    accomp: [],
+    bass: lows,
+    pad: [],
+  };
 }
 
 const KEY_C = keySignature(60, 'major');
@@ -518,4 +619,248 @@ test('renderScore: options で小節幅を変えられる', realOpts, () => {
   const wide = renderScore(s, { barWidth: 320 });
   assert.equal(wide.barX[1] - wide.barX[0], 320);
   assert.equal(wide.beatToX(s.totalBeats), wide.barX[s.bars]);
+});
+
+// ---------------------------------------------------------------------------
+// 17. keyTimeline：小節ごとの調
+// ---------------------------------------------------------------------------
+
+test('keyTimeline: 転調しない曲は全小節が同じ調で changes が空', () => {
+  const { keys, changes } = keyTimeline(
+    { tonicMidi: 57, mode: 'major', sections: [], modulation: null }, 8);
+  assert.equal(keys.length, 8);
+  assert.equal(changes.length, 0);
+  for (const k of keys) assert.deepEqual(k, keySignature(57, 'major'));
+});
+
+test('keyTimeline: modulation.atBar から先だけ新しい調になる', () => {
+  const s = modSynth(60, 2, 'major', 4, 2); // ハ長調 → ニ長調
+  const { keys, changes } = keyTimeline(s, 4);
+  assert.deepEqual(keys.map((k) => k.tonicName), ['C', 'C', 'D', 'D']);
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].bar, 2);
+  assert.equal(changes[0].from.tonicName, 'C');
+  assert.equal(changes[0].to.tonicName, 'D');
+});
+
+test('keyTimeline: 旋法は転調しても変わらない', () => {
+  const s = modSynth(57, 1, 'minor', 4, 2); // イ短調 → 変ロ短調
+  const { keys } = keyTimeline(s, 4);
+  assert.deepEqual(keys.map((k) => k.label), ['イ短調', 'イ短調', '変ロ短調', '変ロ短調']);
+});
+
+test('keyTimeline: 実データの転調曲で atBar に1回だけ変わる', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const { keys, changes } = keyTimeline(s, s.bars);
+    assert.equal(keys.length, s.bars, `${s.seed}: 小節数と合わない`);
+    assert.equal(changes.length, 1, `${s.seed}: 調が変わる回数が1でない`);
+    assert.equal(changes[0].bar, s.modulation.atBar, `${s.seed}: 変わる小節が atBar と違う`);
+    assert.deepEqual(changes[0].to, keySignature(s.modulation.toTonicMidi, s.mode));
+    assert.deepEqual(changes[0].from, keySignature(s.modulation.fromTonicMidi, s.mode));
+    // atBar の前後がそれぞれ元の調・新しい調
+    assert.deepEqual(keys[s.modulation.atBar - 1], keySignature(s.tonicMidi, s.mode));
+    assert.deepEqual(keys[s.bars - 1], keySignature(s.modulation.toTonicMidi, s.mode));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 18. renderScore：転調を描く
+// ---------------------------------------------------------------------------
+
+test('renderScore: 転調ありの実データ曲が例外なく描ける', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const score = renderScore(s);
+    assert.match(score.svg, /^<svg [^>]*>/);
+    assert.ok(score.svg.endsWith('</svg>'), `${s.seed}: </svg> で終わっていない`);
+    assert.ok(score.width > 0 && score.height > 0);
+    // 転調ありでも XML として壊れていない
+    assert.equal(score.svg.match(/&(?!(?:amp|lt|gt|quot|apos|#\d+);)/g), null, `${s.seed}: 生の &`);
+    assert.equal((score.svg.match(/</g) || []).length, (score.svg.match(/>/g) || []).length);
+  }
+});
+
+test('renderScore: 転調すると調号が2組（曲頭＋転調位置）出る', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const { svg } = renderScore(s);
+    assert.equal((svg.match(/<g class="key-signature"/g) || []).length, 2,
+      `${s.seed}: 調号が2組でない`);
+    assert.equal((svg.match(/<g class="key-change"/g) || []).length, 1,
+      `${s.seed}: 転調の印が1つでない`);
+    assert.ok(svg.includes(`<g class="key-change" data-bar="${s.modulation.atBar}">`),
+      `${s.seed}: 転調が atBar=${s.modulation.atBar} に無い`);
+    // 転調位置の調号の数と種類が新しい調と一致する
+    const to = keySignature(s.modulation.toTonicMidi, s.mode);
+    const block = groupChunk(svg, `<g class="key-signature" data-bar="${s.modulation.atBar}">`);
+    assert.ok(block, `${s.seed}: 転調位置の調号が無い`);
+    const sign = to.accidental === 'flat' ? 'b' : '#';
+    const marks = (block.match(new RegExp(`data-acc="${sign}"`, 'g')) || []).length;
+    assert.equal(marks, to.count * 2, `${s.seed}: ${to.label} の調号の数が合わない（2段ぶん）`);
+  }
+});
+
+test('renderScore: 転調しない曲の調号は1組だけ', realOpts, () => {
+  const plain = SEEDS.map((seed) => song(seed)).filter((s) => !s.modulation);
+  assert.ok(plain.length > 0, '転調しない曲が1つも無い（検査が空振り）');
+  for (const s of plain) {
+    const { svg } = renderScore(s);
+    const key = keySignature(s.tonicMidi, s.mode);
+    assert.equal((svg.match(/<g class="key-signature"/g) || []).length, key.count === 0 ? 0 : 1,
+      `${s.seed}: 調号の組数が違う`);
+    assert.equal((svg.match(/<g class="key-change"/g) || []).length, 0, `${s.seed}: 転調の印がある`);
+    assert.equal((svg.match(/<g class="key-cancel"/g) || []).length, 0, `${s.seed}: 打ち消しがある`);
+  }
+});
+
+test('renderScore: 転調位置に複縦線（細い線2本）が引かれる', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const { svg, barX } = renderScore(s);
+    const at = s.modulation.atBar;
+    // その小節の小節線が2本ある（1本目は通常の小節線、2本目が転調の印）
+    const lines = [...svg.matchAll(
+      new RegExp(`<line x1="([\\d.]+)"[^>]*class="barline" data-bar="${at}" stroke="currentColor" stroke-width="([\\d.]+)"`, 'g'),
+    )].map((m) => [Number(m[1]), Number(m[2])]);
+    assert.equal(lines.length, 2, `${s.seed}: 転調位置の縦線が2本でない`);
+    // 1本目は小節の頭ちょうど、2本目はその少し右。どちらも細い（終止線の太線ではない）
+    assert.equal(lines[0][0], barX[at], `${s.seed}: 1本目が小節の頭に無い`);
+    assert.ok(lines[1][0] > lines[0][0], `${s.seed}: 2本目が右に無い`);
+    assert.ok(lines[1][0] - lines[0][0] < 8, `${s.seed}: 複縦線の間隔が広すぎる`);
+    assert.deepEqual([lines[0][1], lines[1][1]], [1, 1], `${s.seed}: 複縦線が細線2本でない`);
+  }
+});
+
+test('renderScore: 転調後の音符は新しい調で綴られる（不要な臨時記号が付かない）', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const at = s.modulation.atBar;
+    const got = renderScore(s).svg;
+
+    // 1. 転調後の区間は「はじめから新しい調の曲」として描いたものと完全に一致する
+    const inNewKey = {
+      ...s,
+      tonicMidi: s.modulation.toTonicMidi,
+      modulation: null,
+      sections: s.sections.map((x) => ({ ...x, tonicMidi: s.modulation.toTonicMidi })),
+    };
+    assert.deepEqual(fingerprint(got, at), fingerprint(renderScore(inNewKey).svg, at),
+      `${s.seed}: 転調後の綴りが「新しい調の曲」と違う`);
+
+    // 2. 切り替えを忘れた場合（古い調のまま）より臨時記号が確実に少ない。
+    //    これが無いと 1. は「両方とも古い調」でも通ってしまう。
+    const inOldKey = {
+      ...s,
+      modulation: null,
+      sections: s.sections.map((x) => ({ ...x, tonicMidi: s.tonicMidi })),
+    };
+    const after = accidentalCount(got, at);
+    const stale = accidentalCount(renderScore(inOldKey).svg, at);
+    assert.ok(after < stale,
+      `${s.seed}: 転調後の臨時記号が減っていない（新しい調 ${after} 個 / 古い調のまま ${stale} 個）`);
+  }
+});
+
+test('renderScore: 転調後の各音が spellNote(midi, 新しい調) と同じ綴りになる', () => {
+  // 合成曲なら midi が分かるので、1音ずつ直接つき合わせられる。
+  for (const [tonic, shift, mode] of [[60, 2, 'major'], [57, 1, 'minor'], [58, 2, 'major'], [61, 1, 'minor']]) {
+    const s = modSynth(tonic, shift, mode);
+    const at = s.modulation.atBar;
+    const newKey = keySignature(s.modulation.toTonicMidi, mode);
+    const drawn = noteGroups(renderScore(s).svg).filter((n) => n.beat >= at * 4);
+    assert.ok(drawn.length > 0, '転調後の音符が無い');
+    for (const n of drawn) {
+      const src = [...s.melody, ...s.bass].find(
+        (x) => Math.abs(x.beat - n.beat) < 1e-9
+          && (n.layer === 'melody' ? s.melody.includes(x) : s.bass.includes(x)),
+      );
+      assert.ok(src, `拍 ${n.beat} の元の音が見つからない`);
+      const expected = spellNote(src.midi, newKey).accidental;
+      assert.deepEqual(n.accidentals, expected === '' ? [] : [expected],
+        `${newKey.label} の midi ${src.midi}（拍 ${n.beat}）の臨時記号が違う`);
+    }
+  }
+});
+
+test('renderScore: 前の調を打ち消すナチュラルの規則', () => {
+  const cancels = (svg) => {
+    const block = groupChunk(svg, '<g class="key-cancel">');
+    return block === null ? 0 : (block.match(/data-acc="n"/g) || []).length / 2; // 2段ぶん
+  };
+  const sig = (svg, bar) => {
+    const block = groupChunk(svg, `<g class="key-signature" data-bar="${bar}">`);
+    return block === null ? null : (block.match(/data-acc="[#b]"/g) || []).length / 2;
+  };
+
+  // シャープ3つ（イ長調）→ フラット2つ（変ロ長調）。系統が変わるので3つとも消す
+  const cross = renderScore(modSynth(57, 1, 'major')).svg;
+  assert.equal(cancels(cross), 3, 'シャープ3つを消していない');
+  assert.equal(sig(cross, 2), 2, '変ロ長調のフラット2つが無い');
+  // 打ち消しは新しい調号より前に置く（記譜の標準）
+  assert.ok(cross.indexOf('<g class="key-cancel">') < cross.indexOf('<g class="key-signature" data-bar="2">'),
+    'ナチュラルが新しい調号より後ろにある');
+
+  // シャープ2つ（ニ長調）→ シャープ4つ（ホ長調）。増えるだけなのでナチュラル不要
+  const grow = renderScore(modSynth(62, 2, 'major')).svg;
+  assert.equal(cancels(grow), 0, '増えるだけなのにナチュラルを書いている');
+  assert.equal(sig(grow, 2), 4, 'ホ長調のシャープ4つが無い');
+
+  // 調号なし（ハ長調）→ シャープ2つ（ニ長調）。消すものが無い
+  const fromNone = renderScore(modSynth(60, 2, 'major')).svg;
+  assert.equal(cancels(fromNone), 0, '消すものが無いのにナチュラルを書いている');
+  assert.equal(sig(fromNone, 2), 2, 'ニ長調のシャープ2つが無い');
+
+  // フラット2つ（変ロ長調）→ 調号なし（ハ長調）。2つとも消し、新しい調号は空
+  const toNone = renderScore(modSynth(58, 2, 'major')).svg;
+  assert.equal(cancels(toNone), 2, 'フラット2つを消していない');
+  assert.equal(sig(toNone, 2), 0, 'ハ長調に余計な記号がある');
+});
+
+test('renderScore: 転調しても barX と beatToX の整合が保たれる', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const { barX, beatToX, width } = renderScore(s);
+    const at = s.modulation.atBar;
+    assert.equal(barX.length, s.bars + 1, `${s.seed}: barX の長さ`);
+    for (let i = 1; i < barX.length; i++) {
+      assert.ok(barX[i] > barX[i - 1], `${s.seed}: barX[${i}] が増えていない`);
+    }
+    assert.equal(beatToX(0), barX[0], `${s.seed}: beatToX(0)`);
+    assert.equal(beatToX(s.totalBeats), barX[s.bars], `${s.seed}: beatToX(totalBeats)`);
+    assert.ok(width > barX[s.bars], `${s.seed}: 右余白が無い`);
+    // 調号を入れるぶん、転調する小節だけ広い
+    const plain = barX[1] - barX[0];
+    assert.ok(barX[at + 1] - barX[at] > plain, `${s.seed}: 転調する小節が広がっていない`);
+    assert.equal(barX[at] - barX[at - 1], plain, `${s.seed}: 手前の小節まで広がっている`);
+    // 音符は調号より右から始まる（前置きに拍を割り当てない）
+    assert.ok(beatToX(at * 4) > barX[at], `${s.seed}: 音符が調号の上に乗る`);
+    assert.ok(beatToX(at * 4) < barX[at + 1], `${s.seed}: 前置きが小節をはみ出す`);
+    // 拍が進めば x も進む（スクロール追従が巻き戻らない）
+    let prev = -Infinity;
+    for (let beat = 0; beat <= s.totalBeats; beat += 0.5) {
+      const x = beatToX(beat);
+      assert.ok(x >= prev, `${s.seed}: 拍 ${beat} で x が戻った`);
+      prev = x;
+    }
+  }
+});
+
+test('renderScore: 合成した転調曲でも小節線と音符が揃う', () => {
+  const s = modSynth(60, 2, 'major', 4, 2);
+  const score = renderScore(s);
+  assert.equal(score.barX.length, 5);
+  assert.equal(score.beatToX(0), score.barX[0]);
+  assert.equal(score.beatToX(16), score.barX[4]);
+  // 小節線は各小節の頭と終止線ぶん（複縦線の2本目も同じ data-bar）
+  const bars = [...score.svg.matchAll(/class="barline" data-bar="(\d+)"/g)].map((m) => Number(m[1]));
+  assert.deepEqual([...new Set(bars)].sort((a, b) => a - b), [0, 1, 2, 3, 4]);
+  assert.equal(bars.filter((b) => b === 2).length, 2, '転調位置が複縦線になっていない');
+  assert.equal(bars.filter((b) => b === 1).length, 1, '普通の小節が複縦線になっている');
 });

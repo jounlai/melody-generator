@@ -42,6 +42,66 @@ function songs() {
   return SEEDS.map((s) => song(s));
 }
 
+/** 転調する曲だけを集める。転調は抽選なので、空なら検査が空振りしていると分かる */
+function modulatedSongs(bars = '32') {
+  return SEEDS.map((seed) => song(seed, bars)).filter((s) => s.modulation);
+}
+
+/**
+ * 合成した転調曲。実データが無くても動く。
+ * atBar から先の音を shift 半音上げ、契約どおりの modulation / sections を付ける。
+ */
+function modSong(tonicMidi, shift, mode = 'major', bars = 4, atBar = 2) {
+  // 主和音の4音（1 3 5 7）。どの調でも音階内に収まるので、
+  // 臨時記号が出たら「調の取り違え」だと分かる。
+  const steps = mode === 'minor' ? [0, 3, 7, 10] : [0, 4, 7, 11];
+  const melody = [];
+  const bass = [];
+  for (let b = 0; b < bars; b++) {
+    const up = b >= atBar ? shift : 0;
+    for (let k = 0; k < 4; k++) {
+      melody.push({ midi: tonicMidi + 12 + steps[k] + up, beat: b * 4 + k, dur: 1, vel: 0.5 });
+    }
+    bass.push({ midi: tonicMidi - 12 + up, beat: b * 4, dur: 4, vel: 0.5 });
+  }
+  return fakeSong({
+    seed: 'modtest',
+    mode,
+    tonicMidi,
+    bars,
+    totalBeats: bars * 4,
+    sections: [
+      { name: 'A', progressionId: 'x', startBar: 0, tonicMidi, slots: [] },
+      { name: "A''", progressionId: 'x', startBar: atBar, tonicMidi: tonicMidi + shift, slots: [] },
+    ],
+    modulation: {
+      atBar,
+      semitones: shift,
+      fromTonicMidi: tonicMidi,
+      toTonicMidi: tonicMidi + shift,
+    },
+    melody,
+    bass,
+  });
+}
+
+/** 調号の <fifths>。シャープなら正、フラットなら負 */
+function fifthsOf(key) {
+  if (key.accidental === 'sharp') return key.count;
+  if (key.accidental === 'flat') return -key.count;
+  return 0;
+}
+
+/** トラックからキーシグネチャのメタイベント（FF 59 02 sf mi）を拾う */
+function keySignatures(track) {
+  return track.events
+    .filter((e) => e.kind === 'meta' && e.type === 0x59)
+    .map((e) => {
+      assert.equal(e.data.length, 2, 'キーシグネチャの長さが2バイトでない');
+      return { tick: e.tick, sf: e.data[0] > 127 ? e.data[0] - 256 : e.data[0], mi: e.data[1] };
+    });
+}
+
 /** 曲オブジェクトの最小の形。書き出し側が壊れた入力で落ちないかも兼ねる */
 function fakeSong(over = {}) {
   return {
@@ -953,6 +1013,293 @@ test('suggestFilename: 例と同じ形になる', () => {
   const s = fakeSong({ seed: 'a3f91c', tonicMidi: 57, mode: 'major', tempo: 84 });
   assert.equal(suggestFilename(s, 'musicxml'), 'piano-a3f91c-Amajor-84bpm.musicxml');
   assert.equal(suggestFilename(s, 'mid'), 'piano-a3f91c-Amajor-84bpm.mid');
+});
+
+// ===========================================================================
+// 転調
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// 19. MusicXML：転調位置に新しい調号が出る
+// ---------------------------------------------------------------------------
+
+test('MusicXML: 転調すると <key> が2回出る', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const measures = measuresOf(toMusicXML(s));
+    const withKey = measures
+      .map((m, i) => ({ i, key: findAll(m, 'key')[0] }))
+      .filter((x) => x.key);
+    assert.equal(withKey.length, 2, `${s.seed}: <key> が2回でない`);
+    assert.equal(withKey[0].i, 0, `${s.seed}: 1つ目が1小節目に無い`);
+    assert.equal(withKey[1].i, s.modulation.atBar, `${s.seed}: 2つ目が atBar に無い`);
+  }
+});
+
+test('MusicXML: 転調しない曲の <key> は1回だけ', realOpts, () => {
+  const plain = SEEDS.map((seed) => song(seed)).filter((s) => !s.modulation);
+  assert.ok(plain.length > 0, '転調しない曲が1つも無い（検査が空振り）');
+  for (const s of plain) {
+    assert.equal(findAll(parseXml(toMusicXML(s)), 'key').length, 1, `${s.seed}: <key> が1回でない`);
+    assert.ok(!toMusicXML(s).includes('light-light'), `${s.seed}: 複縦線がある`);
+  }
+});
+
+test('MusicXML: 転調位置の fifths が keySignature(toTonicMidi, mode) と一致する', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const measures = measuresOf(toMusicXML(s));
+    const first = findAll(measures[0], 'key')[0];
+    const second = findAll(measures[s.modulation.atBar], 'key')[0];
+    assert.equal(Number(textOf(first, 'fifths')), fifthsOf(keySignature(s.tonicMidi, s.mode)),
+      `${s.seed}: 曲頭の fifths`);
+    assert.equal(Number(textOf(second, 'fifths')),
+      fifthsOf(keySignature(s.modulation.toTonicMidi, s.mode)),
+      `${s.seed}: 転調位置の fifths`);
+    // 旋法は転調しても変わらない
+    assert.equal(textOf(first, 'mode'), s.mode);
+    assert.equal(textOf(second, 'mode'), s.mode);
+    assert.notEqual(textOf(first, 'fifths'), textOf(second, 'fifths'), `${s.seed}: 調号が変わっていない`);
+  }
+});
+
+test('MusicXML: 転調位置に複縦線が入る', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const measures = measuresOf(toMusicXML(s));
+    const marked = measures
+      .map((m, i) => ({ i, bar: firstChild(m, 'barline') }))
+      .filter((x) => x.bar);
+    assert.equal(marked.length, 1, `${s.seed}: 複縦線が1つでない`);
+    assert.equal(marked[0].i, s.modulation.atBar, `${s.seed}: 複縦線が atBar に無い`);
+    assert.equal(marked[0].bar.attrs.location, 'left');
+    assert.equal(textOf(marked[0].bar, 'bar-style'), 'light-light');
+    // 小節の先頭に置く（音符より前）
+    assert.equal(measures[s.modulation.atBar].children[0].name, 'barline', `${s.seed}: 複縦線が先頭でない`);
+  }
+});
+
+test('MusicXML: 合成した転調曲でも fifths が両方正しい', () => {
+  // ハ長調→ニ長調(0→2)、イ長調→変ロ長調(3→-2)、変ロ長調→ハ長調(-2→0)、イ短調→ロ短調(0→2)
+  for (const [tonic, shift, mode] of [[60, 2, 'major'], [57, 1, 'major'], [58, 2, 'major'], [57, 2, 'minor']]) {
+    const s = modSong(tonic, shift, mode);
+    const measures = measuresOf(toMusicXML(s));
+    const keys = measures.map((m) => findAll(m, 'key')[0]).map((k) => (k ? Number(textOf(k, 'fifths')) : null));
+    assert.deepEqual(keys, [
+      fifthsOf(keySignature(tonic, mode)),
+      null,
+      fifthsOf(keySignature(tonic + shift, mode)),
+      null,
+    ], `tonic=${tonic} +${shift} ${mode} の調号の並びが違う`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 20. MusicXML：転調後も step/alter/octave が元の midi を再現する（最重要）
+// ---------------------------------------------------------------------------
+
+test('MusicXML: 転調後の全 note が元の midi を再現する', realOpts, () => {
+  let checked = 0;
+  for (const bars of LENGTHS) {
+    const mods = modulatedSongs(bars);
+    for (const s of mods) {
+      const at = s.modulation.atBar;
+      const layersOf = { 1: [s.melody], 2: [s.accomp, s.bass] };
+      measuresOf(toMusicXML(s)).forEach((measure, i) => {
+        if (i < at) return; // 転調後だけを見る
+        const from = i * BEATS_PER_BAR;
+        const to = from + BEATS_PER_BAR;
+        const written = { 1: new Set(), 2: new Set() };
+        for (const note of measure.children.filter((c) => c.name === 'note')) {
+          const pitch = firstChild(note, 'pitch');
+          if (!pitch) continue;
+          const midi = midiOfPitch(pitch);
+          assert.ok(Number.isInteger(midi) && midi >= 0 && midi <= 127,
+            `${s.seed}/${bars} 小節${i + 1}: 復元した MIDI が範囲外 ${midi}`);
+          written[textOf(note, 'staff')].add(midi);
+          checked += 1;
+        }
+        for (const staff of ['1', '2']) {
+          const sounding = soundingPitches(layersOf[staff], from, to);
+          for (const midi of written[staff]) {
+            assert.ok(sounding.has(midi),
+              `${s.seed}/${bars} 小節${i + 1} staff${staff}: MIDI ${midi} は元データに無い`
+              + `（転調後の半音ずれ？ 元データ: ${[...sounding].sort((a, b) => a - b).join(',')}）`);
+          }
+          for (const midi of onsetPitches(layersOf[staff], from, to, s.totalBeats)) {
+            assert.ok(written[staff].has(midi),
+              `${s.seed}/${bars} 小節${i + 1} staff${staff}: MIDI ${midi} が書き出されていない`);
+          }
+        }
+      });
+    }
+  }
+  assert.ok(checked > 200, `検査した音符が少なすぎる: ${checked}`);
+});
+
+test('MusicXML: 合成した転調曲で1音ずつ midi が一致する', () => {
+  for (const [tonic, shift, mode] of [[60, 2, 'major'], [57, 1, 'major'], [61, 1, 'minor'], [58, 2, 'major']]) {
+    const s = modSong(tonic, shift, mode, 4, 2);
+    measuresOf(toMusicXML(s)).forEach((measure, i) => {
+      const from = i * BEATS_PER_BAR;
+      const to = from + BEATS_PER_BAR;
+      const got = { 1: [], 2: [] };
+      for (const note of measure.children.filter((c) => c.name === 'note')) {
+        const pitch = firstChild(note, 'pitch');
+        if (pitch) got[textOf(note, 'staff')].push(midiOfPitch(pitch));
+      }
+      const want = (layer) => layer
+        .filter((n) => n.beat >= from && n.beat < to)
+        .map((n) => n.midi);
+      assert.deepEqual(got[1], want(s.melody),
+        `tonic=${tonic} +${shift} 小節${i + 1}: メロディーの midi が違う`);
+      assert.deepEqual(got[2], want(s.bass),
+        `tonic=${tonic} +${shift} 小節${i + 1}: ベースの midi が違う`);
+    });
+  }
+});
+
+test('MusicXML: 転調後は臨時記号ではなく調号で書かれる（alter が調号ぶん動く）', () => {
+  // ハ長調 → ニ長調。転調後の F#5(78) と C#5(73) は alter 1 を持つが、
+  // 調号がシャープ2つなので楽譜ソフト側では臨時記号として描かれない。
+  const s = modSong(60, 2, 'major', 4, 2);
+  const measures = measuresOf(toMusicXML(s));
+  const alters = (m) => m.children
+    .filter((c) => c.name === 'note' && firstChild(c, 'pitch'))
+    .map((c) => {
+      const p = firstChild(c, 'pitch');
+      return `${textOf(p, 'step')}${Number(textOf(p, 'alter'))}`;
+    });
+  // 転調前（ハ長調）: C E G B の並びに変化記号は付かない
+  assert.ok(alters(measures[0]).every((a) => a.endsWith('0')), `転調前に alter が付いた: ${alters(measures[0])}`);
+  // 転調後（ニ長調）: 2半音上がって D F# A C# になり、F と C が alter 1 を持つ
+  const after = alters(measures[2]);
+  assert.ok(after.includes('F1'), `F# が無い: ${after}`);
+  assert.ok(after.includes('C1'), `C# が無い: ${after}`);
+  assert.equal(Number(textOf(findAll(measures[2], 'key')[0], 'fifths')), 2, '調号がシャープ2つでない');
+});
+
+// ---------------------------------------------------------------------------
+// 21. MusicXML：転調ありでも duration 合計が16
+// ---------------------------------------------------------------------------
+
+test('MusicXML: 転調ありでも全小節・全 staff の duration 合計が 16', realOpts, () => {
+  let seen = 0;
+  for (const bars of LENGTHS) {
+    for (const s of modulatedSongs(bars)) {
+      seen += 1;
+      const measures = measuresOf(toMusicXML(s));
+      assert.equal(measures.length, s.bars, `${s.seed}/${bars}: 小節数が合わない`);
+      measures.forEach((measure, i) => {
+        const sum = { 1: 0, 2: 0 };
+        for (const note of measure.children.filter((c) => c.name === 'note')) {
+          if (hasChild(note, 'chord')) continue;
+          sum[textOf(note, 'staff')] += Number(textOf(note, 'duration'));
+        }
+        assert.equal(sum[1], 16, `${s.seed}/${bars} 小節${i + 1}: staff 1 の合計が ${sum[1]}`);
+        assert.equal(sum[2], 16, `${s.seed}/${bars} 小節${i + 1}: staff 2 の合計が ${sum[2]}`);
+      });
+      // backup は転調小節でも1つだけ（<attributes> を挟んでも増えない）
+      assert.equal(findAll(parseXml(toMusicXML(s)), 'backup').length, s.bars, `${s.seed}/${bars}: backup の数`);
+    }
+  }
+  assert.ok(seen > 0, '転調する曲が1つも無い（検査が空振り）');
+});
+
+// ---------------------------------------------------------------------------
+// 22. MIDI：キーシグネチャのメタイベント
+// ---------------------------------------------------------------------------
+
+test('MIDI: 転調するとキーシグネチャが2つ出る（曲頭と転調位置）', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const file = parseMidiFile(toMidi(s));
+    const [conductor, ...rest] = file.tracks;
+    const sigs = keySignatures(conductor);
+    assert.equal(sigs.length, 2, `${s.seed}: キーシグネチャが2つでない`);
+    // トラック0（テンポトラック）に置く。他のトラックには出さない
+    for (const t of rest) assert.equal(keySignatures(t).length, 0, `${s.seed}: 他のトラックにある`);
+
+    const mi = s.mode === 'minor' ? 1 : 0;
+    assert.deepEqual(sigs[0], { tick: 0, sf: fifthsOf(keySignature(s.tonicMidi, s.mode)), mi },
+      `${s.seed}: 曲頭のキーシグネチャ`);
+    assert.deepEqual(sigs[1], {
+      tick: s.modulation.atBar * BEATS_PER_BAR * TICKS_PER_BEAT,
+      sf: fifthsOf(keySignature(s.modulation.toTonicMidi, s.mode)),
+      mi,
+    }, `${s.seed}: 転調位置のキーシグネチャ`);
+  }
+});
+
+test('MIDI: 転調しない曲でも曲頭にキーシグネチャが1つ出る', realOpts, () => {
+  const plain = SEEDS.map((seed) => song(seed)).filter((s) => !s.modulation);
+  assert.ok(plain.length > 0, '転調しない曲が1つも無い（検査が空振り）');
+  for (const s of plain) {
+    const sigs = keySignatures(parseMidiFile(toMidi(s)).tracks[0]);
+    assert.equal(sigs.length, 1, `${s.seed}: キーシグネチャが1つでない`);
+    assert.deepEqual(sigs[0], {
+      tick: 0,
+      sf: fifthsOf(keySignature(s.tonicMidi, s.mode)),
+      mi: s.mode === 'minor' ? 1 : 0,
+    }, `${s.seed}: 曲頭のキーシグネチャ`);
+  }
+});
+
+test('MIDI: キーシグネチャの sf はフラットが負の符号付き8bit', () => {
+  // 変ニ長調(-5) → ニ長調(+2)。負の数は2の補数のバイトで書く
+  const s = modSong(61, 1, 'major', 4, 2);
+  const sigs = keySignatures(parseMidiFile(toMidi(s)).tracks[0]);
+  assert.deepEqual(sigs.map((g) => [g.tick, g.sf, g.mi]), [[0, -5, 0], [2 * 4 * 480, 2, 0]]);
+  // 生バイト列にも 0xfb（-5）が入っている
+  const raw = parseMidiFile(toMidi(s)).tracks[0].bytes;
+  const at = raw.findIndex((b, i) => b === 0xff && raw[i + 1] === 0x59);
+  assert.deepEqual(raw.slice(at, at + 5), [0xff, 0x59, 0x02, 0xfb, 0x00]);
+  // 短調は mi = 1
+  const minor = keySignatures(parseMidiFile(toMidi(modSong(57, 2, 'minor', 4, 2))).tracks[0]);
+  assert.deepEqual(minor.map((g) => [g.tick, g.sf, g.mi]), [[0, 0, 1], [2 * 4 * 480, 2, 1]]);
+});
+
+test('MIDI: 転調のキーシグネチャの tick が atBar * 4 * 480 と一致する', realOpts, () => {
+  let seen = 0;
+  for (const bars of LENGTHS) {
+    for (const s of modulatedSongs(bars)) {
+      seen += 1;
+      const sigs = keySignatures(parseMidiFile(toMidi(s)).tracks[0]);
+      assert.equal(sigs.length, 2, `${s.seed}/${bars}: キーシグネチャが2つでない`);
+      assert.equal(sigs[1].tick, s.modulation.atBar * BEATS_PER_BAR * TICKS_PER_BEAT,
+        `${s.seed}/${bars}: 転調の tick が atBar*4*480 と違う`);
+      // デルタタイムの積み上げが狂っていないこと：
+      // トラック0の他のイベントは全て tick 0、末尾の End of Track は転調と同時刻
+      const conductor = parseMidiFile(toMidi(s)).tracks[0];
+      const last = conductor.events[conductor.events.length - 1];
+      assert.equal(last.type, 0x2f, 'End of Track で終わっていない');
+      assert.equal(last.tick, sigs[1].tick, 'End of Track の時刻がずれた');
+      for (const e of conductor.events) {
+        assert.ok(e.tick === 0 || e.tick === sigs[1].tick, `想定外の時刻のイベント: tick ${e.tick}`);
+      }
+    }
+  }
+  assert.ok(seen > 0, '転調する曲が1つも無い（検査が空振り）');
+});
+
+test('MIDI: 転調しても音数と tick は元の曲と一致する', realOpts, () => {
+  const mods = modulatedSongs();
+  assert.ok(mods.length > 0, '転調する曲が1つも無い（検査が空振り）');
+  for (const s of mods) {
+    const [, melodyTrack, accompTrack] = parseMidiFile(toMidi(s)).tracks;
+    const expect = (layers) => layers.flatMap((layer) => layer.flatMap(
+      (n) => pitchesOf(n).map((m) => `${Math.round(n.beat * TICKS_PER_BEAT)}:${m}`),
+    )).sort();
+    const actual = (track) => noteOns(track).map((e) => `${e.tick}:${e.data[0]}`).sort();
+    assert.deepEqual(actual(melodyTrack), expect([s.melody]), `${s.seed}: メロディー`);
+    assert.deepEqual(actual(accompTrack), expect([s.accomp, s.bass]), `${s.seed}: 伴奏`);
+    checkNotesClosed(melodyTrack, `${s.seed} melody`);
+    checkNotesClosed(accompTrack, `${s.seed} accomp`);
+  }
 });
 
 test('suggestFilename: 危ない入力でも安全な名前になる', () => {

@@ -180,6 +180,63 @@ export function spellNote(midi, key) {
 }
 
 // ---------------------------------------------------------------------------
+// 曲の途中の転調
+// ---------------------------------------------------------------------------
+
+/**
+ * 調号として区別が付かないなら同じ調とみなす。
+ * 主音名まで見るのは、同じ調号を別の綴りで呼ぶ調（無いはずだが）を取りこぼさないため。
+ */
+function sameKey(a, b) {
+  return a.accidental === b.accidental && a.count === b.count && a.tonicName === b.tonicName;
+}
+
+/**
+ * 小節ごとの調と、調が変わる位置を求める。
+ *
+ * 決め方は「あとに書いたものが勝つ」の一本道:
+ *   1. 曲全体を song.tonicMidi の調で埋める
+ *   2. tonicMidi を持つセクションで、その開始小節から先を塗り直す
+ *   3. song.modulation があれば atBar から先を toTonicMidi の調で塗り直す（最終決定）
+ *
+ * 転調しない曲（modulation === null、全セクションが曲と同じ主音）では
+ * 全小節が同じ調になり、changes は空になる。旋法は転調しても変わらない。
+ *
+ * @param {object} song composeSong の戻り値
+ * @param {number} bars 小節数
+ * @returns {{ keys: Array<ReturnType<typeof keySignature>>,
+ *             changes: Array<{ bar: number, from: object, to: object }> }}
+ */
+export function keyTimeline(song, bars) {
+  const count = Math.max(1, Math.round(Number(bars)) || 1);
+  const mode = song?.mode === 'minor' ? 'minor' : 'major';
+  const keys = new Array(count).fill(keySignature(song?.tonicMidi ?? 60, mode));
+
+  const sections = (Array.isArray(song?.sections) ? song.sections : [])
+    .filter((s) => Number.isFinite(Number(s?.startBar)) && Number.isFinite(Number(s?.tonicMidi)))
+    .map((s) => ({ startBar: Math.round(Number(s.startBar)), tonicMidi: Number(s.tonicMidi) }))
+    .sort((a, b) => a.startBar - b.startBar);
+  for (const s of sections) {
+    const key = keySignature(s.tonicMidi, mode);
+    for (let i = Math.max(0, s.startBar); i < count; i++) keys[i] = key;
+  }
+
+  const mod = song?.modulation;
+  const atBar = Math.round(Number(mod?.atBar));
+  const toTonic = Number(mod?.toTonicMidi);
+  if (mod && Number.isFinite(atBar) && Number.isFinite(toTonic)) {
+    const key = keySignature(toTonic, mode);
+    for (let i = Math.max(0, atBar); i < count; i++) keys[i] = key;
+  }
+
+  const changes = [];
+  for (let i = 1; i < count; i++) {
+    if (!sameKey(keys[i], keys[i - 1])) changes.push({ bar: i, from: keys[i - 1], to: keys[i] });
+  }
+  return { keys, changes };
+}
+
+// ---------------------------------------------------------------------------
 // 音価
 // ---------------------------------------------------------------------------
 
@@ -422,6 +479,34 @@ const DEFAULT_LAYOUT = {
 const SHARP_ROWS = [38, 35, 39, 36, 33, 37, 34];
 const FLAT_ROWS = [34, 37, 33, 36, 32, 35, 31];
 
+/** 曲の途中で調が変わるときの寸法 */
+const KEY_CHANGE_BAR_GAP = 3.5; // 複縦線の2本の間隔
+const KEY_CHANGE_PRE = 9;       // 複縦線から最初の記号までの間
+const KEY_CHANGE_MID = 4;       // 打ち消しのナチュラルと新しい調号の間
+
+/**
+ * 前の調の臨時記号のうち、ナチュラルで打ち消す必要があるものの位置を返す。
+ *
+ * 記譜の標準は「前の調号にあって新しい調号に無い音をナチュラルで消す」。
+ *   シャープ3つ → フラット1つ … 系統が変わるので3つとも消す
+ *   シャープ3つ → シャープ1つ … 減ったぶん（C# G#）だけ消す
+ *   シャープ2つ → シャープ4つ … 増えるだけなので消さない（空配列）
+ *
+ * 位置は前の調号が置かれていた行をそのまま使う（消す対象がそこに居たため）。
+ * @returns {number[]} ト音記号での diatonicIndex の配列。前の調号の順に並ぶ
+ */
+function cancelRows(from, to) {
+  const oldAlter = keyAlterations(from);
+  const newAlter = keyAlterations(to);
+  const letters = from.accidental === 'flat' ? FLAT_ORDER : SHARP_ORDER;
+  const rows = from.accidental === 'flat' ? FLAT_ROWS : SHARP_ROWS;
+  const out = [];
+  for (let i = 0; i < from.count; i++) {
+    if (newAlter[letters[i]] !== oldAlter[letters[i]]) out.push(rows[i]);
+  }
+  return out;
+}
+
 const BEATS_PER_BAR = 4;
 
 // ---------------------------------------------------------------------------
@@ -441,22 +526,47 @@ export function renderScore(song, options = {}) {
 
   const bars = Math.max(1, Math.round(Number(song?.bars)) || 1);
   const totalBeats = Number(song?.totalBeats) > 0 ? Number(song.totalBeats) : bars * BEATS_PER_BAR;
-  const key = keySignature(song?.tonicMidi ?? 60, song?.mode);
+
+  // 小節ごとの調。転調しない曲では全部同じ調が並ぶ。
+  const { keys: barKeys, changes } = keyTimeline(song, bars);
+  const key = barKeys[0];
+  const keyAt = (bar) => barKeys[Math.max(0, Math.min(bars - 1, bar))];
 
   // ---- 横位置 ----
   const clefX = L.leftPad + 10;
   const keyX = clefX + L.clefWidth;
-  const barX = [];
   const originX = keyX + key.count * L.accidentalWidth + L.keyGap;
-  for (let i = 0; i <= bars; i++) barX.push(originX + i * L.barWidth);
+
+  // 転調する小節は、複縦線と新しい調号を頭に置くぶんだけ横に広がる。
+  // leadIn[i] は小節 i の「音符が始まるまでの前置き」の幅。
+  const leadIn = new Array(bars).fill(0);
+  const changeAt = new Map();
+  for (const change of changes) {
+    const naturals = cancelRows(change.from, change.to);
+    const span = KEY_CHANGE_PRE
+      + naturals.length * L.accidentalWidth
+      + (naturals.length > 0 && change.to.count > 0 ? KEY_CHANGE_MID : 0)
+      + change.to.count * L.accidentalWidth
+      + L.keyGap;
+    changeAt.set(change.bar, { ...change, naturals, span });
+    leadIn[change.bar] = span;
+  }
+
+  const barX = [];
+  for (let i = 0, x = originX; i <= bars; i++) {
+    barX.push(x);
+    x += L.barWidth + (leadIn[i] ?? 0);
+  }
   const width = barX[bars] + L.rightPad;
 
-  // barX の間を線形補間する。beatToX(0) と beatToX(totalBeats) は
-  // それぞれ barX の両端にきっちり一致する。
+  // 小節 i の音符は [barX[i] + leadIn[i], barX[i+1]] に線形に並ぶ。
+  // 前置きの幅には拍を割り当てない（調号の上に音符が乗らないように）。
+  // beatToX(0) と beatToX(totalBeats) は barX の両端にきっちり一致する。
   const beatToX = (beat) => {
     const pos = (Number(beat) || 0) / BEATS_PER_BAR;
     const i = Math.max(0, Math.min(bars - 1, Math.floor(pos)));
-    return barX[i] + (pos - i) * (barX[i + 1] - barX[i]);
+    const from = barX[i] + leadIn[i];
+    return from + (pos - i) * (barX[i + 1] - from);
   };
 
   // ---- 縦位置 ----
@@ -514,13 +624,47 @@ export function renderScore(song, options = {}) {
   out.push(line(barX[bars] - 1.5, trebleTop, barX[bars] - 1.5, bassBottom,
     ` class="barline" data-bar="${bars}" stroke="currentColor" stroke-width="3"`));
 
+  // ---- 転調（複縦線＋打ち消しのナチュラル＋新しい調号） ----
+  //
+  // 小節線はすでに barX[bar] に1本引いてあるので、細い線をもう1本足して複縦線にする
+  // （終止線と違い、2本目も細い＝「ここで調が変わる」の合図）。
+  // 新しい調号は count が 0 でも <g class="key-signature"> を出す。
+  // 「調が変わった」という事実を空の調号でも数えられるようにするため。
+  for (const change of changeAt.values()) {
+    const at = barX[change.bar];
+    const parts = [line(at + KEY_CHANGE_BAR_GAP, trebleTop, at + KEY_CHANGE_BAR_GAP, bassBottom,
+      ` class="barline" data-bar="${change.bar}" stroke="currentColor" stroke-width="1"`)];
+
+    let x = at + KEY_CHANGE_PRE;
+    if (change.naturals.length > 0) {
+      const marks = [];
+      for (let i = 0; i < change.naturals.length; i++) {
+        const gx = x + i * L.accidentalWidth + 4;
+        marks.push(accidentalGlyph('n', gx, yOf(TREBLE, change.naturals[i])));
+        marks.push(accidentalGlyph('n', gx, yOf(BASS, change.naturals[i] - 14)));
+      }
+      parts.push(`<g class="key-cancel">${marks.join('')}</g>`);
+      x += change.naturals.length * L.accidentalWidth + KEY_CHANGE_MID;
+    }
+
+    const rows = change.to.accidental === 'flat' ? FLAT_ROWS : SHARP_ROWS;
+    const kind = change.to.accidental === 'flat' ? 'b' : '#';
+    const marks = [];
+    for (let i = 0; i < change.to.count; i++) {
+      const gx = x + i * L.accidentalWidth + 4;
+      marks.push(accidentalGlyph(kind, gx, yOf(TREBLE, rows[i])));
+      marks.push(accidentalGlyph(kind, gx, yOf(BASS, rows[i] - 14)));
+    }
+    parts.push(`<g class="key-signature" data-bar="${change.bar}">${marks.join('')}</g>`);
+    out.push(`<g class="key-change" data-bar="${change.bar}">${parts.join('')}</g>`);
+  }
+
   // ---- 音符 ----
   const noteSvg = [];
   const tieSvg = [];
   const occupied = { treble: [], bass: [] };
   // 段ごと・小節ごとの臨時記号の有効範囲。同じ小節の同じ高さでは1回しか書かない。
   const activeAccidentals = { treble: new Map(), bass: new Map() };
-  const alterOfKey = keyAlterations(key);
 
   const layers = [
     { name: 'melody', staff: TREBLE, notes: song?.melody, stem: 'auto' },
@@ -546,8 +690,12 @@ export function renderScore(song, options = {}) {
     const sym = durationSymbol(seg.dur);
     const x = beatToX(seg.beat) + L.noteInset;
     const midis = Array.isArray(seg.midis) && seg.midis.length > 0 ? seg.midis : [seg.midi];
+    // 綴りはその小節の調で行う。転調後は新しい調号が効くので、
+    // 音階内の音には臨時記号が付かない。
+    const bar = Math.floor(seg.beat / BEATS_PER_BAR + DUR_EPS);
+    const barKey = keyAt(bar);
     const spelled = midis
-      .map((m) => ({ midi: Math.round(Number(m)), ...spellNote(m, key) }))
+      .map((m) => ({ midi: Math.round(Number(m)), ...spellNote(m, barKey) }))
       .sort((a, b) => a.diatonicIndex - b.diatonicIndex);
 
     const lowest = spelled[0];
@@ -556,7 +704,6 @@ export function renderScore(song, options = {}) {
       : layer.stem === 'down' ? false
       : (lowest.diatonicIndex + highest.diatonicIndex) / 2 < staff.midIndex;
 
-    const bar = Math.floor(seg.beat / BEATS_PER_BAR + DUR_EPS);
     const body = [];
     const ledgerYs = new Set();
     for (const sp of spelled) {
@@ -598,8 +745,10 @@ export function renderScore(song, options = {}) {
     const next = segments[index + 1];
     if (seg.tieToNext && next) {
       const y1 = yOf(staff, lowest.diatonicIndex);
+      const nextBar = Math.floor(next.beat / BEATS_PER_BAR + DUR_EPS);
       const nextSpelled = spellNote(
-        Array.isArray(next.midis) && next.midis.length > 0 ? Math.min(...next.midis) : next.midi, key);
+        Array.isArray(next.midis) && next.midis.length > 0 ? Math.min(...next.midis) : next.midi,
+        keyAt(nextBar));
       const y2 = yOf(staff, nextSpelled.diatonicIndex);
       const x2 = beatToX(next.beat) + L.noteInset;
       const bulge = stemUp ? 9 : -9;
@@ -619,7 +768,8 @@ export function renderScore(song, options = {}) {
     const alter = sp.midi - (sp.octave + 1) * 12 - LETTER_PC[sp.letter];
     const map = activeAccidentals[staff.name];
     const mapKey = `${bar}:${sp.diatonicIndex}`;
-    const current = map.has(mapKey) ? map.get(mapKey) : alterOfKey[sp.letter];
+    // 臨時記号の有効範囲は小節内だけ。小節が変われば、その小節の調号が既定に戻る。
+    const current = map.has(mapKey) ? map.get(mapKey) : keyAlterations(keyAt(bar))[sp.letter];
     map.set(mapKey, alter);
     if (tieFromPrev || alter === current) return '';
     return alter === 0 ? 'n' : alter > 0 ? '#' : 'b';

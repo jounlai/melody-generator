@@ -26,7 +26,7 @@
  *   ベースは伴奏と同じ声部に混ぜるので、小節頭の和音の最低音として現れる
  *   （全音符として伸ばしたままにはできない。1声部に別々の音価は入らない）。
  */
-import { keySignature, spellNote, durationSymbol, splitAtBarlines } from './notation.js';
+import { keySignature, keyTimeline, spellNote, durationSymbol, splitAtBarlines } from './notation.js';
 
 // ---------------------------------------------------------------------------
 // 定数
@@ -294,7 +294,9 @@ function noteXml(piece, key, indent) {
 export function toMusicXML(song) {
   const bars = barsOf(song);
   const totalDivs = bars * DIVS_PER_BAR;
-  const key = keySignature(song?.tonicMidi ?? 60, song?.mode);
+  // 小節ごとの調。転調しない曲では全部同じ調で、changes は空になる。
+  const { keys, changes } = keyTimeline(song, bars);
+  const changeBars = new Set(changes.map((c) => c.bar));
   const mode = song?.mode === 'minor' ? 'minor' : 'major';
   const tempo = clamp(Math.round(Number(song?.tempo)) || 84, 1, 400);
 
@@ -315,6 +317,7 @@ export function toMusicXML(song) {
   ];
 
   for (let m = 0; m < bars; m++) {
+    const key = keys[m];
     lines.push(`    <measure number="${m + 1}">`);
     if (m === 0) {
       lines.push('      <attributes>');
@@ -331,6 +334,14 @@ export function toMusicXML(song) {
       lines.push('        </direction-type>');
       lines.push(`        <sound tempo="${tempo}"/>`);
       lines.push('      </direction>');
+    } else if (changeBars.has(m)) {
+      // 転調。小節の頭に複縦線を置き、新しい調号を宣言する。
+      // 楽譜ソフトはこの <key> 以降を新しい調として読むので、
+      // これを出さないと転調後が臨時記号だらけの見た目になる。
+      lines.push('      <barline location="left"><bar-style>light-light</bar-style></barline>');
+      lines.push('      <attributes>');
+      lines.push(`        <key><fifths>${fifthsOf(key)}</fifths><mode>${mode}</mode></key>`);
+      lines.push('      </attributes>');
     }
     for (const piece of treble[m]) lines.push(...noteXml(piece, key, 6));
     lines.push(`      <backup><duration>${DIVS_PER_BAR}</duration></backup>`);
@@ -444,9 +455,12 @@ function trackBytes(head, events) {
 /**
  * 曲を標準MIDIファイル（SMF format 1、480 ticks/4分音符）にする。
  *
- *   トラック0  テンポ・拍子・曲名
+ *   トラック0  テンポ・拍子・調号・曲名
  *   トラック1  メロディー（チャンネル0）
  *   トラック2  伴奏＋ベース（チャンネル1）
+ *
+ * 調号のメタイベント（FF 59 02 sf mi）は規格どおりトラック0に置く。
+ * 曲頭に元の調を1つ、転調があればその位置にもう1つ。
  *
  * pad は書き出さない。演奏の揺らぎも掛けない。
  *
@@ -456,6 +470,10 @@ function trackBytes(head, events) {
 export function toMidi(song) {
   const tempo = clamp(Math.round(Number(song?.tempo)) || 84, 1, 400);
   const usPerQuarter = Math.round(60000000 / tempo);
+  const { keys, changes } = keyTimeline(song, barsOf(song));
+  // sf は符号付き8bit（フラットは負）、mi は 0=長調 / 1=短調
+  const mi = song?.mode === 'minor' ? 1 : 0;
+  const keySigData = (key) => [fifthsOf(key) & 0xff, mi];
 
   const header = chunk('MThd', [
     0x00, 0x01,                                     // format 1
@@ -469,7 +487,15 @@ export function toMidi(song) {
       (usPerQuarter >>> 16) & 0xff, (usPerQuarter >>> 8) & 0xff, usPerQuarter & 0xff,
     ]),
     ...metaEvent(0, 0x58, [0x04, 0x02, 0x18, 0x08]), // 4/4、メトロノーム24、32分音符8つ
+    ...metaEvent(0, 0x59, keySigData(keys[0])),
   ];
+
+  // 転調。デルタタイムは trackBytes が tick の差から作るので、ここでは絶対 tick を渡す。
+  const keyChanges = changes.map((c) => ({
+    tick: c.bar * BEATS_PER_BAR * TICKS_PER_BEAT,
+    order: 0,
+    bytes: [0xff, 0x59, 0x02, ...keySigData(c.to)],
+  }));
 
   const melodyHead = [
     ...metaEvent(0, 0x03, textBytes('Melody')),
@@ -482,7 +508,7 @@ export function toMidi(song) {
 
   const bytes = [
     ...header,
-    ...trackBytes(conductor, []),
+    ...trackBytes(conductor, keyChanges),
     ...trackBytes(melodyHead, noteEvents([song?.melody], 0)),
     ...trackBytes(accompHead, noteEvents([song?.accomp, song?.bass], 1)),
   ];
