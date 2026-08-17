@@ -659,6 +659,15 @@ function narrowCandidates(candidates, ctx) {
     const contrast = out.filter((m) => m.contour !== ctx.avoidContour);
     if (contrast.length > 0) out = contrast;
   }
+  // 楽節の b は、音形だけでなく打点の並びも a と変える。
+  //
+  // 実測すると32小節でリズム型が7.6種類しかなく、音高が違ってもリズムの輪郭が
+  // 同じ小節が並んでいた。文章に例えると、全部の文が同じ抑揚で読まれている。
+  // 対比を作る役目の b で音高だけ変えても、耳は「同じ形の言い直し」と聴く。
+  if (ctx.avoidOnsets) {
+    const contrast = out.filter((m) => onsetKey(m) !== ctx.avoidOnsets);
+    if (contrast.length > 0) out = contrast;
+  }
   // 曲の出だしだけは、拍0から鳴り出す断片を採る。
   // 弱起の断片で始まると、聴き手はどこが1拍目か掴めないまま曲に入ることになる。
   if (ctx.preferDownbeat) {
@@ -1416,8 +1425,9 @@ export function composeSong(seed, data, settings) {
         phraseEnd: isPhraseEnd[k],
         // 楽節の a（この断片が a' / a'' へ移調される）かどうか。
         isAnchor: role.anchor === null,
-        // b は a と違う輪郭にして対比を作る。
+        // b は a と違う輪郭にして対比を作る。音形とリズムの両方で。
         avoidContour: role.name === 'b' && anchor ? anchor.contour : null,
+        avoidOnsets: role.name === 'b' && anchor ? onsetKey(anchor) : null,
         // 楽節のどこにいるかで終わり方を変える（問いかけ／答え／締め）。
         endDegrees: CADENCE_BY_ROLE[role.name] ?? null,
         // 曲の1音目。ここだけは拍0から始めて、拍の位置を最初に示す。

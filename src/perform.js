@@ -318,3 +318,100 @@ export function buildPerformance(song, settings) {
 
   return { events, durationSec };
 }
+
+// ---------------------------------------------------------------------------
+// 演奏設計の書き出し
+//
+// 上の buildPerformance は、この設計を「秒とベロシティ」に変換して音にする。
+// 楽譜には同じ設計を「記号」として書く必要があるが、そこで数字を書き写すと
+// 音と楽譜が別々に育ってしまう。だから設計そのものをここから返し、
+// export.js は受け取った設計を記号に置き換えるだけにする。
+//
+// 実際、これを用意する前の書き出しには強弱記号もクレッシェンドもスラーも
+// ペダルも1つも入っていなかった。音では鳴っているのに楽譜には無い、という
+// 状態で、楽譜だけを読むと実際より遥かに平板な曲に見えていた。
+// ---------------------------------------------------------------------------
+
+/** 強弱の係数を記号名に直す。境目は SECTION_LEVEL の値が散らばる位置に置く。 */
+export function dynamicName(level) {
+  if (!Number.isFinite(level)) return 'mf';
+  if (level < 0.7) return 'p';
+  if (level < 0.9) return 'mp';
+  if (level < 1.05) return 'mf';
+  return 'f';
+}
+
+/**
+ * 曲の演奏設計を、楽譜に書ける形で返す。位置はすべて拍。
+ *
+ * @param {object} song composeSong の戻り値
+ * @param {object} [settings]
+ * @returns {{
+ *   dynamics: Array<{ beat: number, mark: string }>,
+ *   wedges: Array<{ from: number, to: number, type: 'crescendo'|'diminuendo' }>,
+ *   words: Array<{ beat: number, text: string }>,
+ *   slurs: Array<{ from: number, to: number }>,
+ *   tenutoBeat: number | null,
+ *   pedalBars: number[],
+ * }}
+ */
+export function describePerformance(song, settings) {
+  const cfg = resolveSettings(settings);
+  const bars = Number(song?.bars) || 0;
+  const totalBeats = Number(song?.totalBeats) || bars * 4;
+  const melody = (Array.isArray(song?.melody) ? song.melody : [])
+    .slice().sort((a, b) => a.beat - b.beat);
+
+  // ---- セクションごとの強弱 ----
+  const ranges = sectionRanges(song);
+  const dynamics = [];
+  for (const r of ranges) {
+    const lv = SECTION_LEVEL[r.name];
+    if (!lv) continue;
+    const mark = dynamicName(lv[0]);
+    if (dynamics.length === 0 || dynamics[dynamics.length - 1].mark !== mark) {
+      dynamics.push({ beat: r.startBeat, mark });
+    }
+  }
+
+  // ---- 松葉（クレッシェンドとディミヌエンド） ----
+  const wedges = [];
+  const words = [];
+  const climaxBeat = Number(song?.climaxBeat);
+  if (Number.isFinite(climaxBeat) && climaxBeat > 0) {
+    wedges.push({ from: Math.max(0, climaxBeat - CRESC_BEATS), to: climaxBeat, type: 'crescendo' });
+    wedges.push({ from: climaxBeat, to: Math.min(totalBeats, climaxBeat + RELEASE_BEATS), type: 'diminuendo' });
+  }
+  // 最終セクションはセクションの中で下がり切る。松葉ではなく dim. の語で示す
+  // （4小節以上に渡る松葉は読みにくい、という記譜の作法に従う）。
+  const last = ranges[ranges.length - 1];
+  if (last && SECTION_LEVEL[last.name] && SECTION_LEVEL[last.name][0] !== SECTION_LEVEL[last.name][1]) {
+    words.push({ beat: last.startBeat, text: 'dim.' });
+    dynamics.push({ beat: Math.max(last.startBeat, totalBeats - 8), mark: dynamicName(SECTION_LEVEL[last.name][1]) });
+  }
+  if (cfg.ritardando && bars >= 3) words.push({ beat: (bars - 2) * 4, text: 'rit.' });
+
+  // ---- スラー（フレーズ＝8拍のまとまり） ----
+  const slurs = [];
+  const byPhrase = new Map();
+  for (const n of melody) {
+    const ph = Math.floor(n.beat / PHRASE_BEATS);
+    if (!byPhrase.has(ph)) byPhrase.set(ph, []);
+    byPhrase.get(ph).push(n.beat);
+  }
+  for (const beats of byPhrase.values()) {
+    // 1音しかないフレーズにスラーは掛けられない（始点と終点が同じ音になる）。
+    if (beats.length >= 2) slurs.push({ from: beats[0], to: beats[beats.length - 1] });
+  }
+
+  return {
+    dynamics: dynamics.sort((a, b) => a.beat - b.beat),
+    wedges,
+    words: words.sort((a, b) => a.beat - b.beat),
+    slurs,
+    // 頂点の音だけテヌート。音では「少し遅らせて長めに」鳴らしている。
+    tenutoBeat: cfg.tenuto && Number.isFinite(climaxBeat) ? climaxBeat : null,
+    // 和音は小節ごとに変わる。ペダルもそれに合わせて踏み替える。
+    pedalBars: Array.from({ length: bars }, (_, i) => i),
+  };
+}

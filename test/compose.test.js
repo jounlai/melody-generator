@@ -14,6 +14,9 @@ import {
   progressionWeight, arpeggioIndex, isDarkChord,
   phrasePlan, phraseEndFlags, soarsToPeak, hasLongEnding, nearestOctave,
   modulatedPeakCap, keyFifths, keyDistance, chooseModulationStep,
+  melodyCeiling,
+  placeUnder,
+  withoutRub,
 } from '../src/compose.js';
 // 調号の綴り（何番目の五度圏か）は notation.js が持っている。
 // compose.js は同じ表を自前で持つので、一致を機械で確かめるために読むだけ読む。
@@ -808,6 +811,79 @@ test('varyProgression: 元の進行を壊さない', () => {
 // ---------------------------------------------------------------------------
 // 19〜20. 伴奏レイヤーと音域
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 声部の上下関係
+// ---------------------------------------------------------------------------
+
+test('melodyCeiling は旋律の最低音より下を返す', () => {
+  const melody = [
+    { beat: 0, midi: 72, dur: 1 }, { beat: 1, midi: 64, dur: 1 },
+    { beat: 4, midi: 80, dur: 1 },
+  ];
+  assert.equal(melodyCeiling(melody, 0), 62); // 64 - LAYER_GAP(2)
+  assert.equal(melodyCeiling(melody, 1), 78);
+  // 旋律が休んでいる小節は制限しない
+  assert.ok(melodyCeiling(melody, 2) >= 72);
+});
+
+test('placeUnder は音名を変えずに天井の下へ収める', () => {
+  const chord = [60, 64, 67]; // C E G
+  const pcs = (a) => a.map((m) => ((m % 12) + 12) % 12).sort((x, y) => x - y);
+  for (const ceiling of [80, 67, 60, 55, 50, 45]) {
+    const out = placeUnder(chord, null, 48, 72, ceiling, 36);
+    // !!! これが最重要 !!! 半音でずらすと、その和音は別の和音になる
+    for (const m of out) {
+      assert.ok(pcs(chord).includes(((m % 12) + 12) % 12),
+        `天井${ceiling}: 音名が変わった ${m}`);
+    }
+    assert.ok(out.length >= 2, `天井${ceiling}: 音が減りすぎ`);
+    assert.ok(out.every((m, i) => i === 0 || m > out[i - 1]), '昇順でない');
+  }
+  // 収まるならちゃんと収まる
+  assert.ok(Math.max(...placeUnder(chord, null, 48, 72, 60, 36)) <= 60);
+});
+
+test('placeUnder は声部進行のために前の小節へ寄せる', () => {
+  const chord = [60, 64, 67];
+  assert.equal(placeUnder(chord, 48, 48, 72, 99, 36)[0], 48);
+  assert.equal(placeUnder(chord, 72, 48, 72, 99, 36)[0], 72);
+});
+
+test('withoutRub は旋律と半音でぶつかる持続音だけを落とす', () => {
+  // 旋律が C（60）を強拍で歌っているとき、B（59）を伸ばすと唸る
+  const melody = [{ beat: 0, midi: 60, dur: 2 }];
+  assert.deepEqual(withoutRub([55, 59, 64], melody, 0), [55, 64]);
+  // ぶつからないならそのまま
+  assert.deepEqual(withoutRub([55, 60, 64], melody, 0), [55, 60, 64]);
+  // 2音を切るところまでは削らない（和音が和音でなくなる）
+  assert.deepEqual(withoutRub([59, 61], melody, 0), [59, 61]);
+  // 弱拍の短い音は対象外（通過音でいちいち和音を削らない）
+  assert.deepEqual(withoutRub([59, 64, 67], [{ beat: 1, midi: 60, dur: 0.5 }], 0), [59, 64, 67]);
+});
+
+test('実データ: 伴奏とパッドが旋律を追い越さない', () => {
+  let notes = 0;
+  let crossed = 0;
+  for (const seed of ['x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8']) {
+    const song = composeSong(seed, DATA, S({}));
+    const under = [
+      ...song.accomp.map((n) => ({ midi: n.midi, beat: n.beat, dur: n.dur })),
+      ...song.bass.map((n) => ({ midi: n.midi, beat: n.beat, dur: n.dur })),
+      ...song.pad.flatMap((p) => p.midis.map((m) => ({ midi: m, beat: p.beat, dur: p.dur }))),
+    ];
+    for (const m of song.melody) {
+      const sounding = under.filter((a) => a.beat <= m.beat && a.beat + a.dur > m.beat);
+      if (sounding.length === 0) continue;
+      notes++;
+      if (Math.max(...sounding.map((a) => a.midi)) > m.midi) crossed++;
+    }
+  }
+  assert.ok(notes > 500, `検査した音が少ない: ${notes}`);
+  // 実測 0.02%（8564音中2回、いずれも1半音）。0.5% を超えたら設計が壊れている。
+  assert.ok(crossed / notes < 0.005,
+    `伴奏が旋律を追い越しすぎ: ${crossed}/${notes}`);
+});
 
 test('pad / bass / accomp が全小節ぶん鳴る', () => {
   for (const bars of ['16', '32', '64']) {

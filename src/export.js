@@ -30,6 +30,7 @@ import {
   keySignature, keyTimeline, spellNote, durationSymbol, splitAtBarlines, chordName,
 } from './notation.js';
 import { midiProgramsFor } from './instrument.js';
+import { describePerformance } from './perform.js';
 
 // ---------------------------------------------------------------------------
 // 定数
@@ -222,6 +223,8 @@ function staffPieces(layers, totalDivs, bars, staff, voice) {
     for (let i = 0; i < parts.length; i++) {
       const sym = durationSymbol(parts[i] / DIVISIONS);
       measures[measure].push({
+        // 演奏記号を音符に付けるために、曲頭からの絶対位置を持たせる。
+        startDiv: startDiv + parts.slice(0, i).reduce((a, b) => a + b, 0),
         divs: parts[i],
         midis: seg.midis ?? null,
         head: sym.head,
@@ -278,8 +281,14 @@ function noteXml(piece, key, indent) {
   }
 
   const ties = (piece.tieFrom ? '<tie type="stop"/>' : '') + (piece.tieTo ? '<tie type="start"/>' : '');
-  const tied = (piece.tieFrom ? '<tied type="stop"/>' : '') + (piece.tieTo ? '<tied type="start"/>' : '');
-  const notations = tied ? `<notations>${tied}</notations>` : '';
+  // notations の中身は定義順（tied → slur → articulations）に並べる。
+  const marks = piece.marks ?? {};
+  const inner = (piece.tieFrom ? '<tied type="stop"/>' : '')
+    + (piece.tieTo ? '<tied type="start"/>' : '')
+    + (marks.slurStop ? '<slur type="stop" number="1"/>' : '')
+    + (marks.slurStart ? '<slur type="start" number="1"/>' : '')
+    + (marks.tenuto ? '<articulations><tenuto/></articulations>' : '');
+  const notations = inner ? `<notations>${inner}</notations>` : '';
 
   const midis = [...new Set(piece.midis)].sort((a, b) => a - b);
   return midis.map((midi, i) => `${pad}<note>${i > 0 ? '<chord/>' : ''}${pitchXml(midi, key)}`
@@ -341,13 +350,70 @@ function harmonyXml(entry, key, indent) {
 }
 
 /**
+ * <direction> を1つ組み立てる。
+ * 要素の順は MusicXML の定義どおり direction-type → offset → staff → sound。
+ * offset は小節頭からのずれ（divisions 単位）で、0 なら書かない。
+ */
+function directionXml(body, { offset = 0, staff = 1, placement = 'below', sound = '' }, indent) {
+  const pad = ' '.repeat(indent);
+  return `${pad}<direction placement="${placement}">`
+    + `<direction-type>${body}</direction-type>`
+    + (offset ? `<offset>${offset}</offset>` : '')
+    + `<staff>${staff}</staff>${sound}</direction>`;
+}
+
+/**
+ * 演奏設計を、小節ごとの <direction> の並びに変換する。
+ *
+ * 位置は拍で来るので、小節番号と小節頭からのずれ（offset）に直す。
+ * すべて小節の先頭にまとめて書き、実際に置く場所は offset に任せる
+ * （音符の間へ差し込むより、読む側にも書く側にも間違いが少ない）。
+ */
+function directionsByMeasure(plan, bars, indent) {
+  const out = Array.from({ length: bars }, () => []);
+  const at = (beat) => {
+    const div = Math.round(Number(beat) * DIVISIONS);
+    const measure = Math.floor(div / DIVS_PER_BAR);
+    return { measure, offset: div - measure * DIVS_PER_BAR };
+  };
+  const push = (beat, body, opts) => {
+    const { measure, offset } = at(beat);
+    if (measure < 0 || measure >= bars) return;
+    out[measure].push(directionXml(body, { ...opts, offset }, indent));
+  };
+
+  for (const d of plan.dynamics) {
+    push(d.beat, `<dynamics><${d.mark}/></dynamics>`, { staff: 1 });
+  }
+  for (const w of plan.wedges) {
+    push(w.from, `<wedge type="${w.type}"/>`, { staff: 1 });
+    push(w.to, '<wedge type="stop"/>', { staff: 1 });
+  }
+  for (const w of plan.words) {
+    push(w.beat, `<words>${esc(w.text)}</words>`, { staff: 1, placement: 'above' });
+  }
+  // ペダルは和音に合わせて小節ごとに踏み替える。音源側も1小節ぶん音を伸ばす。
+  for (let i = 0; i < plan.pedalBars.length; i++) {
+    const bar = plan.pedalBars[i];
+    if (bar < 0 || bar >= bars) continue;
+    const type = i === 0 ? 'start' : 'change';
+    out[bar].push(directionXml(`<pedal type="${type}" line="yes"/>`, { staff: 2 }, indent));
+  }
+  const lastBar = plan.pedalBars[plan.pedalBars.length - 1];
+  if (Number.isFinite(lastBar) && lastBar >= 0 && lastBar < bars) {
+    out[lastBar].push(directionXml('<pedal type="stop" line="yes"/>', { staff: 2 }, indent));
+  }
+  return out;
+}
+
+/**
  * 曲を MusicXML（score-partwise 4.0）の文字列にする。
  * ピアノ1パート2段。1小節目に調号・拍子・音部記号・テンポを置く。
  *
  * @param {object} song composeSong の戻り値
  * @returns {string} XML文字列（宣言とDOCTYPE付き）
  */
-export function toMusicXML(song) {
+export function toMusicXML(song, settings) {
   const bars = barsOf(song);
   const totalDivs = bars * DIVS_PER_BAR;
   // 小節ごとの調。転調しない曲では全部同じ調で、changes は空になる。
@@ -358,6 +424,25 @@ export function toMusicXML(song) {
 
   const treble = staffPieces([song?.melody], totalDivs, bars, 1, 1);
   const bassStaff = staffPieces([song?.accomp, song?.bass], totalDivs, bars, 2, 5);
+
+  // 演奏設計。強弱・松葉・スラー・テヌート・ペダルは perform.js が持っている
+  // ものをそのまま記号にする。ここで独自に決めると、音と楽譜が食い違う。
+  const plan = describePerformance(song, settings);
+  const directions = directionsByMeasure(plan, bars, 6);
+  // スラーとテヌートは音符側に付くので、位置を引ける形にしておく。
+  const slurStart = new Set(plan.slurs.map((s) => Math.round(s.from * DIVISIONS)));
+  const slurStop = new Set(plan.slurs.map((s) => Math.round(s.to * DIVISIONS)));
+  const tenutoDiv = plan.tenutoBeat === null ? null : Math.round(plan.tenutoBeat * DIVISIONS);
+  for (const measure of treble) {
+    for (const piece of measure) {
+      if (!piece.midis) continue;
+      piece.marks = {
+        slurStart: slurStart.has(piece.startDiv),
+        slurStop: slurStop.has(piece.startDiv),
+        tenuto: piece.startDiv === tenutoDiv,
+      };
+    }
+  }
 
   // 小節ごとのコードネーム。画面の楽譜と同じで、前の小節と同じ名前なら書かない。
   const chordAt = new Map();
@@ -416,6 +501,7 @@ export function toMusicXML(song) {
     }
     // コードネーム。<harmony> は最初の音符より前に置く決まり。
     lines.push(...harmonyXml(chordAt.get(m), key, 6));
+    lines.push(...directions[m]);
     for (const piece of treble[m]) lines.push(...noteXml(piece, key, 6));
     lines.push(`      <backup><duration>${DIVS_PER_BAR}</duration></backup>`);
     for (const piece of bassStaff[m]) lines.push(...noteXml(piece, key, 6));

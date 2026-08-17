@@ -670,6 +670,28 @@ test('MusicXML: fifths が keySignature と一致する（tonicMidi 56〜63 × 2
 // 8. タイの start と stop の数が一致する
 // ---------------------------------------------------------------------------
 
+test('MusicXML: 演奏設計が記号として書き出される', () => {
+  // 音では強弱もクレッシェンドもリタルダンドも掛かっているのに、楽譜に
+  // 1つも書かれていなかった。楽譜だけを読むと実際より遥かに平板に見える。
+  const xml = toMusicXML(song('marks', '32'), {});
+  const root = parseXml(xml);
+  const wedges = findAll(root, 'wedge').map((w) => w.attrs.type);
+  assert.ok(findAll(root, 'dynamics').length >= 3, '強弱記号が足りない');
+  assert.ok(wedges.includes('crescendo'), 'クレッシェンドが無い');
+  assert.ok(wedges.includes('diminuendo'), 'ディミヌエンドが無い');
+  assert.equal(wedges.filter((t) => t === 'stop').length,
+    wedges.filter((t) => t !== 'stop').length, '松葉の開始と終了が対でない');
+  assert.ok(findAll(root, 'pedal').length >= 2, 'ペダルが無い');
+  assert.ok(findAll(root, 'tenuto').length === 1, '頂点音のテヌートが1つでない');
+  const words = findAll(root, 'words').map((w) => w.text);
+  assert.ok(words.some((t) => String(t).includes('rit')), 'リタルダンドが無い');
+
+  const starts = findAll(root, 'slur').filter((e) => e.attrs.type === 'start').length;
+  const stops = findAll(root, 'slur').filter((e) => e.attrs.type === 'stop').length;
+  assert.ok(starts >= 4, `スラーが少なすぎる: ${starts}`);
+  assert.equal(starts, stops, 'スラーの開始と終了が対でない');
+});
+
 test('MusicXML: タイの start と stop が対になっている', realOpts, () => {
   let totalStarts = 0;
   for (const bars of LENGTHS) {
@@ -682,11 +704,12 @@ test('MusicXML: タイの start と stop が対になっている', realOpts, ()
       assert.equal(starts, stops, `${seed}/${bars}: tie の start(${starts}) と stop(${stops}) が違う`);
       assert.equal(count('tied', 'start'), starts, `${seed}/${bars}: tied start が tie と違う`);
       assert.equal(count('tied', 'stop'), stops, `${seed}/${bars}: tied stop が tie と違う`);
-      // tie を持つ音符は必ず notations/tied も持つ
+      // tie を持つ音符は必ず notations/tied も持つ。
+      // 逆は成り立たない（スラーやテヌートだけを持つ音符にも notations は付く）。
       for (const note of findAll(root, 'note')) {
         const ties = note.children.filter((c) => c.name === 'tie');
         const notations = firstChild(note, 'notations');
-        assert.equal(ties.length > 0, notations !== null, 'tie と notations が食い違う');
+        if (ties.length > 0) assert.ok(notations !== null, 'tie があるのに notations が無い');
         if (notations) {
           assert.deepEqual(
             ties.map((t) => t.attrs.type),

@@ -576,7 +576,7 @@ function init() {
       const suggested = String(suggestFilename(song, ext) ?? '').trim();
       if (suggested) filename = suggested;
       if (ext === 'mid') downloadFile(toMidi(song), filename, MIDI_MIME);
-      else downloadFile(String(toMusicXML(song)), filename, MUSICXML_MIME);
+      else downloadFile(String(toMusicXML(song, resolveSettings(settings))), filename, MUSICXML_MIME);
     } catch (err) {
       // 握りつぶさない。失敗したことと理由を必ず画面に出す。
       console.error('保存できませんでした', err);
