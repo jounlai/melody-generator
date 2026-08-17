@@ -695,7 +695,9 @@ test('curveFor: B の頂点だけが最高音域を要求する', () => {
   for (const slots of [2, 4, 8]) {
     const cs = climaxSlot(slots);
     const climax = curveFor(2, cs, slots, 1);
-    assert.deepEqual(climax, { tension: 5, maxPeak: 15, minPeak: 12 });
+    // 頂点の天井は 15（＝制限なし）ではなく 14。登り（rise）との差を詰めて、
+    // 最後の一歩が跳躍ではなく到達に聴こえるようにするため。
+    assert.deepEqual(climax, { tension: 5, maxPeak: 14, minPeak: 12 });
 
     for (let si = 0; si < 4; si++) {
       for (let k = 0; k < slots; k++) {
@@ -1315,14 +1317,24 @@ test('b は a と違う輪郭で対比を作る', () => {
 
 test('phraseOffsets: セクションと役割ごとに向きのある優先順を返す', () => {
   // A は静かに提示して少しだけ上げ、A' と B は上げ、A'' は下げて収める。
-  assert.deepEqual(phraseOffsets(0, "a'"), [0, 1, 2, -1, 3, -2]);
-  assert.deepEqual(phraseOffsets(0, "a''"), [1, 2, 0, 3, -1, -2]);
-  assert.deepEqual(phraseOffsets(1, "a'"), [1, 2, 3, 0, -1]);
-  assert.deepEqual(phraseOffsets(1, "a''"), [2, 3, 1, 0, -1]);
+  assert.deepEqual(phraseOffsets(0, "a'"), [1, 2, -1, 3, -2, 0]);
+  assert.deepEqual(phraseOffsets(0, "a''"), [1, 2, 3, -1, -2, 0]);
+  assert.deepEqual(phraseOffsets(1, "a'"), [1, 2, 3, -1, 0]);
+  assert.deepEqual(phraseOffsets(1, "a''"), [2, 3, 1, -1, 0]);
   assert.deepEqual(phraseOffsets(2, "a'"), [2, 3, 1, 4, 0]);
   assert.deepEqual(phraseOffsets(2, "a''"), [3, 4, 2, 1, 0]);
-  assert.deepEqual(phraseOffsets(3, "a'"), [0, -1, -2, 1, -3]);
-  assert.deepEqual(phraseOffsets(3, "a''"), [-2, -3, -1, 0, -4]);
+  assert.deepEqual(phraseOffsets(3, "a'"), [-1, -2, 1, -3, 0]);
+  assert.deepEqual(phraseOffsets(3, "a''"), [-2, -3, -1, -4, 0]);
+
+  // 移動量 0 は「平行移動しない」＝ a をそのまま繰り返すことで、ゼクエンツではない。
+  // どのセクションでも先頭に置かない（置くと a' が a の完全なコピーになる）。
+  for (const si of [0, 1, 2, 3]) {
+    for (const role of ["a'", "a''"]) {
+      const o = phraseOffsets(si, role);
+      assert.notEqual(o[0], 0, `セクション${si} の ${role} が 0 で始まっている`);
+      assert.equal(o[o.length - 1], 0, `セクション${si} の ${role} の最後が 0 でない`);
+    }
+  }
 
   // 先頭の向きが A ≦ A' ≦ B と上がり、A'' だけ下がる。
   for (const role of ["a'", "a''"]) {

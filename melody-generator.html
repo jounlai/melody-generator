@@ -3383,6 +3383,20 @@ const TONIC_CHORD = { major: 'I', minor: 'i' };
 // 「曲中の最高音がちょうど1回」が転調で静かに壊れる。定義は1か所に置く。
 const CLIMAX_MIN_PEAK = 12;
 
+// クライマックスに許す頂点度数の上限。
+//
+// 以前はここが 15（＝制限なし）で、頂点は主音の 21.7 半音上に着いていた。
+// 一方その直前2小節の最高音は 15.3 半音で、最後の一歩だけが6半音も跳ぶ。
+// 最高音が刺さるのは高さそのものではなく「そこまで登ってきた」ことなので、
+// 天井を1つ下げて、登り（rise）と頂点の差を4半音台まで詰める。
+// deg14 は主音の20半音上で、これでも曲中で並ぶもののない高さではある。
+//
+// 実測（200曲）:
+//   deg15  頂点 21.7 / 直前 15.3 / 最後の一歩 6.4半音
+//   deg14  頂点 20.0 / 直前 15.4 / 最後の一歩 4.6半音  ← 採用
+//   deg13  頂点 19.8 / 直前 14.9 / 最後の一歩 4.9半音（登りまで下がる）
+const CLIMAX_MAX_PEAK = 14;
+
 // ---------------------------------------------------------------------------
 // 最終セクションの転調
 //
@@ -3584,9 +3598,24 @@ function curveFor(sectionIdx, slotIdx, slots, strength) {
   const afterClimax = sectionIdx === 2 && slotIdx > cs;
   return {
     tension,
-    maxPeak: st === 0 || isClimax ? 15 : sectionIdx === 3 || afterClimax ? 10 : 11,
+    maxPeak: st === 0 ? DEG_MAX : isClimax ? CLIMAX_MAX_PEAK : sectionIdx === 3 || afterClimax ? 10 : 11,
     minPeak: st === 0 ? 1 : isClimax ? CLIMAX_MIN_PEAK : 1,
   };
+}
+
+/**
+ * そのスロットに要求する「登り」の下限（スケール度数）。
+ *
+ * クライマックスの1つ手前で CLIMAX_MIN_PEAK - 2 に届くようにし、
+ * そこから遡るほど1度ずつ下げる。頂点そのもの（minPeak）と違って
+ * これは必須ではなく好み。候補が無ければ静かに諦める。
+ *
+ * 楽節の頭（a）には掛けない。a は headroom で低く始めさせてあり、
+ * 登る余地を残す役目なので、そこへ下限を要求すると意図が打ち消し合う。
+ */
+function riseFor(sectionIdx, slotIdx, climax) {
+  if (sectionIdx !== 2 || slotIdx <= 0 || slotIdx >= climax) return null;
+  return Math.max(2, CLIMAX_MIN_PEAK - 2 - (climax - 1 - slotIdx));
 }
 
 /**
@@ -3903,6 +3932,15 @@ function narrowCandidates(candidates, ctx) {
     const soaring = out.filter(soarsToPeak);
     if (soaring.length > 0) out = soaring;
   }
+  // 登り坂。クライマックスへ向かうスロットには、届いてほしい高さの下限がある。
+  // 終止の好みより先に掛ける。登っている最中は「どう答えるか」より
+  // 「登り切ること」のほうが上で、あとに回すと絞られた小さな集合の中に
+  // 高い断片が残っておらず素通りしてしまう。
+  // 「該当が無ければ絞らない」ので、候補が枯れても曲は壊れない。
+  if (ctx.rise) {
+    const climbing = out.filter((m) => m.peakDeg >= ctx.rise);
+    if (climbing.length > 0) out = climbing;
+  }
   if (Array.isArray(ctx.endDegrees)) {
     for (const tier of ctx.endDegrees) {
       const closed = out.filter((m) => tier.includes(scaleDegreeOf(m.endDeg)));
@@ -3977,6 +4015,15 @@ const DEG_MAX = 15;
 // 曲を組むときは下の phraseOffsets が返す「向きのある」順を使う。
 const PHRASE_OFFSETS = [0, -1, 1, -2, 2, -3, 3, -7, 7, -4, 4, -5, 5];
 
+// 移動量の優先順を、この数ずつ1つの「段」としてまとめる。
+//
+// 段の中では終止の好み（cadenceRank）が先に効き、段をまたぐと方向が勝つ。
+// 方向と終止のどちらか一方だけを優先すると、もう一方が実測で消える。
+//   終止を優先  … 採る移動量がほぼ終止だけで決まり、A→A' の上昇が消える
+//   方向だけ    … a' が「ひとまず答える」率が 82.8% → 53.4% まで落ちる
+// 上位3つを同格とみなすと、向きを保ったまま、その中で答えられる量を選べる。
+const DIRECTION_TIER = 3;
+
 /**
  * セクションと役割ごとの平行移動量の優先順。**この表がこのファイルの心臓部**。
  *
@@ -3993,11 +4040,20 @@ const PHRASE_OFFSETS = [0, -1, 1, -2, 2, -3, 3, -7, 7, -4, 4, -5, 5];
  * 64小節（1セクション8スロット＝2周）でも周ごとに向きは変えない。
  * 2周目で上下を入れ替えると、せっかく作った方向がその場で打ち消される。
  */
+//
+// !!! 移動量 0 は必ず最後に置くこと !!!
+// 0 は「平行移動しない」＝ a をそのまま繰り返すことで、ゼクエンツではない。
+// 実測では、完全に一致した2小節断片515組のうち143組（28%）がこれだった。
+// しかも A の a' は 0 が先頭にあったため、進行が I → V → vi → IV と動いても
+// 旋律だけが1音も変わらない小節が量産されていた（和音が変われば意味も変わる、
+// という理屈は成り立つが、それは「意図して置いた同音反復」の話であって、
+// 優先順の先頭に置いて毎回引くものではない）。
+// 乗る移動量が他に1つも無いときの最後の逃げ道としてだけ残す。
 const SEQUENCE_OFFSETS = {
-  0: { "a'": [0, 1, 2, -1, 3, -2], "a''": [1, 2, 0, 3, -1, -2] },
-  1: { "a'": [1, 2, 3, 0, -1], "a''": [2, 3, 1, 0, -1] },
+  0: { "a'": [1, 2, -1, 3, -2, 0], "a''": [1, 2, 3, -1, -2, 0] },
+  1: { "a'": [1, 2, 3, -1, 0], "a''": [2, 3, 1, -1, 0] },
   2: { "a'": [2, 3, 1, 4, 0], "a''": [3, 4, 2, 1, 0] },
-  3: { "a'": [0, -1, -2, 1, -3], "a''": [-2, -3, -1, 0, -4] },
+  3: { "a'": [-1, -2, 1, -3, 0], "a''": [-2, -3, -1, -4, 0] },
 };
 
 // セクションの向き。表に無い量を最後に並べるときの符号の好みに使う。
@@ -4205,12 +4261,18 @@ function deriveFragment(anchor, ctx, opts = {}) {
     accepted.push({
       offset,
       fragment: moved,
+      // 登り坂では、要求した高さに届く移動量を前へ出す。終止の好みより上に置く。
+      // 登っている最中に「答える」ことより、登り切ることのほうが先だから。
+      lift: opts.rise && moved.peakDeg < opts.rise ? 1 : 0,
       rank: cadenceRank(moved.endDeg, opts.endDegrees),
+      // 方向の「段」。優先順の上位いくつかを1つの段としてまとめ、
+      // 段の中でだけ終止の好みを効かせる。下の並べ替えの説明を参照。
+      tier: Math.floor(i / DIRECTION_TIER),
       order: i,
     });
   }
   if (accepted.length === 0) return null;
-  accepted.sort((x, y) => x.rank - y.rank || x.order - y.order);
+  accepted.sort((x, y) => x.lift - y.lift || x.tier - y.tier || x.rank - y.rank || x.order - y.order);
   const chosen = accepted[0];
   return { offset: chosen.offset, fragment: attachFitSus(chosen.fragment, ctx.mode) };
 }
@@ -4659,6 +4721,12 @@ function composeSong(seed, data, settings) {
         // 弱起のまま調だけ半音上がると、どこから新しい調になったのか耳が掴めない。
         preferDownbeat: (s === 0 && k === 0)
           || (semitones !== 0 && !pivots && s === MODULATION_SECTION && k === 0),
+        // クライマックスへの階段。頂点の1つ手前で CLIMAX_MIN_PEAK - 2 に届き、
+        // そこから遡るほど1度ずつ低くする。実測では頂点の直前の小節の最高音が
+        // 主音+12.5半音しかなく、そこから頂点の+21.6半音へ9半音跳んでいた。
+        // 80曲すべてが跳躍で頂点に入り、順次で到達する曲は1つも無かった。
+        // 最高音が刺さるのは、そこまで登ってきた過程があるときだけである。
+        rise: riseFor(s, k, cs),
         // B の頂点までの楽節の頭（a）だけ、天井から3度ぶん余白を残す。
         // 登る距離がいちばん長いのが B で、ここが詰むとクライマックスへ辿り着かない。
         // 実測では、この余白の有無で B のゼクエンツの平均移動量が +0.3〜+0.6 変わる
@@ -4689,14 +4757,21 @@ function composeSong(seed, data, settings) {
         // セクションごとに向きの違う優先順を使う（A は少しだけ上、A' と B は上、A'' は下）。
         const offsets = phraseOffsets(s, role.name);
         const closing = role.name === "a''";
-        // 平行移動量を終止で並べ替えるのは、締めくくる a'' だけにする。
-        // a' の「1/3/5 で答える」は3度数ぶんと広く、これを方向より優先させると
-        // 採る量がほぼ終止だけで決まってしまい、A→A' の上昇が実測で消えた。
-        const endDegrees = closing ? ctx.endDegrees : null;
+        // 終止の好みは a' にも効かせる。ただし段（DIRECTION_TIER）の中だけなので、
+        // 向きは保たれる。a'' は締めくくる楽節なので段をまたいでも終止を優先する。
+        const endDegrees = ctx.endDegrees;
         // a'' が a' と同じ移動量では、同じコードの上に同じものが並ぶ。
         const exclude = closing ? phraseOffset[role.anchor] : null;
-        const opts = { offsets, endDegrees };
+        const opts = { offsets, endDegrees, rise: ctx.rise };
         let derived = deriveFragment(anchor, ctx, { ...opts, exclude });
+        // 登り坂で高さに届かなかったときだけ、向きの表に無い移動量まで広げて
+        // もう一度探す。表の量は先頭に残るので、届く量が他にあるなら
+        // そちらが選ばれる（方向が壊れるのは、届く量が表の外にしか無いとき）。
+        if (ctx.rise && derived && derived.fragment.peakDeg < ctx.rise) {
+          const wider = deriveFragment(anchor, ctx,
+            { ...opts, offsets: phraseOffsets(s, role.name, true) });
+          if (wider && wider.fragment.peakDeg >= ctx.rise) derived = wider;
+        }
         // 3. 移調では乗らないとき。同じリズム型の別の断片で「続き」に聴かせる。
         let twin = derived ? null : phraseTwin(anchor, melodies, ctx);
         // 3'. a'' は閉じるための楽節。移調がトニックに着地できないなら、
@@ -4956,6 +5031,7 @@ exports.nearestOctave = nearestOctave;
 exports.climaxSlot = climaxSlot;
 exports.rawTension = rawTension;
 exports.curveFor = curveFor;
+exports.riseFor = riseFor;
 exports.varyProgression = varyProgression;
 exports.passesFilters = passesFilters;
 exports.isDarkChord = isDarkChord;
