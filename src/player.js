@@ -8,6 +8,10 @@
  *
  * 曲が終わったら余韻（gapSeconds）を置いて新しいシードで次の曲を作る。
  * 止めるまで無限に続く。曲数の上限は持たない。
+ *
+ * 聴いた曲はシードだけ履歴に積む（曲そのものはシードから完全に再構築できる）。
+ * 前へ戻ると履歴を遡り、そこから先へ進むときは「もう一度聴いた曲」を順に辿る。
+ * プレイリストと同じ挙動で、履歴の末尾まで来たときだけ新しい曲が生まれる。
  */
 import { composeSong } from './compose.js';
 import { buildPerformance } from './perform.js';
@@ -34,6 +38,20 @@ const SEED_LENGTH = 6;
 const GAP_DEFAULT = 3.5;
 const GAP_MIN = 0;
 const GAP_MAX = 10;
+
+/** 履歴に残す曲数。シード6文字なので上限は事実上メモリではなく「戻れる距離」の設計値 */
+const HISTORY_MAX = 100;
+
+/**
+ * 手で曲を切り替えたときに置く無音の長さ（秒）。
+ *
+ * 曲の終わりで勝手に次へ行くときは、前の曲の余韻に重ねたほうが途切れずに聴こえる。
+ * だが「次へ」「前へ」を押したときは違う。押した瞬間まで鳴っていた音が
+ * 減衰しきるのに数秒かかり、リバーブの尾はさらに残るので、そこへ次の曲を
+ * 重ねると2曲が混ざる。いったん全部消してから始めるほうが、切り替えたことが
+ * はっきり伝わる。
+ */
+const MANUAL_GAP_SEC = 1;
 
 /**
  * 曲コードの検証（`/^[0-9a-z]+$/i`）を通る 6 文字のシードを作る。
@@ -96,6 +114,11 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
   /** start() の世代番号。await 中に別の start/stop が入った場合に古い呼び出しを捨てる */
   let generation = 0;
 
+  /** @type {string[]} 聴いた順のシード。曲はシードから完全に再構築できる */
+  const history = [];
+  /** history の中で今どこを鳴らしているか。まだ何も鳴らしていなければ -1 */
+  let index = -1;
+
   /** @type {Set<(song: object) => void>} */
   const songListeners = new Set();
 
@@ -127,8 +150,11 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
    * 開始時刻は「組み立て終わったあとの時計」で決める。作曲に時間がかかっても
    * 過去の時刻を予約せずに済む。
    */
-  function beginSong(seed) {
+  function beginSong(seed, leadSec = LEAD_IN_SEC) {
     const settings = currentSettings();
+    // 楽器は音階スタイルに紐づいていて、スタイルは「次の曲から」反映される設定。
+    // 曲の切り替わりがその境目なので、ここで音源へ渡し直す。
+    engine.applySettings(settings);
     const nextSong = composeSong(seed, data, settings);
     const performance = buildPerformance(nextSong, settings);
 
@@ -136,9 +162,45 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
     events = performance.events ?? [];
     durationSec = Number(performance.durationSec) || 0;
     cursor = 0;
-    songStartAt = audioCtx.currentTime + LEAD_IN_SEC;
+    songStartAt = audioCtx.currentTime + leadSec;
 
     emitSongChange(song);
+  }
+
+  /** 履歴の末尾に積んで、そこを現在地にする。上限を超えたぶんは古いほうから捨てる。 */
+  function pushHistory(seed) {
+    history.push(seed);
+    if (history.length > HISTORY_MAX) history.shift();
+    index = history.length - 1;
+  }
+
+  /**
+   * 鳴っている音を全部消し、無音をはさんでから曲を差し替える。
+   * 手で切り替えたときだけ通る道。
+   */
+  function cutTo(seed) {
+    engine.silence?.(MANUAL_GAP_SEC);
+    beginSong(seed, MANUAL_GAP_SEC);
+    scheduleDue();
+  }
+
+  /**
+   * 次の曲へ。履歴の途中にいるなら、次に聴いたその曲へ進む（プレイリストと同じ）。
+   * 末尾にいるときだけ新しい曲が生まれる。
+   *
+   * @param {boolean} manual 手で押したか。押されたときだけ無音をはさむ
+   */
+  function advance(manual) {
+    let seed;
+    if (index >= 0 && index < history.length - 1) {
+      index += 1;
+      seed = history[index];
+    } else {
+      seed = randomSeed();
+      pushHistory(seed);
+    }
+    if (manual) cutTo(seed);
+    else beginSong(seed);
   }
 
   /**
@@ -174,8 +236,8 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
       for (let i = 0; i < MAX_ADVANCE_PER_TICK; i += 1) {
         scheduleDue();
         if (!readyForNextSong()) return;
-        // リバーブの尾を残したまま次へ移る。engine 側の音は止めない。
-        beginSong(randomSeed());
+        // 曲の終わりで勝手に進むときは、リバーブの尾を残したまま次へ移る。
+        advance(false);
       }
     } catch (err) {
       // 25ms ごとに同じ例外を吐き続けても直らないので、いったん止めて表に出す
@@ -220,10 +282,25 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
       // await の間に stop() や別の start() が入っていたら、この呼び出しは無効
       if (token !== generation) return;
 
+      const wasPlaying = playing;
       stopTimer();
       playing = true;
-      beginSong(normalizeSeed(seed) ?? randomSeed());
-      scheduleDue();
+      const wanted = normalizeSeed(seed);
+      // 同じ曲を作り直すとき（設定を変えて「今すぐ作り直す」）は履歴を伸ばさない。
+      // 押すたびに履歴が積み上がると、戻るボタンが同じ曲を何度も辿ることになる。
+      let next;
+      if (wanted !== null && history[index] === wanted) next = wanted;
+      else {
+        next = wanted ?? randomSeed();
+        pushHistory(next);
+      }
+      // すでに鳴っている最中の差し替えなら、手で切り替えたときと同じ扱いにする。
+      // 止まっているところから押したときは、待たせずにすぐ始める。
+      if (wasPlaying) cutTo(next);
+      else {
+        beginSong(next);
+        scheduleDue();
+      }
       timer = setInterval(tick, TICK_MS);
     },
 
@@ -234,11 +311,29 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
       playing = false;
     },
 
-    /** 今の曲を打ち切って次の曲へ。予約済みの音はそのまま鳴り終わる */
-    skip() {
+    /**
+     * 次の曲へ。履歴の途中にいるなら、次に聴いたその曲へ進む。
+     * 末尾にいるときだけ新しい曲が生まれる。予約済みの音はそのまま鳴り終わる。
+     */
+    next() {
       if (!playing) return;
-      beginSong(randomSeed());
-      scheduleDue();
+      advance(true);
+    },
+
+    /**
+     * 一つ前に聴いた曲へ戻る。履歴の先頭にいるときは何もしない。
+     * @returns {boolean} 実際に戻れたか
+     */
+    prev() {
+      if (!playing || index <= 0) return false;
+      index -= 1;
+      cutTo(history[index]);
+      return true;
+    },
+
+    /** 戻れる曲があるか。ボタンの活殺に使う */
+    hasPrev() {
+      return playing && index > 0;
     },
 
     isPlaying() {

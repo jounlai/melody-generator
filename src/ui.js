@@ -236,6 +236,14 @@ export function createSettingsPanel(rootEl, options = {}) {
       field.append(head, control);
     }
 
+    // 補足があれば操作の下に添える。何が起きるか分かってから触れるようにする。
+    if (def.hint) {
+      const hint = el('p', 'field-hint', def.hint);
+      hint.id = `${id}-hint`;
+      control.setAttribute('aria-describedby', hint.id);
+      field.append(hint);
+    }
+
     syncers.set(def.key, sync);
     return field;
   }

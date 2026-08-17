@@ -15,6 +15,7 @@ import {
 import { createEngine } from './synth.js';
 import { createPlayer } from './player.js';
 import { renderScore, keySignature } from './notation.js';
+import { resolveInstrument } from './instrument.js';
 import { toMusicXML, toMidi, suggestFilename } from './export.js';
 import { loadStoredSettings, storeSettings, createSettingsPanel } from './ui.js';
 
@@ -63,7 +64,7 @@ function keyLabel(song) {
   }
 }
 
-/** 「ハ長調（C） ・ 68 BPM ・ 32小節」の形にする */
+/** 「ピアノ・ハ長調（C）・68 BPM・32小節」の形にする */
 function describeSong(song) {
   const tonic = Math.round(Number(song?.tonicMidi));
   const name = Number.isFinite(tonic) ? NOTE_NAMES[((tonic % 12) + 12) % 12] : '?';
@@ -73,7 +74,7 @@ function describeSong(song) {
   // 調名は楽譜の調号と同じ呼び方（ハ長調）で出す。括弧の中は和音を追う人向けの音名。
   const label = keyLabel(song);
   const key = label ? `${label}（${name}）` : `${name} ${mode}`;
-  return `${key} ・ ${tempo} BPM ・ ${bars}小節`;
+  return [resolveInstrument(song?.instrument).label, key, `${tempo} BPM`, `${bars}小節`].join(' ・ ');
 }
 
 /** input でも div でも同じように書けるようにする */
@@ -214,7 +215,9 @@ function init() {
   const byId = (id) => document.getElementById(id);
   const els = {
     playToggle: byId('play-toggle'),
-    skip: byId('skip'),
+    playLabel: byId('play-label'),
+    prev: byId('prev'),
+    next: byId('next'),
     songCode: byId('song-code'),
     copyCode: byId('copy-code'),
     loadCode: byId('load-code'),
@@ -255,11 +258,20 @@ function init() {
     }
   }
 
-  // index.html の初期ラベル「▶ 再生する」に合わせて記号ごと差し替える
+  // 再生ボタンの見た目。記号は絵文字を使わず、CSS で三角と二本線を描く
+  // （絵文字は端末ごとに形も大きさも変わり、ボタンの中で揃わない）。
   function setPlayLabel(isPlaying) {
     if (!els.playToggle) return;
-    els.playToggle.textContent = isPlaying ? '⏸ 停止する' : '▶ 再生する';
+    els.playToggle.dataset.state = isPlaying ? 'playing' : 'stopped';
     els.playToggle.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
+    els.playToggle.setAttribute('aria-label', isPlaying ? '停止する' : '再生する');
+    if (els.playLabel) els.playLabel.textContent = isPlaying ? '停止' : '再生';
+    syncTransport();
+  }
+
+  /** 「前の曲へ」は、戻れる曲があるときだけ押せる */
+  function syncTransport() {
+    if (els.prev) els.prev.disabled = !(data && player?.hasPrev?.());
   }
 
   // ---- URL ハッシュ：作曲パラメータとシードを上書きする -------------------
@@ -604,6 +616,7 @@ function init() {
     }
 
     if (els.nowPlaying) els.nowPlaying.textContent = describeSong(song);
+    syncTransport();
   }
 
   // ---- 設定パネル ------------------------------------------------------
@@ -628,7 +641,7 @@ function init() {
   }
 
   // ---- ボタン ----------------------------------------------------------
-  const gatedButtons = [els.playToggle, els.skip, els.loadCode].filter(Boolean);
+  const gatedButtons = [els.playToggle, els.prev, els.next, els.loadCode].filter(Boolean);
   for (const button of gatedButtons) button.disabled = true;
 
   setPlayLabel(false);
@@ -646,15 +659,22 @@ function init() {
     });
   }
 
-  if (els.skip) {
-    els.skip.addEventListener('click', () => {
+  if (els.next) {
+    els.next.addEventListener('click', () => {
       if (player?.isPlaying()) {
-        player.skip();
+        player.next();
         return;
       }
       // 停止中に押されたら、そのまま新しい曲で再生を始める
       pendingSeed = null;
       startPlayback();
+    });
+  }
+
+  if (els.prev) {
+    els.prev.addEventListener('click', () => {
+      // 戻れるのは、この画面で実際に聴いた曲だけ。押せない状態は disabled で示す。
+      if (!player?.prev()) setStatus('これより前に聴いた曲はまだありません', 2000);
     });
   }
 
@@ -726,6 +746,7 @@ function init() {
       }
       data = { melodies, progressions };
       for (const button of gatedButtons) button.disabled = false;
+      syncTransport();
       setStatus('');
     })
     .catch((err) => {

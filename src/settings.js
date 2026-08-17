@@ -1,3 +1,5 @@
+import { instrumentOptions, DEFAULT_INSTRUMENT } from './instrument.js';
+
 export const GROUP_LABELS = {
   sound: '音',
   compose: '曲',
@@ -33,9 +35,14 @@ export const PARAM_DEFS = [
   // ---- 画面に出す3つ ----
   { key: 'masterVolume', group: 'sound', label: '音量', type: 'range', min: 0, max: 100, step: 1, def: 70, unit: '%', apply: 'live', ui: true },
   { key: 'mood', group: 'compose', label: '曲の雰囲気', type: 'choice', apply: 'next', ui: true, code: 'md', def: 'balanced',
+    hint: '長調と短調のどちらを多く引くか',
     options: [['bright', '明るめ'], ['balanced', 'バランス'], ['wistful', '切なめ']] },
   { key: 'tempoFeel', group: 'compose', label: 'テンポ', type: 'choice', apply: 'next', ui: true, code: 'tp', def: 'normal',
     options: [['slow', 'ゆっくり'], ['normal', 'ふつう'], ['flowing', '少し速め']] },
+  // 楽器。曲の中身は変えず、鳴らす音だけを変える（instrument.js が唯一の定義）。
+  { key: 'instrument', group: 'sound', label: '楽器', type: 'choice', apply: 'next', ui: true, code: 'it',
+    hint: '曲の作りはそのまま、鳴らす楽器だけが変わります',
+    def: DEFAULT_INSTRUMENT.key, options: instrumentOptions() },
 
   // ---- 以下は固定値。画面には出さない ----
 

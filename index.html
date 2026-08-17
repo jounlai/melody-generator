@@ -44,7 +44,7 @@
   .page {
     max-width: 680px;
     margin: 0 auto;
-    padding: clamp(48px, 10vw, 96px) clamp(20px, 5vw, 32px) 96px;
+    padding: clamp(28px, 8vw, 96px) clamp(20px, 5vw, 32px) 72px;
   }
 
   /* ---- 見出し ---- */
@@ -73,7 +73,7 @@
     color: var(--muted);
   }
 
-  main > section { margin-top: clamp(48px, 10vw, 76px); }
+  main > section { margin-top: clamp(36px, 8vw, 76px); }
 
   /* ---- ボタン共通 ---- */
 
@@ -105,58 +105,137 @@
     outline-offset: 3px;
   }
 
-  /* ---- 再生（主役） ---- */
+  /* ---- 再生（主役） ----
+   *
+   * プレイリストと同じ並び。中央の丸が再生／停止で、その左右に前後。
+   * 指で押す面はどれも 48px 以上を確保する（Apple / Google どちらの指針も 44dp 前後）。
+   */
 
   .stage { text-align: center; }
 
-  #play-toggle {
-    display: block;
-    width: min(100%, 320px);
-    margin: 0 auto;
-    padding: 20px 24px;
-    font-size: 1.05rem;
+  /*
+   * ボタンの行とラベルの行を、grid の同じ行に揃える。
+   * flex で縦に積むと、中央のボタンだけ背が高いぶんラベルが下にずれて、
+   * 3つの文字が一直線に並ばない。
+   */
+  .transport {
+    display: grid;
+    /* 上の段にボタン、下の段にラベル。列方向に流すので、
+       ボタンとその真下のラベルが必ず同じ列に入る */
+    grid-template-rows: auto auto;
+    grid-auto-flow: column;
+    align-items: center;
+    justify-content: center;
+    /* 画面が狭いと詰まるので、余白そのものを画面幅で伸縮させる */
+    column-gap: clamp(20px, 7vw, 40px);
+    row-gap: 12px;
+  }
+
+  /* スロットの箱は数えさせない。ボタンとラベルを直接グリッドの升目へ入れる */
+  .transport-slot { display: contents; }
+
+  .transport-btn,
+  .transport-play,
+  .transport-cap { justify-self: center; }
+
+  .transport-cap {
+    color: var(--muted);
+    font-size: 0.72rem;
     letter-spacing: 0.14em;
+  }
+
+  .transport-btn,
+  .transport-play {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 999px;
+    transition: border-color 0.2s ease, background-color 0.2s ease,
+      color 0.2s ease, transform 0.12s ease;
+  }
+
+  .transport-btn svg,
+  .transport-play svg {
+    width: 42%;
+    height: 42%;
+    fill: currentColor;
+  }
+
+  .transport-btn {
+    width: 56px;
+    height: 56px;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+  }
+
+  .transport-btn:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--line-strong);
+  }
+
+  .transport-play {
+    width: 84px;
+    height: 84px;
     color: var(--accent-ink);
     background: var(--accent);
     border: 1px solid var(--accent);
-    border-radius: 999px;
-    transition: opacity 0.2s ease;
+    box-shadow: 0 10px 30px -12px rgb(169 200 216 / 55%);
   }
 
-  #play-toggle:hover {
-    opacity: 0.88;
+  .transport-play:hover:not(:disabled) {
     color: var(--accent-ink);
     border-color: var(--accent);
+    opacity: 0.9;
   }
 
-  #play-toggle[aria-pressed="true"],
-  #play-toggle.is-playing {
+  /* 停止中と再生中で、塗りと輪郭を入れ替える。形だけでなく面でも状態が分かる。
+   *
+   * hover の指定もここで書き切る。押した直後はカーソルがボタンの上に残るので、
+   * 上の :hover（詳細度が1つ高い）が勝ってしまい、輪郭だけの状態で
+   * アイコンが地の色になって消える。実際に押して初めて出る種類の不具合。
+   */
+  .transport-play[data-state="playing"],
+  .transport-play[data-state="playing"]:hover:not(:disabled) {
     color: var(--accent);
     background: transparent;
+    box-shadow: none;
+    opacity: 1;
   }
 
+  .transport-play[data-state="playing"]:hover:not(:disabled) {
+    background: rgb(169 200 216 / 12%);
+  }
+
+  .transport-play .icon-pause,
+  .transport-play[data-state="playing"] .icon-play { display: none; }
+  .transport-play[data-state="playing"] .icon-pause { display: block; }
+
+  /* 再生の三角は、丸の中では重心が左に寄って見える。1px ぶん右へ置いて中心を合わせる */
+  .transport-play .icon-play { transform: translateX(1px); }
+
+  .transport-btn:active:not(:disabled),
+  .transport-play:active:not(:disabled) { transform: scale(0.94); }
+
   .hint {
-    margin: 20px auto 0;
+    margin: 26px auto 0;
     max-width: 30em;
     color: var(--muted);
     font-size: 0.8rem;
     line-height: 1.9;
   }
 
-  .transport {
-    margin-top: 32px;
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
   #now-playing {
-    margin-top: 32px;
+    margin-top: 30px;
+    padding: 14px 18px;
     min-height: 1.9em;
-    color: var(--muted);
-    font-size: 0.9rem;
-    letter-spacing: 0.08em;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    line-height: 1.8;
     overflow-wrap: anywhere;
   }
 
@@ -182,6 +261,7 @@
 
   #score-toggle {
     flex: none;
+    min-height: 44px;
     padding: 6px 14px;
     font-size: 0.78rem;
     background: transparent;
@@ -193,7 +273,7 @@
     position: relative;
     display: flex;
     align-items: center;
-    min-height: clamp(200px, 34vh, 300px);
+    min-height: clamp(168px, 28vh, 300px);
     color: var(--score-ink);
     background: var(--surface);
     border: 1px solid var(--line);
@@ -272,6 +352,7 @@
     /* 幅が足りなければ縮んで、それでも足りなければ次の行へ落ちる */
     flex: 0 1 auto;
     min-width: 0;
+    min-height: 44px;
     padding: 7px 14px;
     font-size: 0.78rem;
     color: var(--muted);
@@ -287,13 +368,24 @@
     border-color: var(--line);
   }
 
+  /* 要るときだけ開く。常時3行を占めさせない */
   .score-export-help {
-    margin: 12px 0 0;
+    margin: 10px 0 0;
     padding-inline: clamp(20px, 5vw, 32px);
     color: var(--muted);
     font-size: 0.75rem;
-    line-height: 1.9;
+    line-height: 1.85;
   }
+
+  .score-export-help > summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    cursor: pointer;
+  }
+
+  .score-export-help > summary:hover { color: var(--text); }
+  .score-export-help > p { margin: 0 0 6px; }
 
   /* ---- 曲コード ---- */
 
@@ -304,25 +396,46 @@
   }
 
   #song-code {
-    flex: 1 1 200px;
+    flex: 1 1 220px;
     min-width: 0;
-    padding: 9px 12px;
-    color: var(--muted);
+    padding: 11px 12px;
+    color: var(--text);
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 8px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.82rem;
+    /* 16px を切ると iOS が入力時にページを勝手に拡大する */
+    font-size: 16px;
     letter-spacing: 0.02em;
   }
 
+  #song-code::placeholder { color: var(--muted); }
   #song-code:read-only { cursor: text; }
+
+  /* コピーと読み込みは対で動くので、折り返すときも2つ一緒に落とす */
+  .code-actions {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 10px;
+  }
+
+  .code-actions button {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
 
   /* 楽譜の中の <g class="note"> に当たらないよう、要素まで絞る */
   p.note {
     margin: 14px 0 0;
     color: var(--muted);
     font-size: 0.78rem;
+  }
+
+  .section-lede {
+    margin: -8px 0 18px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1.9;
   }
 
   #status {
@@ -412,6 +525,14 @@
     white-space: nowrap;
   }
 
+  .field-hint {
+    margin: -2px 0 0;
+    color: var(--muted);
+    font-size: 0.74rem;
+    line-height: 1.75;
+    letter-spacing: 0.02em;
+  }
+
   .field-range .field-input {
     width: 100%;
     margin: 0;
@@ -432,9 +553,10 @@
 
   .field-choice .field-input {
     width: 100%;
-    padding: 9px 12px;
+    padding: 11px 12px;
     font: inherit;
-    font-size: 0.86rem;
+    /* 16px を切ると iOS が選択時にページを勝手に拡大する */
+    font-size: 16px;
     color: var(--text);
     background: var(--surface-2);
     border: 1px solid var(--line);
@@ -449,6 +571,7 @@
   }
 
   .settings-reset {
+    min-height: 44px;
     font-size: 0.8rem;
     color: var(--muted);
     background: transparent;
@@ -458,10 +581,114 @@
 
   .site-foot {
     margin-top: clamp(56px, 12vw, 88px);
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
     color: var(--muted);
     font-size: 0.75rem;
     text-align: center;
     letter-spacing: 0.06em;
+  }
+
+  .foot-note {
+    margin: 0 auto 22px;
+    max-width: 34em;
+    line-height: 1.9;
+  }
+
+  .foot-credit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 10px;
+    margin: 0;
+    line-height: 1.9;
+  }
+
+  .foot-sep { color: var(--line-strong); }
+
+  .foot-credit-quiet { margin-top: 12px; }
+
+  .site-foot a {
+    display: inline-flex;
+    align-items: center;
+    /* 指で押せる高さを確保する。文字だけのリンクは狭すぎて外しやすい */
+    min-height: 44px;
+    color: var(--muted);
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 4px;
+    transition: color 0.2s ease, text-decoration-color 0.2s ease;
+  }
+
+  .site-foot a:hover {
+    color: var(--text);
+    text-decoration-color: var(--accent);
+  }
+
+  /* ---- 狭い画面 ----
+   *
+   * 削るのは余白と文字の大きさだけで、指で押す面は削らない。
+   * 小さい画面ほど押し間違いが増えるので、44px の下限はここでも守る。
+   */
+
+  @media (max-width: 560px) {
+    body { line-height: 1.65; }
+
+    .page {
+      padding-top: 22px;
+      padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+    }
+
+    h1 { font-size: 1.22rem; letter-spacing: 0.08em; }
+    .lede { margin-top: 8px; font-size: 0.8rem; }
+    h2 { margin-bottom: 12px; letter-spacing: 0.16em; }
+
+    main > section { margin-top: 28px; }
+
+    .transport { column-gap: clamp(18px, 6vw, 28px); }
+    .transport-btn { width: 48px; height: 48px; }
+    .transport-play { width: 72px; height: 72px; }
+
+    .hint { margin-top: 16px; font-size: 0.74rem; line-height: 1.7; }
+
+    #now-playing {
+      margin-top: 16px;
+      padding: 10px 12px;
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+      line-height: 1.65;
+    }
+
+    /* 楽譜の枠は画面いっぱいに使い、中身だけを横に流す */
+    #score-view {
+      min-height: 168px;
+      border-radius: 0;
+      border-inline: 0;
+    }
+
+    .score-note,
+    .score-export-help { margin-top: 8px; font-size: 0.72rem; line-height: 1.7; }
+
+    .score-export { margin-top: 10px; }
+    .score-export button,
+    .code-actions button { flex: 1 1 45%; }
+
+    .settings { gap: 8px; }
+    .settings-group-title { padding: 10px 14px; font-size: 0.82rem; }
+    .settings-fields { gap: 14px; padding: 2px 14px 16px; }
+    .field { gap: 7px; }
+    .field-label { font-size: 0.82rem; }
+    .field-hint { font-size: 0.7rem; line-height: 1.6; }
+
+    .section-lede { margin: -6px 0 12px; font-size: 0.74rem; }
+    p.note { font-size: 0.72rem; }
+    #status { margin-top: 14px; font-size: 0.74rem; }
+
+    .site-foot { margin-top: 36px; padding-top: 18px; font-size: 0.7rem; }
+    .foot-note { margin-bottom: 10px; }
+    /* リンクの押しやすさは残しつつ、行そのものは詰める */
+    .foot-credit { gap: 0 10px; }
+    .site-foot a { min-height: 40px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -480,14 +707,46 @@
   <main>
 
     <section class="stage" aria-label="再生">
-      <button id="play-toggle" type="button" aria-pressed="false">▶ 再生する</button>
-      <p class="hint">
-        ブラウザの決まりで、最初のクリックがあるまで音は鳴りません。<br>
-        このボタンを押した瞬間に、一曲目が生まれます。
-      </p>
-      <div class="transport">
-        <button id="skip" type="button">次の曲へ</button>
+      <!--
+        アイコンは絵文字を使わずここで描く。絵文字は端末ごとに形も大きさも
+        色も変わり、3つ並べたときに大きさが揃わない。サイコロだけは例外。
+      -->
+      <div class="transport" role="group" aria-label="再生操作">
+        <div class="transport-slot">
+          <button id="prev" class="transport-btn" type="button" aria-label="前の曲へ戻る">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M18 5.5v13a1 1 0 0 1-1.55.83L7.5 13.2v5.3a1 1 0 0 1-2 0v-13a1 1 0 0 1 2 0v5.3l8.95-6.13A1 1 0 0 1 18 5.5Z"/>
+            </svg>
+          </button>
+          <span class="transport-cap">前へ</span>
+        </div>
+
+        <div class="transport-slot">
+          <button id="play-toggle" class="transport-play" type="button"
+                  data-state="stopped" aria-pressed="false" aria-label="再生する">
+            <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M8 4.9a1 1 0 0 1 1.53-.85l10.2 6.4a1.12 1.12 0 0 1 0 1.9L9.53 18.75A1 1 0 0 1 8 17.9Z"/>
+            </svg>
+            <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="6.5" y="5" width="4" height="14" rx="1.4"/>
+              <rect x="13.5" y="5" width="4" height="14" rx="1.4"/>
+            </svg>
+          </button>
+          <span class="transport-cap" id="play-label">再生</span>
+        </div>
+
+        <div class="transport-slot">
+          <button id="next" class="transport-btn" type="button" aria-label="次の曲へ進む">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M6 5.5v13a1 1 0 0 0 1.55.83l8.95-6.13v5.3a1 1 0 0 0 2 0v-13a1 1 0 0 0-2 0v5.3L7.55 4.67A1 1 0 0 0 6 5.5Z"/>
+            </svg>
+          </button>
+          <span class="transport-cap">次へ</span>
+        </div>
       </div>
+
+      <p class="hint">最初のクリックまで音は鳴りません（ブラウザの決まり）。</p>
+
       <div id="now-playing" aria-live="polite">まだ再生していません</div>
     </section>
 
@@ -501,39 +760,62 @@
       <div id="score-view" tabindex="0" role="group" aria-label="楽譜（横にスクロールできます）">
         <p class="score-empty">再生すると、ここに楽譜が出ます。</p>
       </div>
-      <p class="score-note">再生に合わせて流れます。手で送ると、3秒だけ追従を止めます。</p>
+      <p class="score-note">再生に合わせて流れます。手で送ると3秒だけ追従を止めます。</p>
       <div class="score-export" role="group" aria-label="楽譜の書き出し">
-        <button id="export-musicxml" type="button" aria-describedby="export-help" disabled>楽譜をダウンロード (MusicXML)</button>
-        <button id="export-midi" type="button" aria-describedby="export-help" disabled>MIDIをダウンロード</button>
+        <button id="export-musicxml" type="button" aria-describedby="export-help" disabled>MusicXML を保存</button>
+        <button id="export-midi" type="button" aria-describedby="export-help" disabled>MIDI を保存</button>
       </div>
-      <p class="score-export-help" id="export-help">
-        MusicXML は MuseScore（無料）や Finale、Sibelius で開くと五線譜として表示・印刷できます。<br>
-        MIDI は DAW や音楽ソフトで鳴らしたり編集したりできます。
-      </p>
+      <details class="score-export-help">
+        <summary>書き出したファイルの使い方</summary>
+        <p id="export-help">
+          MusicXML は MuseScore（無料）や Finale、Sibelius で開くと、五線譜として表示・印刷できます。
+          MIDI は DAW や音楽ソフトで鳴らしたり編集したりできます。
+        </p>
+      </details>
     </section>
 
-    <section aria-labelledby="code-head">
-      <h2 id="code-head">曲コード</h2>
-      <div class="code-row">
-        <input id="song-code" type="text" aria-label="現在の曲コード（貼り付けて読み込めます）"
-               spellcheck="false" autocomplete="off"
-               placeholder="再生するとここに出ます。貼り付けて「読み込む」も可">
-        <button id="copy-code" type="button">コピー</button>
-        <button id="load-code" type="button">読み込む</button>
-      </div>
-      <p class="note">同じコードを読み込めば、同じ曲がもう一度流れます。</p>
-      <div id="status" role="status" aria-live="polite"></div>
-    </section>
-
+    <!--
+      設定は曲コードより先に置く。触る頻度がまるで違い、
+      「音階と楽器を変える」がこのページで二番目によく使う操作になったため。
+    -->
     <section aria-labelledby="settings-head">
       <h2 id="settings-head">設定</h2>
       <div id="settings-panel"></div>
     </section>
 
+    <section aria-labelledby="code-head">
+      <h2 id="code-head">曲コード</h2>
+      <p class="section-lede">同じコードを読み込めば、同じ曲がもう一度流れます。</p>
+      <div class="code-row">
+        <input id="song-code" type="text" aria-label="現在の曲コード（貼り付けて読み込めます）"
+               spellcheck="false" autocomplete="off" autocapitalize="off" inputmode="latin"
+               placeholder="再生するとここに出ます">
+        <div class="code-actions">
+          <button id="copy-code" type="button">コピー</button>
+          <button id="load-code" type="button">読み込む</button>
+        </div>
+      </div>
+      <div id="status" role="status" aria-live="polite"></div>
+    </section>
+
   </main>
 
   <footer class="site-foot">
-    音は毎回その場で生まれています。同じ曲は、コードを控えないと二度と聴けません。
+    <p class="foot-note">
+      音は毎回その場で生まれています。同じ曲は、コードを控えないと二度と聴けません。
+    </p>
+    <p class="foot-credit">
+      Programmed by Jounlai Cho
+      <span class="foot-sep" aria-hidden="true">/</span>
+      <a href="https://x.com/jounlai" target="_blank" rel="noopener noreferrer">X @jounlai</a>
+      <span class="foot-sep" aria-hidden="true">/</span>
+      <a href="https://github.com/jounlai/melody-generator" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="foot-sep" aria-hidden="true">/</span>
+      <a href="https://heuron.com" target="_blank" rel="noopener noreferrer">ヒューロン株式会社</a>
+    </p>
+    <p class="foot-credit foot-credit-quiet">
+      開発には Anthropic の Claude（Claude Code）を使っています。
+    </p>
   </footer>
 
 </div>

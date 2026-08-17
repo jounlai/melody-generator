@@ -26,7 +26,10 @@
  *   ベースは伴奏と同じ声部に混ぜるので、小節頭の和音の最低音として現れる
  *   （全音符として伸ばしたままにはできない。1声部に別々の音価は入らない）。
  */
-import { keySignature, keyTimeline, spellNote, durationSymbol, splitAtBarlines } from './notation.js';
+import {
+  keySignature, keyTimeline, spellNote, durationSymbol, splitAtBarlines, chordName,
+} from './notation.js';
+import { midiProgramsFor } from './instrument.js';
 
 // ---------------------------------------------------------------------------
 // 定数
@@ -284,6 +287,59 @@ function noteXml(piece, key, indent) {
     + `<type>${type}</type>${dots}<staff>${piece.staff}</staff>${notations}</note>`);
 }
 
+// コードネームの語尾 → MusicXML の kind。表に無いものは other にして、
+// text 属性で見たままの名前を渡す（楽譜ソフトは text をそのまま印字する）。
+const HARMONY_KIND = new Map([
+  ['', 'major'],
+  ['m', 'minor'],
+  ['dim', 'diminished'],
+  ['aug', 'augmented'],
+  ['sus4', 'suspended-fourth'],
+  ['sus2', 'suspended-second'],
+  ['5', 'power'],
+  ['maj7', 'major-seventh'],
+  ['7', 'dominant'],
+  ['m7', 'minor-seventh'],
+  ['mMaj7', 'major-minor'],
+  ['m7b5', 'half-diminished'],
+  ['7sus4', 'suspended-fourth'],
+  ['add9', 'major'],
+  ['madd9', 'minor'],
+  ['9', 'dominant-ninth'],
+  ['m9', 'minor-ninth'],
+  ['maj9', 'major-ninth'],
+  ['mMaj9', 'major-minor'],
+  // 第3音を抜いた形。響きの骨格は7thの和音なので kind はそちらに寄せ、
+  // 「第3音が無い」ことは text で伝える。
+  ['7(no3)', 'dominant'],
+  ['maj7(no3)', 'major-seventh'],
+  ['9(no3)', 'dominant-ninth'],
+]);
+
+/** 'C#m7/E' を <root>/<kind>/<bass> に分解する。 */
+function harmonyXml(entry, key, indent) {
+  if (!entry) return [];
+  const [body, bassText] = String(entry.name).split('/');
+  const m = /^([A-G])(#*|b*)(.*)$/.exec(body);
+  if (!m) return [];
+  const [, step, sign, suffix] = m;
+  const alter = sign.startsWith('#') ? sign.length : sign.startsWith('b') ? -sign.length : 0;
+  const pad = ' '.repeat(indent);
+  const out = [`${pad}<harmony>`];
+  out.push(`${pad}  <root><root-step>${step}</root-step>`
+    + (alter ? `<root-alter>${alter}</root-alter>` : '') + '</root>');
+  const kind = HARMONY_KIND.get(suffix) ?? 'other';
+  out.push(`${pad}  <kind text="${esc(suffix)}">${kind}</kind>`);
+  const bm = bassText ? /^([A-G])(#*|b*)$/.exec(bassText) : null;
+  if (bm) {
+    const ba = bm[2].startsWith('#') ? bm[2].length : bm[2].startsWith('b') ? -bm[2].length : 0;
+    out.push(`${pad}  <bass><bass-step>${bm[1]}</bass-step>`
+      + (ba ? `<bass-alter>${ba}</bass-alter>` : '') + '</bass>');
+  }
+  out.push(`${pad}</harmony>`);
+  return out;
+}
+
 /**
  * 曲を MusicXML（score-partwise 4.0）の文字列にする。
  * ピアノ1パート2段。1小節目に調号・拍子・音部記号・テンポを置く。
@@ -302,6 +358,21 @@ export function toMusicXML(song) {
 
   const treble = staffPieces([song?.melody], totalDivs, bars, 1, 1);
   const bassStaff = staffPieces([song?.accomp, song?.bass], totalDivs, bars, 2, 5);
+
+  // 小節ごとのコードネーム。画面の楽譜と同じで、前の小節と同じ名前なら書かない。
+  const chordAt = new Map();
+  let lastChordName = null;
+  for (const chord of Array.isArray(song?.chords) ? song.chords : []) {
+    const bar = Math.round(Number(chord?.bar));
+    if (!Number.isFinite(bar) || bar < 0 || bar >= bars) continue;
+    const name = chordName(chord, keys[bar]);
+    if (!name || name === lastChordName) {
+      if (name) lastChordName = name;
+      continue;
+    }
+    lastChordName = name;
+    chordAt.set(bar, { chord, name });
+  }
 
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -343,6 +414,8 @@ export function toMusicXML(song) {
       lines.push(`        <key><fifths>${fifthsOf(key)}</fifths><mode>${mode}</mode></key>`);
       lines.push('      </attributes>');
     }
+    // コードネーム。<harmony> は最初の音符より前に置く決まり。
+    lines.push(...harmonyXml(chordAt.get(m), key, 6));
     for (const piece of treble[m]) lines.push(...noteXml(piece, key, 6));
     lines.push(`      <backup><duration>${DIVS_PER_BAR}</duration></backup>`);
     for (const piece of bassStaff[m]) lines.push(...noteXml(piece, key, 6));
@@ -497,13 +570,16 @@ export function toMidi(song) {
     bytes: [0xff, 0x59, 0x02, ...keySigData(c.to)],
   }));
 
+  // 画面で鳴っている楽器に、GM でいちばん近い音色を当てる（箏なら Koto）。
+  // 既定は従来どおり Acoustic Grand Piano。
+  const programs = midiProgramsFor(song?.instrument);
   const melodyHead = [
     ...metaEvent(0, 0x03, textBytes('Melody')),
-    0x00, 0xc0, 0x00,                               // プログラムチェンジ: Acoustic Grand Piano
+    0x00, 0xc0, programs.melody & 0x7f,             // プログラムチェンジ
   ];
   const accompHead = [
     ...metaEvent(0, 0x03, textBytes('Accompaniment')),
-    0x00, 0xc1, 0x00,
+    0x00, 0xc1, programs.accomp & 0x7f,
   ];
 
   const bytes = [

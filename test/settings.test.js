@@ -95,12 +95,19 @@ test('壊れた曲コードでも既定値で復帰する', () => {
   assert.equal(r.settings.tempoMin, defaultSettings().tempoMin);
 });
 
-test('曲コードにサウンド系は含まれない', () => {
+// 曲コードに載せる基準は「グループ」ではなく「同じコードから同じものが聴こえるか」。
+// 楽器は聴こえ方を変えるので載せる。音量やリバーブは聴く側の都合なので載せない。
+test('曲コードに音量やリバーブは含まれない', () => {
   const code = encodeSongCode('x', defaultSettings());
-  for (const d of PARAM_DEFS.filter((p) => p.group === 'sound')) {
-    assert.ok(!d.code, `${d.key}: サウンド系に code がある`);
+  for (const d of PARAM_DEFS.filter((p) => p.type === 'range' && p.group === 'sound')) {
+    assert.ok(!d.code, `${d.key}: 聴く側の都合の値に code がある`);
   }
   assert.ok(!code.includes('masterVolume'));
+});
+
+test('曲コードに楽器が載る', () => {
+  const code = encodeSongCode('x', { ...defaultSettings(), instrument: 'koto' });
+  assert.ok(code.includes('it=koto'), code);
 });
 
 test('composeParamKeys は作曲系のキーだけを返す', () => {
@@ -110,10 +117,11 @@ test('composeParamKeys は作曲系のキーだけを返す', () => {
   assert.ok(!keys.includes('masterVolume'));
 });
 
-test('画面に出すのは3項目だけ', () => {
+test('画面に出すのは4項目だけ', () => {
   const vis = visibleParams();
-  assert.equal(vis.length, 3, `画面に出す項目が3つでない: ${vis.map((d) => d.key).join(',')}`);
-  assert.deepEqual(vis.map((d) => d.key).sort(), ['masterVolume', 'mood', 'tempoFeel']);
+  assert.equal(vis.length, 4, `画面に出す項目が4つでない: ${vis.map((d) => d.key).join(',')}`);
+  assert.deepEqual(vis.map((d) => d.key).sort(),
+    ['instrument', 'masterVolume', 'mood', 'tempoFeel']);
 });
 
 test('全パラメータが ui 真偽値を持つ', () => {

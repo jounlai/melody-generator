@@ -18,7 +18,7 @@
 import { makeRng, seedFromString, randInt, pick } from './rng.js';
 import {
   degToMidi, degToSemitone, chordVoicing, bassMidi, nearestChordToneDeg, chordIndex,
-  splitBars, fitsBar, hasSuspension, CHORD_VOCAB,
+  splitBars, fitsBar, hasSuspension, chordSemitones, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
 
@@ -356,20 +356,21 @@ export function varyProgression(prog, level) {
   const out = { ...prog, bars };
   if (Array.isArray(prog.tension)) out.tension = prog.tension.slice();
   const mode = prog.mode;
+  const usable = (sym) => chordIndex(mode, sym) >= 0;
 
   if (level >= 1 && bars.length >= 2) {
     // 2小節目を第1転回形に。ベースが動くだけで進行が滑り出す。
     const sym = bars[1].chord;
     if (!sym.includes('/')) {
       const inv = `${sym}/3`;
-      if (chordIndex(mode, inv) >= 0) bars[1].chord = inv;
+      if (usable(inv)) bars[1].chord = inv;
     }
   }
   if (level >= 2 && bars.length >= 1) {
     const tonic = TONIC_CHORD[mode];
-    if (tonic && chordIndex(mode, tonic) >= 0) bars[bars.length - 1].chord = tonic;
+    if (tonic && usable(tonic)) bars[bars.length - 1].chord = tonic;
     const sub = SUBDOMINANT_MINOR[mode];
-    if (bars.length >= 2 && sub && chordIndex(mode, sub) >= 0) bars[bars.length - 2].chord = sub;
+    if (bars.length >= 2 && sub && usable(sub)) bars[bars.length - 2].chord = sub;
   }
   return out;
 }
@@ -1131,6 +1132,26 @@ function slotMelodyNotes(fragment, ctx, slotStartBeat, barTonics) {
 }
 
 /**
+ * 小節ごとの和音を、実際に鳴っている高さで書き出す。楽譜のコードネームの材料。
+ * 記号（I / vi / iv）ではなく実音から作るので、転回形も転調もそのまま名前に出る。
+ */
+function describeChords(barInfo) {
+  const out = [];
+  for (const info of barInfo) {
+    if (!info) continue;
+    const pcOf = (midi) => (((Math.round(midi) % 12) + 12) % 12);
+    out.push({
+      bar: info.bar,
+      symbol: info.symbol,
+      rootPc: pcOf(info.rootMidi),
+      bassPc: pcOf(info.bassNote),
+      pcs: [...new Set(info.voicing.map(pcOf))].sort((a, b) => a - b),
+    });
+  }
+  return out;
+}
+
+/**
  * シードと事前データから1曲を組み立てる。
  * 同じ seed・同じ作曲パラメータなら、何度呼んでも完全に同じ曲になる。
  *
@@ -1169,7 +1190,9 @@ export function composeSong(seed, data, settings) {
   // （長調 +2 なら deg12=19半音 と deg11+2=19半音）。それは
   // 「曲中の最高音がちょうど1回」を壊す。つなぎ目より頂点の一回性が上。
   // 置かない曲は、A'' の頭（A のモチーフ＝拍0から始まる断片）が代わりに境目を示す。
-  const pivots = semitones !== 0 && climaxSlot(slotCount) !== slotCount - 1;
+  // つなぎ目に使える属和音。語彙に無ければつなぎ目は置かず、A'' の頭で調を切り替える。
+  const pivotChord = PIVOT_CHORDS.find((sym) => chordIndex(mode, sym) >= 0) ?? null;
+  const pivots = semitones !== 0 && climaxSlot(slotCount) !== slotCount - 1 && pivotChord !== null;
   const pivotBar = pivots ? modBar - 1 : null;
   // 転調した調で許す頂点度数の上限（クライマックスに並ばない最大値）。
   const modPeakCap = modulatedPeakCap(semitones, mode);
@@ -1181,6 +1204,7 @@ export function composeSong(seed, data, settings) {
   const sources = chooseProgressions(rng, data?.progressions, mode);
 
   const sections = [];
+  const barInfo = [];      // 小節ごとの主音と和音。音階スタイルを掛けるときに引く
   const melody = [];
   const accomp = [];
   const bass = [];
@@ -1190,7 +1214,6 @@ export function composeSong(seed, data, settings) {
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
   let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
   let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
-  let pivotChord = null;   // つなぎ目に差し込んだ、新しい調のドミナント
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -1207,11 +1230,7 @@ export function composeSong(seed, data, settings) {
     // 差し替えは断片を選ぶ**前**に済ませること。あとから和音だけ替えると
     // メロディーが和音に乗らなくなる。
     if (pivots && s === MODULATION_SECTION - 1) {
-      const pivot = PIVOT_CHORDS.find((sym) => chordIndex(mode, sym) >= 0);
-      if (pivot) {
-        barChords[barChords.length - 1] = pivot;
-        pivotChord = pivot;
-      }
+      barChords[barChords.length - 1] = pivotChord;
     }
 
     // このセクションを描く主音。A'' だけが新しい調（B の最終小節は下の tonicAtBar）。
@@ -1411,6 +1430,8 @@ export function composeSong(seed, data, settings) {
       prevBass = bassNote;
       bass.push({ midi: bassNote, beat, dur: 4, vel: BASS_VEL });
 
+      // 転回形では最低音が根音とは限らないので、根音は記号から取り直す。
+      const rootMidi = barTonic + chordSemitones(chord, mode)[0];
       // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
       // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
       const raw = chordVoicing(chord, mode, barTonic, ACCOMP_LOWEST);
@@ -1422,6 +1443,15 @@ export function composeSong(seed, data, settings) {
       // パッドは伴奏と同じ和音なので、同じぶんだけ一緒に動かす。
       // 伴奏だけを持ち上げるとパッドを追い越して層が崩れる。
       const padVoicing = chordVoicing(chord, mode, barTonic, PAD_LOWEST);
+      // 楽譜のコードネームの材料。実際に鳴る積み方（voicing）から名前を作る。
+      barInfo[startBar + b] = {
+        bar: startBar + b,
+        symbol: chord,
+        tonicMidi: barTonic,
+        rootMidi,
+        voicing: voicing.slice(),
+        bassNote,
+      };
       pad.push({
         midis: shift === 0 ? padVoicing : padVoicing.map((v) => v + shift),
         beat,
@@ -1473,6 +1503,8 @@ export function composeSong(seed, data, settings) {
     }
   }
 
+  const chords = describeChords(barInfo);
+
   // 頂点の拍。演奏側はここだけテヌートを掛けるので、同点なら最初の1つを指す。
   let climaxBeat = 0;
   let highest = -Infinity;
@@ -1514,6 +1546,8 @@ export function composeSong(seed, data, settings) {
   return {
     seed,
     mode,
+    // 楽器。音そのものは楽器を知らないが、書き出し（MIDI の音色）はこれを見る。
+    instrument: cfg.instrument,
     tonicMidi,
     tempo,
     bars,
@@ -1535,6 +1569,8 @@ export function composeSong(seed, data, settings) {
       }
       : null,
     sections,
+    // 小節ごとの和音を実音で書き出したもの。楽譜のコードネームがこれを読む。
+    chords,
     melody,
     accomp,
     bass,

@@ -180,6 +180,83 @@ export function spellNote(midi, key) {
 }
 
 // ---------------------------------------------------------------------------
+// コードネーム
+//
+// 記号（I / vi / iv）ではなく、compose が書き出した**実際に鳴っている音**から
+// 名前を付ける。音階スタイルが和音の形を変えても、空虚五度で積んでも、
+// 表示と響きが食い違わない。
+// ---------------------------------------------------------------------------
+
+/** 根音から見た音程の並び → コードネームの語尾。 */
+const CHORD_SUFFIX = new Map([
+  ['0,4,7', ''],
+  ['0,3,7', 'm'],
+  ['0,3,6', 'dim'],
+  ['0,4,8', 'aug'],
+  ['0,5,7', 'sus4'],
+  ['0,2,7', 'sus2'],
+  // 第3音を抜いた形（空虚五度）。五声音階のスタイルではこれが主役になる。
+  ['0,7', '5'],
+  ['0,4,7,11', 'maj7'],
+  ['0,4,7,10', '7'],
+  ['0,3,7,10', 'm7'],
+  ['0,3,7,11', 'mMaj7'],
+  ['0,3,6,10', 'm7b5'],
+  ['0,5,7,10', '7sus4'],
+  ['0,2,4,7', 'add9'],
+  ['0,2,3,7', 'madd9'],
+  // 第3音を抜いた7thの和音。ただの 7 と書くと、読んだ人が第3音を弾いてしまう。
+  // 五声音階の旋律の下でそれを弾かれると、抜いた意味がそこで消える。
+  ['0,7,10', '7(no3)'],
+  ['0,7,11', 'maj7(no3)'],
+  ['0,2,7,10', '9(no3)'],
+  ['0,2,4,7,10', '9'],
+  ['0,2,3,7,10', 'm9'],
+  ['0,2,4,7,11', 'maj9'],
+  ['0,2,3,7,11', 'mMaj9'],
+]);
+
+/**
+ * 表に無い並びの受け皿。第3音があれば長短だけ言い、無ければ 5 とする。
+ * 名前を出せないより、粗くても正しい方を出す。
+ */
+function fallbackSuffix(intervals) {
+  if (intervals.includes(3)) return 'm';
+  if (intervals.includes(4)) return '';
+  return '5';
+}
+
+/** ピッチクラスを、その調の綴りで音名にする（F# か Gb かをここで決める）。 */
+export function pitchName(pc, key) {
+  const midi = 60 + (((Math.round(Number(pc)) % 12) + 12) % 12);
+  const sp = spellNote(midi, key);
+  const alter = midi - (sp.octave + 1) * 12 - LETTER_PC[sp.letter];
+  const sign = alter > 0 ? '#'.repeat(alter) : alter < 0 ? 'b'.repeat(-alter) : '';
+  return `${sp.letter}${sign}`;
+}
+
+/**
+ * 1小節ぶんのコードネーム。
+ * @param {{ rootPc: number, bassPc: number, pcs: number[] }} chord compose の song.chords の要素
+ * @param {ReturnType<typeof keySignature>} key その小節の調
+ * @returns {string} 'C' / 'Am7' / 'F#m' / 'G/B' / 'D5' など。作れなければ空文字
+ */
+export function chordName(chord, key) {
+  const root = Number(chord?.rootPc);
+  const pcs = Array.isArray(chord?.pcs) ? chord.pcs : [];
+  if (!Number.isFinite(root) || pcs.length === 0) return '';
+  const intervals = [...new Set(pcs.map((pc) => (((pc - root) % 12) + 12) % 12))]
+    .sort((a, b) => a - b);
+  const shape = intervals.join(',');
+  const suffix = CHORD_SUFFIX.has(shape) ? CHORD_SUFFIX.get(shape) : fallbackSuffix(intervals);
+  const name = `${pitchName(root, key)}${suffix}`;
+  // 転回形は分数コードで書く。最低音が根音と違うときだけ。
+  const bass = Number(chord?.bassPc);
+  if (!Number.isFinite(bass) || (((bass - root) % 12) + 12) % 12 === 0) return name;
+  return `${name}/${pitchName(bass, key)}`;
+}
+
+// ---------------------------------------------------------------------------
 // 曲の途中の転調
 // ---------------------------------------------------------------------------
 
@@ -464,7 +541,10 @@ const DEFAULT_LAYOUT = {
   barWidth: 200,      // 1小節の幅。8分音符8個が並んでも潰れない
   staffSpace: 8,      // 五線の線間（五線の高さは 32）
   staffGap: 64,       // ト音記号の第1線とヘ音記号の第5線の間隔
-  topPad: 52,         // 小節番号と高い音の加線のぶん
+  // 五線の上に3段ぶん置く: 調名と小節番号(topPad-52)、コードネーム(topPad-30)、
+  // そのうえで高い音の加線が入る余白。メロディーの最高音は五線の上 24px までなので、
+  // コードネームの行（30px 上）とはぶつからない。
+  topPad: 72,
   bottomPad: 40,
   leftPad: 6,
   rightPad: 16,
@@ -608,16 +688,46 @@ export function renderScore(song, options = {}) {
     out.push(`<g class="key-signature">${glyphs.join('')}</g>`);
   }
 
-  out.push(`<text class="key-label" x="${num(L.leftPad)}" y="${num(L.topPad - 36)}"`
+  const labelY = L.topPad - 52;
+  out.push(`<text class="key-label" x="${num(L.leftPad)}" y="${num(labelY)}"`
     + ` font-size="11" fill="currentColor" stroke="none">${esc(key.label)}</text>`);
 
   // ---- 小節線と小節番号 ----
   for (let i = 0; i < bars; i++) {
     out.push(line(barX[i], trebleTop, barX[i], bassBottom,
       ` class="barline" data-bar="${i}" stroke="currentColor" stroke-width="1"`));
-    out.push(`<text class="bar-number" x="${num(barX[i] + 3)}" y="${num(L.topPad - 36)}"`
+    out.push(`<text class="bar-number" x="${num(barX[i] + 3)}" y="${num(labelY)}"`
       + ` font-size="10" fill="currentColor" stroke="none">${i + 1}</text>`);
   }
+
+  // ---- コードネーム ----
+  //
+  // 五線の上に、その小節の和音の名前を置く。前の小節と同じ名前なら書かない
+  // （実際のリードシートと同じで、書き続けると視線が散る）。
+  // 転調をまたぐ小節は調号の前置きぶんだけ右へ逃がす。
+  const chordSvg = [];
+  let lastName = null;
+  for (const chord of Array.isArray(song?.chords) ? song.chords : []) {
+    const bar = Math.round(Number(chord?.bar));
+    if (!Number.isFinite(bar) || bar < 0 || bar >= bars) continue;
+    let name = '';
+    try {
+      name = chordName(chord, keyAt(bar));
+    } catch (err) {
+      // 名前を出せない和音があっても、楽譜そのものは描き切る。
+      name = '';
+    }
+    if (!name || name === lastName) {
+      if (name) lastName = name;
+      continue;
+    }
+    lastName = name;
+    const x = barX[bar] + (leadIn[bar] ?? 0) + 2;
+    chordSvg.push(`<text class="chord-name" data-bar="${bar}" x="${num(x)}"`
+      + ` y="${num(L.topPad - 30)}" font-size="13" font-weight="600"`
+      + ` fill="currentColor" stroke="none">${esc(name)}</text>`);
+  }
+  if (chordSvg.length > 0) out.push(`<g class="chord-names">${chordSvg.join('')}</g>`);
   // 終止線（細い線＋太い線）
   out.push(line(barX[bars] - 6, trebleTop, barX[bars] - 6, bassBottom,
     ` class="barline" data-bar="${bars}" stroke="currentColor" stroke-width="1"`));
