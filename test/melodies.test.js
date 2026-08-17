@@ -188,11 +188,50 @@ test('has-rest タグの断片が200件以上ある(息継ぎ)', () => {
   assert.ok(rests.length >= 200, `has-rest が ${rests.length} 件しかない`);
 });
 
-test('全断片の最後の音が1.5拍以上(フレーズの終わりで息を継ぐ)', () => {
+// ---------------------------------------------------------------------------
+// 終わり方の作り分け
+// ---------------------------------------------------------------------------
+// 全断片が「伸ばして終わる」と、2小節ごとに律儀に区切られて聴こえる。
+// 組み立て側はフレーズ末に終止感のある断片、途中に流す断片を選び分けるので、
+// カタログに両方が要る。
+
+const lastDurOf = (m) => m.notes[m.notes.length - 1].dur;
+
+test('long-ending タグは「最後の音が2.5拍以上」と完全に一致する', () => {
   for (const m of melodies) {
-    const last = m.notes[m.notes.length - 1];
-    assert.ok(last.dur >= 1.5, `${m.id}: 最終音が短い (${last.dur})`);
+    assert.equal(
+      m.tags.includes('long-ending'),
+      lastDurOf(m) >= 2.5,
+      `${m.id}: タグと最終音の長さが食い違う (${lastDurOf(m)}拍, tags=${m.tags.join(',')})`,
+    );
   }
+});
+
+test('long-ending の断片が350〜550件ある(多すぎても少なすぎても困る)', () => {
+  const n = withTag('long-ending').length;
+  assert.ok(n >= 350 && n <= 550, `long-ending が ${n} 件`);
+});
+
+test('long-ending を持たない断片が350件以上ある', () => {
+  const n = melodies.filter((m) => !m.tags.includes('long-ending')).length;
+  assert.ok(n >= 350, `終止感の無い断片が ${n} 件しかない`);
+});
+
+test('最後の音が1拍以下の「流す」断片が250件以上ある', () => {
+  const n = melodies.filter((m) => lastDurOf(m) <= 1).length;
+  assert.ok(n >= 250, `流す断片が ${n} 件しかない`);
+});
+
+test('最後の音の長さが3種類以上に分布している', () => {
+  const kinds = new Map();
+  for (const m of melodies) kinds.set(lastDurOf(m), (kinds.get(lastDurOf(m)) ?? 0) + 1);
+  assert.ok(kinds.size >= 3, `最終音の長さが ${kinds.size} 種類しかない`);
+  // 1種類に8割が集まるような偏りを禁止する。
+  const top = Math.max(...kinds.values());
+  assert.ok(
+    top <= melodies.length * 0.5,
+    `最終音の長さが偏っている: ${JSON.stringify([...kinds].sort((a, b) => b[1] - a[1]))}`,
+  );
 });
 
 // ---------------------------------------------------------------------------

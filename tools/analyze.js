@@ -16,6 +16,9 @@ const PENTA_MINOR_SET = new Set(PENTA_MINOR);
 // 歌い出し・着地として安定する度数（主和音の構成音）
 const STABLE_SET = new Set([1, 3, 5]);
 
+// 'long-ending' の閾値。フレーズを閉じたと聴こえるのはこのくらい伸びてから。
+export const LONG_ENDING_BEATS = 2.5;
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const round2 = (v) => Math.round(v * 100) / 100;
 // beat/dur の浮動小数誤差を吸収してからキー化する
@@ -251,9 +254,11 @@ export function detectTags(notes, base) {
 
   if (b.peakCount === 1) tags.push('single-peak');
 
-  // 音数が増えると終止の長さも相対的に短くなるので、1.5拍から息継ぎとみなす。
+  // 「本当に伸ばして終わる」断片だけに付ける。1.5拍を閾値にしていたときは
+  // 999件中999件が該当し、タグとして何も選り分けていなかった。
+  // フレーズ末に置く断片と、途中で次へ流す断片を分けるのがこのタグの役目。
   const last = list[list.length - 1];
-  if (last && last.dur >= 1.5) tags.push('long-ending');
+  if (last && last.dur >= LONG_ENDING_BEATS) tags.push('long-ending');
 
   const lastInt = intervals[intervals.length - 1];
   if (lastInt !== undefined && lastInt < 0 && lastInt >= -2) tags.push('resolve-down');

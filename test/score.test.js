@@ -140,8 +140,9 @@ test('analyzeFragment が主要なメタ情報を正しく返す', () => {
   assert.deepEqual(meta.intervals, [2, 2, -2, -1, -1]);
   assert.equal(meta.contour, 'arch');
   // 度数 1,3,5,3,2,1 は 4 と 7 を使わないので penta-major。両端はトニック。
+  // 最後の音は2拍なので long-ending（2.5拍以上）は付かない＝フレーズ途中に置ける断片。
   assert.deepEqual(meta.tags, [
-    'single-peak', 'long-ending', 'resolve-down', 'stepwise',
+    'single-peak', 'resolve-down', 'stepwise',
     'penta-major', 'stable-start', 'stable-end',
   ]);
   assert.equal(meta.tension, 2);
@@ -185,9 +186,10 @@ test('音価が一定の断片は、音程が同じでもリズムの多様な�
   //       + inner-repeat(14) + penta(16) + stable-start(5) + wave(-6) = 125
   // MONO  : 音価1種類 -22                                        = 103
   assert.equal(mono, 103);
-  // VARIED: 音価3種類 +6 / 最長÷最短 +8 / syncopation +8 / long-ending +8 = 155
-  assert.equal(varied, 155);
-  assert.ok(varied - mono === 52, `リズムの差が効いていない: ${varied} - ${mono}`);
+  // VARIED: 音価3種類 +6 / 最長÷最短 +8 / syncopation +8 = 147
+  //         (最後は2拍なので long-ending は付かない)
+  assert.equal(varied, 147);
+  assert.ok(varied - mono === 44, `リズムの差が効いていない: ${varied} - ${mono}`);
 });
 
 test('analyzeFragment は最高音の重複を peakCount に数える', () => {
@@ -352,11 +354,11 @@ test('良い断片は悪い断片より高得点になる', () => {
   const good = scoreFragment(GOOD, analyzeFragment(GOOD));
   const bad = scoreFragment(BAD, analyzeFragment(BAD));
 
-  // 50 + single-peak(8) + long-ending(8) + resolve-down(6) + stable-start(5)
-  //    + stable-end(10) + penta(16) + arch(5) - 音価2種類(8) = 100
-  // (音程は 3度が 3/5 = 0.6 で 3度の帯(0.10〜0.30)から外れ、
-  //  順次進行も 2/5 = 0.4 で帯(0.60〜0.80)の外なので、音程の加点は無い)
-  assert.equal(good, 100);
+  // 50 + single-peak(8) + resolve-down(6) + stable-start(5)
+  //    + stable-end(10) + penta(16) + arch(5) - 音価2種類(8) = 92
+  // (最後が2拍なので long-ending は付かない。音程は 3度が 3/5 = 0.6 で
+  //  3度の帯(0.10〜0.30)から外れ、順次進行も 2/5 = 0.4 で帯の外)
+  assert.equal(good, 92);
   // 50 - 跳躍と連続跳躍(146) - 音域超過(12) + 密度(10) - 音価1種類(22)
   //    + stable-start(5) - wave(6) - 4度以上が 6/7 = 0.857((0.857-0.1)*60 = 45.4)
   assert.equal(bad, -166.4);
@@ -374,19 +376,23 @@ test('sigh を含む断片は同形の跳躍なし断片より加点される', 
 });
 
 test('inner-motif と long-ending の加点が効いている', () => {
+  // 前後半が同じリズム型（0.5 / 1 / 2.5拍）。最後は2.5拍なので long-ending も付く。
   const motif = [
-    n(1, 0, 1), n(3, 1, 1), n(5, 2, 2),
-    n(2, 4, 1), n(4, 5, 1), n(6, 6, 2),
+    n(1, 0, 0.5), n(3, 0.5, 1), n(5, 1.5, 2.5),
+    n(2, 4, 0.5), n(4, 4.5, 1), n(6, 5.5, 2.5),
   ];
   const meta = analyzeFragment(motif);
-  assert.ok(meta.tags.includes('inner-motif'));
-  assert.ok(meta.tags.includes('long-ending'));
-  // 同じ音列でリズムだけ崩した版より高いこと
+  assert.ok(meta.tags.includes('inner-motif'), `inner-motif が無い: ${meta.tags}`);
+  assert.ok(meta.tags.includes('long-ending'), `long-ending が無い: ${meta.tags}`);
+  // 同じ音列・同じ終わり方で、後半のリズムだけ崩した版より高いこと
   const broken = [
-    n(1, 0, 1), n(3, 1, 1), n(5, 2, 2),
-    n(2, 4, 2), n(4, 6, 1), n(6, 7, 1),
+    n(1, 0, 0.5), n(3, 0.5, 1), n(5, 1.5, 2.5),
+    n(2, 4, 1), n(4, 5, 0.5), n(6, 5.5, 2.5),
   ];
-  assert.ok(scoreFragment(motif, meta) > scoreFragment(broken, analyzeFragment(broken)));
+  const brokenMeta = analyzeFragment(broken);
+  assert.equal(brokenMeta.tags.includes('inner-motif'), false);
+  assert.ok(brokenMeta.tags.includes('long-ending'));
+  assert.ok(scoreFragment(motif, meta) > scoreFragment(broken, brokenMeta));
 });
 
 // ---------------------------------------------------------------------------
@@ -411,7 +417,7 @@ test('scoreFragment は常に有限の数値を返す', () => {
 
 test('scoreFragment は meta 省略時も自前で分析する', () => {
   assert.equal(scoreFragment(GOOD), scoreFragment(GOOD, analyzeFragment(GOOD)));
-  assert.equal(scoreFragment(GOOD), 100);
+  assert.equal(scoreFragment(GOOD), 92);
   // 空: 50 - 密度不足((0.7-0)*30 = 21) - question(4) = 25
   assert.equal(scoreFragment([]), 25);
   // 単音: 50 + single-peak(8) + long-ending(8) + stable-start(5) + stable-end(10)

@@ -105,10 +105,40 @@ test('RHYTHMS は全型が3種類以上の音価を持ち、最長÷最短が3�
   }
 });
 
-test('RHYTHMS は全型の最後の音が1.5拍以上(フレーズの息継ぎ)', () => {
+// 終わり方の家系。すべての型を「伸ばして終わる」形にすると、断片が
+// 2小節ごとに律儀に区切られて聴こえる。組み立て側がフレーズ末と途中で
+// 選び分けられるよう、流し型と終止型の両方をカタログに用意する。
+const lastDur = (r) => q(r[r.length - 1].d);
+const isFlowing = (r) => lastDur(r) >= 0.5 && lastDur(r) <= 1;
+const isClosing = (r) => lastDur(r) >= 2.5 && lastDur(r) <= 4;
+const isMiddle = (r) => lastDur(r) >= 1.5 && lastDur(r) <= 2;
+
+test('RHYTHMS は流し型・終止型・中間型の3家系に分かれる', () => {
   for (const [idx, r] of RHYTHMS.entries()) {
-    const last = r[r.length - 1];
-    assert.ok(last.d >= 1.5, `#${idx} の最終音が短い: ${last.d}`);
+    assert.ok(
+      isFlowing(r) || isClosing(r) || isMiddle(r),
+      `#${idx} の最終音が家系のどれにも属さない: ${lastDur(r)}`,
+    );
+  }
+  const flow = rate(RHYTHMS, isFlowing);
+  const close = rate(RHYTHMS, isClosing);
+  assert.ok(flow >= 0.35 && flow <= 0.45, `流し型(最後0.5〜1拍)が ${(flow * 100).toFixed(1)}%`);
+  assert.ok(close >= 0.35 && close <= 0.45, `終止型(最後2.5〜4拍)が ${(close * 100).toFixed(1)}%`);
+  // 終止型は本当に伸ばす。最長が2.5拍だとフレーズ末が物足りない。
+  assert.ok(
+    RHYTHMS.some((r) => lastDur(r) >= 3),
+    '3拍以上伸ばして終わる型が無い',
+  );
+  // 最終音の長さが何種類あるか(1.5拍ばかりに偏っていないこと)
+  const kinds = new Set(RHYTHMS.map(lastDur));
+  assert.ok(kinds.size >= 4, `最終音の長さが ${kinds.size} 種類しかない`);
+});
+
+test('RHYTHMS は小節線をまたぐ音を持たない', () => {
+  for (const [idx, r] of RHYTHMS.entries()) {
+    for (const n of r) {
+      assert.ok(!(n.b < 4 && n.b + n.d > 4), `#${idx} が小節線をまたぐ: ${n.b}+${n.d}`);
+    }
   }
 });
 
@@ -389,6 +419,8 @@ test('generateCandidate は音価の一定な断片を作らない', () => {
   const rng = makeRng(1234);
   let sync = 0;
   let rest = 0;
+  let flow = 0;
+  let close = 0;
   for (let i = 0; i < 500; i++) {
     const { notes } = generateCandidate(rng);
     const r = notes.map((n) => ({ b: n.beat, d: n.dur }));
@@ -397,13 +429,17 @@ test('generateCandidate は音価の一定な断片を作らない', () => {
       `音価が ${distinctDurations(r)} 種類しかない: ${JSON.stringify(notes)}`,
     );
     assert.ok(durationRatio(r) >= 3, `音価の落差が小さい: ${JSON.stringify(notes)}`);
-    assert.ok(r[r.length - 1].d >= 1.5, `最終音が短い: ${JSON.stringify(notes)}`);
     if (hasSyncopation(r)) sync++;
     if (hasRest(r)) rest++;
+    if (isFlowing(r)) flow++;
+    if (isClosing(r)) close++;
   }
   // 引く確率どおりならシンコペーション・休符はそれぞれ半数前後になる。
   assert.ok(sync >= 150, `シンコペーションが少ない: ${sync}/500`);
   assert.ok(rest >= 100, `休符が少ない: ${rest}/500`);
+  // 流す断片と閉じる断片の両方が生成されること。
+  assert.ok(flow >= 100, `流し型の断片が少ない: ${flow}/500`);
+  assert.ok(close >= 100, `終止型の断片が少ない: ${close}/500`);
 });
 
 // 旋律型の経路では、開始音(その断片をどの高さに置くか)は1小節につき一度だけ決める。

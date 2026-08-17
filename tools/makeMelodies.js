@@ -119,6 +119,11 @@ const SLOTS = slotPairs();
 // 下限を置かなくても41型中37型は残り、断片ごとのリズムの多様性
 // (音価3種類以上・シンコペーション・休符)は生成側の制約で保証されている。
 
+/** 最後の音の長さ。終わり方の家系(流し型・中間型・終止型)を分ける物差し。 */
+function lastDurOf(notes) {
+  return notes[notes.length - 1].dur;
+}
+
 /** 断片のリズム型キー(拍と長さの並び)。compose 側の rhythmKey と同じ形。 */
 function rhythmKeyOf(notes) {
   return notes.map((n) => `${n.beat}:${n.dur}`).join(',');
@@ -178,6 +183,19 @@ const GOALS = [
   { key: 'peak>=12&solo', min: 80, test: (c) => c.meta.peakDeg >= 12 && c.meta.peakCount === 1 },
   // 着地感のある終止。
   { key: 'tonic-end', min: 200, test: (c) => endClassOf(c.meta.endDeg) === 'rest' },
+  // 終わり方の作り分け。全部が伸びて終わると2小節ごとに律儀に区切られて聴こえる。
+  // 組み立て側はフレーズ末に long-ending、フレーズ途中に「流す断片」を選ぶので、
+  // 両方の帯をカタログに用意する(上限は CAPS 側)。
+  { key: 'long-ending', min: 450, test: hasTag('long-ending') },
+  { key: 'not-long-ending', min: 350, test: (c) => !c.meta.tags.includes('long-ending') },
+  { key: 'flowing-end', min: 250, test: (c) => lastDurOf(c.notes) <= 1 },
+  // 曲の閉じ方。最後の1音は主音を3拍以上伸ばして終わりたいので、
+  // 「トニックに着地して、そこで本当に伸びる」断片を明示的に確保する。
+  {
+    key: 'tonic-end&long',
+    min: 150,
+    test: (c) => endClassOf(c.meta.endDeg) === 'rest' && lastDurOf(c.notes) >= 3,
+  },
   // 多様性(既存要件)。
   ...CONTOURS.map((c) => ({ key: `contour:${c}`, min: 20, test: (x) => x.meta.contour === c })),
   ...TENSIONS.map((t) => ({ key: `tension:${t}`, min: 50, test: (x) => x.meta.tension === t })),
@@ -191,7 +209,7 @@ const GOALS = [
 // 埋めすぎ防止。下限を満たしたあと、スコア上位だけで埋めると
 // 同じ性質の断片ばかりになるので天井を設ける。
 const CAPS = [
-  { key: 'notes<=6', max: 150, test: (c) => c.notes.length <= 6 },
+  { key: 'notes<=6', max: 220, test: (c) => c.notes.length <= 6 },
   // 音数まで揃うと、断片ごとの「詰まり具合」の対比が消える。
   // 8音の型がカタログの主力なので、ここだけ天井を置いて他の密度を混ぜる。
   { key: 'notes==8', max: 450, test: (c) => c.notes.length === 8 },
@@ -203,6 +221,9 @@ const CAPS = [
   // カタログの半分を占めると、組み立て側が楽節を導出できずに単独選択へ落ちる。
   // クライマックスに要る数は確保しつつ、全体が舞い上がりだらけになるのは止める。
   { key: 'soar', max: 380, test: hasTag('soar') },
+  // 終止感のある断片の上限。ここを開けたままにすると、スコアの加点で
+  // カタログが伸びて終わる断片ばかりになり、フレーズ途中に置ける断片が枯れる。
+  { key: 'long-ending', max: 550, test: hasTag('long-ending') },
   { key: 'inner-repeat', max: 240, test: hasTag('inner-repeat') },
 ];
 
@@ -557,6 +578,11 @@ function report(melodies, chosenCands, info) {
   const perRhythm = RHYTHM_KEYS.map((k) => chosenCands.filter((c) => c.rhythmKey === k).length)
     .sort((a, b) => a - b);
   console.log(`  リズム型ごと   : ${RHYTHM_KEYS.length}型 / 最小 ${perRhythm[0]} / 中央値 ${perRhythm[perRhythm.length >> 1]} / 最大 ${perRhythm[perRhythm.length - 1]}`);
+  // 終わり方の作り分け。ここが片方に寄ると2小節ごとに区切られて聴こえる。
+  const endDur = tally(melodies, (m) => m.notes[m.notes.length - 1].dur);
+  const flowing = melodies.filter((m) => m.notes[m.notes.length - 1].dur <= 1).length;
+  const longEnd = melodies.filter((m) => m.tags.includes('long-ending')).length;
+  console.log(`  最終音の長さ   : ${JSON.stringify(endDur)}  (流し型<=1拍 ${flowing} / long-ending ${longEnd} / それ以外 ${melodies.length - longEnd})`);
   console.log('  タグごと       :');
   for (const [tag, n] of tagList) console.log(`      ${tag.padEnd(15)} ${n}`);
   console.log(`  スコア         : min ${scores[0]} / median ${scores[Math.floor(scores.length / 2)]} / max ${scores[scores.length - 1]}`);
