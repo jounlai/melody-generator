@@ -5236,9 +5236,8 @@ const TYPE_NAMES = {
 };
 
 /**
- * 1つの音符・休符で書ける長さ（divisions 単位）と、その長さを置いてよい位置。
- * 付点音符は「素の音価の位置」に置く（付点2分は2分の位置から、など）。
- * 長い順に見て、小節内の位置に合うものを採る。
+ * 1つの音符・休符で書ける長さ（divisions 単位）と、その素の音価。
+ * 付点音符は素の音価の位置から始める（付点2分なら2分の位置から）。
  */
 const UNITS = [
   [16, 16], // 全音符
@@ -5353,10 +5352,21 @@ function voiceEvents(layers, totalDivs) {
   return out;
 }
 
+/** その位置の拍の強さ。16=小節頭、8=3拍目、4=拍頭、2=8分の裏、1=16分の裏 */
+function beatLevel(pos) {
+  return pos === 0 ? DIVS_PER_BAR : (pos & -pos);
+}
+
 /**
  * 小節内の位置 startInBar から divs ぶんを、1つずつ書ける音価に割る。
  * 合計は必ず divs に一致する（＝時間が増えも減りもしない）。
  * 音符なら割った断片どうしをタイで繋ぐ。
+ *
+ * 長い順に採るだけでは読めない楽譜になる。2拍目から始まる3拍の音を
+ * 「付点4分＋付点8分＋16分＋8分」と割られても誰も読めない（正しくは
+ * 4分＋2分のタイ）。自分の位置より強い拍をまたぐ音価は使わない、と決めると
+ * その手の割れ方が消える。例外は付点8分で、残りをちょうど埋めるときだけ許す
+ * （伴奏の 0.75 拍が「8分＋16分のタイ」に化けるのを防ぐ）。
  */
 function splitDurations(startInBar, divs) {
   const out = [];
@@ -5365,11 +5375,11 @@ function splitDurations(startInBar, divs) {
   let guard = 0;
   while (left > 0 && guard++ < 4 * DIVS_PER_BAR) {
     let picked = 1;
-    for (const [value, align] of UNITS) {
-      if (value <= left && pos % align === 0) {
-        picked = value;
-        break;
-      }
+    for (const [value, base] of UNITS) {
+      if (value > left || pos % base !== 0) continue;
+      if (value > beatLevel(pos) && !(value === 3 && value === left)) continue;
+      picked = value;
+      break;
     }
     out.push(picked);
     pos += picked;
