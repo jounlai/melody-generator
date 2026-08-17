@@ -226,6 +226,7 @@ function init() {
     status: byId('status'),
     scoreView: byId('score-view'),
     scoreToggle: byId('score-toggle'),
+    tools: Array.from(document.querySelectorAll('.tool[aria-controls^="panel-"]')),
     exportMusicXml: byId('export-musicxml'),
     exportMidi: byId('export-midi'),
   };
@@ -266,6 +267,8 @@ function init() {
     els.playToggle.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
     els.playToggle.setAttribute('aria-label', isPlaying ? '停止する' : '再生する');
     if (els.playLabel) els.playLabel.textContent = isPlaying ? '停止' : '再生';
+    // 再生中だけ、背景の光と波紋を動かす（CSS 側が data-playing を見ている）。
+    document.body.dataset.playing = isPlaying ? 'true' : 'false';
     syncTransport();
   }
 
@@ -520,9 +523,11 @@ function init() {
   function setScoreVisible(visible) {
     score.visible = visible;
     if (els.scoreView) els.scoreView.hidden = !visible;
+    // ボタンの中身はアイコンなので、書き換えるのは状態だけ。
+    // textContent を入れるとアイコンごと消える。
     if (els.scoreToggle) {
-      els.scoreToggle.textContent = visible ? '楽譜を隠す' : '楽譜を出す';
-      els.scoreToggle.setAttribute('aria-expanded', visible ? 'true' : 'false');
+      els.scoreToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
+      els.scoreToggle.setAttribute('aria-label', visible ? '楽譜を隠す' : '楽譜を出す');
     }
     // 隠すあいだに付けっぱなしにしない。出したら次のフレームで付け直す。
     if (!visible) idleScore();
@@ -676,6 +681,21 @@ function init() {
       // 戻れるのは、この画面で実際に聴いた曲だけ。押せない状態は disabled で示す。
       if (!player?.prev()) setStatus('これより前に聴いた曲はまだありません', 2000);
     });
+  }
+
+  // ---- 道具の開閉 ----------------------------------------------------
+  // 開くのは一度に1つ。3つとも開くと、それだけで画面1つぶんになる。
+  function openPanel(button) {
+    for (const other of els.tools) {
+      const panel = byId(other.getAttribute('aria-controls'));
+      const open = other === button && other.getAttribute('aria-expanded') !== 'true';
+      other.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (panel) panel.hidden = !open;
+    }
+  }
+
+  for (const button of els.tools) {
+    button.addEventListener('click', () => openPanel(button));
   }
 
   if (els.copyCode) {
