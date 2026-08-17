@@ -17,7 +17,7 @@
 // 消費順を変えると同じシードでも同じ曲にならなくなるので、処理順は固定。
 import { makeRng, seedFromString, randInt, pick } from './rng.js';
 import {
-  degToMidi, chordVoicing, bassMidi, nearestChordToneDeg, chordIndex,
+  degToMidi, degToSemitone, chordVoicing, bassMidi, nearestChordToneDeg, chordIndex,
   splitBars, fitsBar, hasSuspension, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
@@ -135,6 +135,123 @@ const SUBDOMINANT_MINOR = { major: 'iv', minor: 'VI' };
 // 陰りを落としてからちゃんと帰ってくる。曲と曲の切れ目はここで決まる。
 const TONIC_CHORD = { major: 'I', minor: 'i' };
 
+// クライマックスに要求する最低の頂点度数。curveFor の minPeak と
+// 転調の天井（modulatedPeakCap）が同じ数字を見ていないと、
+// 「曲中の最高音がちょうど1回」が転調で静かに壊れる。定義は1か所に置く。
+const CLIMAX_MIN_PEAK = 12;
+
+// ---------------------------------------------------------------------------
+// 最終セクションの転調
+//
+// 70〜80年代のアメリカとイタリアのラブソング、そして韓国のバラード。
+// この3つの伝統に共通していて、断片の組み立てだけでは絶対に出てこない最大の
+// 高揚装置が「最後のサビで半音か全音上がる」。同じ旋律が同じ形のまま、
+// ほんの少し高いところで鳴り直す。歌い手が最後にもう一段振り絞ったように聴こえる。
+//
+//   - A''（4つ目のセクション）だけを新しい主音で描く。
+//     コード記号（I / vi / iv …）は主音からの相対表記なので**1つも書き換えない**。
+//     動くのは主音だけで、進行も楽節構造もゼクエンツもそのまま持ち上がる。
+//   - B の最終小節を**新しい調のドミナント**に差し替える（つなぎ目）。
+//     いきなり半音上がると唐突に聴こえる。属和音を1小節挟むと、耳がそこで
+//     新しい調を受け入れてから A'' の主和音に着地する（実際のバラードもこうする）。
+//     この1小節は和音もメロディーも新しい調で鳴らす＝転調は属和音から始まる。
+//     ただしその小節がクライマックスのスロットに入る長さ（16小節）では置かない。
+//     理由は composeSong の pivots のところに書く。代わりに A'' の頭を拍0から始める。
+//
+// 音域の天井は、curveFor が A'' に与える maxPeak 10（主音から16半音、短調は15半音）
+// で足りている。クライマックスは peakDeg >= 12 ＝ 19半音を要求するので、
+// +2 しても 18 < 19 で並ばない。
+// ただし**モチーフの再登場だけは例外**で、A のスロットをそのまま持ってくるため
+// A'' 側の天井を通らない（A の天井は 11 ＝ 17半音で、+2 すると 19 でちょうど並ぶ）。
+// そこで「あとで A'' へ帰る A のスロット」にも転調後の天井を掛ける。
+// ---------------------------------------------------------------------------
+const MODULATION_CHANCE = 40;      // %
+const MODULATION_STEPS = [1, 2];   // 半音
+const MODULATION_SECTION = 3;      // A''
+// つなぎ目の属和音。V7 が使えなければ V（どちらの語彙にも必ずどちらかはある）。
+const PIVOT_CHORDS = ['V7', 'V'];
+
+// ---------------------------------------------------------------------------
+// 上げ幅の選び方 — 調号の近さ
+//
+// +1 と +2 を機械的に半々で引くと、調号が飛ぶ組み合わせが出る。
+// 実例: 変ニ長調（フラット5つ）から +1半音 で ニ長調（シャープ2つ）。
+// 五度圏を7つも移動する、最も遠い跳び方で、楽譜では橋渡しの小節に臨時記号が9個並び、
+// 響きとしても唐突になる。同じ変ニ長調でも +2半音 なら 変ホ長調（フラット3つ）＝距離2で、
+// フラット系に留まったまま持ち上がる。こちらのほうが読みやすく、自然に聴こえる。
+//
+// そこで上げ幅は「転調後の調号が近いほう」を強く優先して引く。
+// ただし決め打ちにはしない（同じ調でいつも同じ上げ幅では単調になる）。
+//
+// なお **+1半音の転調は、原理的にどうやっても調号が5つ以上動く**
+// （1半音 = 五度圏で7つ ＝ 反対回りに5つ）。+1 を残す以上「全部が近い」にはできないので、
+// ここで潰すのは「5でも済むのに7も動く」ほうだけ。
+// 距離7（最悪）を捨てて距離5（+1で可能な最小）を残す、というのがこの重みの意図。
+// ---------------------------------------------------------------------------
+
+// 主音のピッチクラスごとの、慣用の綴りでの五度圏の位置（シャープが＋、フラットが−）。
+// 例: 長調のピッチクラス1は 嬰ハ長調(シャープ7つ)ではなく 変ニ長調(フラット5つ)＝−5。
+// !!! notation.js の keySignature が返す調号と一致していること !!!
+// ここがずれると「楽譜に出る臨時記号の数」と「ここで最適化している距離」が食い違う。
+// 一致は compose.test.js で keySignature と突き合わせて検査している。
+const KEY_FIFTHS = {
+  major: [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5],
+  minor: [-3, 4, -1, -6, 1, -4, 3, -2, 5, 0, -5, 2],
+};
+// 距離がこれ以上なら「遠い」。どちらの上げ幅も遠いときは抽選せず近いほうを採る。
+const MODULATION_FAR = 5;
+// 近さの効かせ方。1/(1+距離)^n で重みを作る。n を上げるほど近いほうへ寄る。
+// 実測（600曲・転調249曲）の平均距離と、最悪の距離7が出た割合:
+//   半々で機械的に引く  4.58 / 20.5%（距離10も8.4%出る）
+//   n = 2              3.17 /  6.0%
+//   n = 3              2.94 /  3.6%   ← 採用
+// 「平均3.0以下」と「距離7は5%以下」を同時に満たすのは n=3 から。
+// n をさらに上げると +1 がほぼ出なくなり、半音上げというバラードの定石そのものが消える。
+const MODULATION_DISTANCE_POWER = 3;
+
+/** 調号の五度圏上の位置。シャープが＋、フラットが−、ハ長調とイ短調が0。 */
+export function keyFifths(tonicMidi, mode) {
+  const pc = ((Math.round(Number(tonicMidi)) % 12) + 12) % 12;
+  return (KEY_FIFTHS[mode] ?? KEY_FIFTHS.major)[pc];
+}
+
+/** その上げ幅で転調したとき、調号が五度圏をいくつ動くか。 */
+export function keyDistance(tonicMidi, semitones, mode) {
+  return Math.abs(keyFifths(tonicMidi + semitones, mode) - keyFifths(tonicMidi, mode));
+}
+
+/**
+ * 上げ幅を1つ引く。調号が近いほうを強く優先し、どちらも遠ければ近いほうに決め打つ。
+ * 乱数の消費は決め打ちの場合も含めて必ず1回（消費数が揺れると曲が別物になる）。
+ */
+export function chooseModulationStep(rng, tonicMidi, mode) {
+  const options = MODULATION_STEPS.map((semitones) => ({
+    semitones,
+    distance: keyDistance(tonicMidi, semitones, mode),
+  }));
+  const drawn = pickWeighted(rng, options,
+    (o) => 1 / ((1 + o.distance) ** MODULATION_DISTANCE_POWER));
+  const nearest = options.reduce((a, b) => (b.distance < a.distance ? b : a));
+  // 両方遠いなら多様性より読みやすさ。B→Db（距離10）のような綴りの飛びを避ける。
+  return options.every((o) => o.distance >= MODULATION_FAR) ? nearest.semitones : drawn.semitones;
+}
+
+/**
+ * 転調した調で鳴らしてよい頂点度数の上限。
+ *
+ * クライマックス（主音 + degToSemitone(CLIMAX_MIN_PEAK) 半音）に**並ばない**
+ * 最大の度数を返す。並んだ瞬間に「曲中の最高音がちょうど1回」が壊れるので、
+ * ここだけは実測ではなく計算で決める（長調と短調で音程が違うので mode も見る）。
+ */
+export function modulatedPeakCap(semitones, mode) {
+  const ceiling = degToSemitone(CLIMAX_MIN_PEAK, mode);
+  const up = Number.isFinite(semitones) ? semitones : 0;
+  for (let d = DEG_MAX; d >= DEG_MIN; d--) {
+    if (degToSemitone(d, mode) + up < ceiling) return d;
+  }
+  return DEG_MIN;
+}
+
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
@@ -225,7 +342,7 @@ export function curveFor(sectionIdx, slotIdx, slots, strength) {
   return {
     tension,
     maxPeak: st === 0 || isClimax ? 15 : sectionIdx === 3 || afterClimax ? 10 : 11,
-    minPeak: st === 0 ? 1 : isClimax ? 12 : 1,
+    minPeak: st === 0 ? 1 : isClimax ? CLIMAX_MIN_PEAK : 1,
   };
 }
 
@@ -967,16 +1084,31 @@ function chooseProgressions(rng, progressions, mode) {
   return [first, second];
 }
 
+// 埋め音が音高の窓を越えないよう、オクターブ（度数7つ）単位で下げる。
+// 断片そのものは maxPeak で選ばれているが、埋め音は「いちばん近い和声音」なので
+// 窓の外へ出ることがある。転調したセクションではその1音が頂点に並びうる。
+function capDegree(deg, maxPeak) {
+  const cap = Number.isFinite(maxPeak) ? maxPeak : DEG_MAX;
+  let d = deg;
+  while (d > cap && d - 7 >= DEG_MIN) d -= 7;
+  return d;
+}
+
 // 断片をスロットの拍位置へ写す。片方の小節が空なら和声音で埋める。
-function slotMelodyNotes(fragment, ctx, slotStartBeat, tonicMidi) {
+//
+// 主音は**小節ごと**に受け取る。転調のつなぎ目（B の最終小節）だけは、
+// スロットの後半の小節から新しい調になるため、2小節で主音が変わる。
+function slotMelodyNotes(fragment, ctx, slotStartBeat, barTonics) {
   const { mode, chordA, chordB } = ctx;
+  const tonics = Array.isArray(barTonics) ? barTonics : [barTonics, barTonics];
   const notes = [];
   const filled = [false, false];
   for (const n of fragment.notes ?? []) {
     const beat = Number(n.beat) || 0;
-    filled[beat < 4 ? 0 : 1] = true;
+    const bar = beat < 4 ? 0 : 1;
+    filled[bar] = true;
     notes.push({
-      midi: degToMidi(n.deg, mode, tonicMidi),
+      midi: degToMidi(n.deg, mode, tonics[bar]),
       beat: slotStartBeat + beat,
       dur: n.dur,
       vel: n.vel * MELODY_VEL_SCALE,
@@ -986,9 +1118,9 @@ function slotMelodyNotes(fragment, ctx, slotStartBeat, tonicMidi) {
   const around = [fragment.startDeg ?? 5, fragment.endDeg ?? 5];
   for (let b = 0; b < 2; b++) {
     if (filled[b]) continue;
-    const deg = nearestChordToneDeg(chords[b], mode, around[b]);
+    const deg = capDegree(nearestChordToneDeg(chords[b], mode, around[b]), ctx.maxPeak);
     notes.push({
-      midi: degToMidi(deg, mode, tonicMidi),
+      midi: degToMidi(deg, mode, tonics[b]),
       beat: slotStartBeat + b * 4,
       dur: 4,
       vel: FILL_VEL * MELODY_VEL_SCALE,
@@ -1018,10 +1150,32 @@ export function composeSong(seed, data, settings) {
   const roles = phraseRoles(slotCount);
   const strength = clamp(cfg.curveStrength / 100, 0, 1);
 
-  // ここから下の乱数の消費順は変えない：mode → tempo → tonic → P1 → P2 → 各スロット。
+  // ここから下の乱数の消費順は変えない：
+  // mode → tempo → tonic → 転調するか → 上げ幅 → P1 → P2 → 各スロット。
   const mode = rng() * 100 < cfg.majorRatio ? 'major' : 'minor';
   const tempo = randInt(rng, cfg.tempoMin, cfg.tempoMax);
   const tonicMidi = chooseTonic(rng, cfg.musicKey);
+
+  // 転調の抽選。転調しない曲でも上げ幅を必ず引く（曲によって乱数の消費数が変わると、
+  // 転調の有無だけで進行や断片の選択までずれてしまう）。
+  const modulates = rng() * 100 < MODULATION_CHANCE;
+  const modStep = chooseModulationStep(rng, tonicMidi, mode);
+  const semitones = modulates ? modStep : 0;
+  const modTonic = tonicMidi + semitones;
+  const modBar = MODULATION_SECTION * barsPerSection;
+  // つなぎ目の属和音は B の最終小節に置く。ただしその小節がクライマックスの
+  // スロットに入るとき（16小節の曲）は置かない。スロットは2小節ひとかたまりなので、
+  // 後半だけ調が変わると、頂点の音と後半の別の音が**同じ高さ**になりうる
+  // （長調 +2 なら deg12=19半音 と deg11+2=19半音）。それは
+  // 「曲中の最高音がちょうど1回」を壊す。つなぎ目より頂点の一回性が上。
+  // 置かない曲は、A'' の頭（A のモチーフ＝拍0から始まる断片）が代わりに境目を示す。
+  const pivots = semitones !== 0 && climaxSlot(slotCount) !== slotCount - 1;
+  const pivotBar = pivots ? modBar - 1 : null;
+  // 転調した調で許す頂点度数の上限（クライマックスに並ばない最大値）。
+  const modPeakCap = modulatedPeakCap(semitones, mode);
+  // 小節ごとの主音。新しい調はつなぎ目の属和音（無ければ A'' の頭）から始まる。
+  const keyChangeBar = pivots ? pivotBar : modBar;
+  const tonicAtBar = (bar) => (semitones !== 0 && bar >= keyChangeBar ? modTonic : tonicMidi);
 
   const melodies = Array.isArray(data?.melodies) ? data.melodies : [];
   const sources = chooseProgressions(rng, data?.progressions, mode);
@@ -1036,6 +1190,7 @@ export function composeSong(seed, data, settings) {
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
   let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
   let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
+  let pivotChord = null;   // つなぎ目に差し込んだ、新しい調のドミナント
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -1045,6 +1200,22 @@ export function composeSong(seed, data, settings) {
     // 4小節の進行を repeats 回まわしてセクションの長さにする。
     const barChords = [];
     for (let r = 0; r < repeats; r++) for (const b of prog.bars) barChords.push(b.chord);
+
+    // つなぎ目。B の最終小節を、新しい調のドミナントに差し替える。
+    // 記号は新しい調から見た V7（または V）で、その小節だけ新しい主音で描くので、
+    // 断片の適合判定（fit は主音からの相対度数）はそのまま通る。
+    // 差し替えは断片を選ぶ**前**に済ませること。あとから和音だけ替えると
+    // メロディーが和音に乗らなくなる。
+    if (pivots && s === MODULATION_SECTION - 1) {
+      const pivot = PIVOT_CHORDS.find((sym) => chordIndex(mode, sym) >= 0);
+      if (pivot) {
+        barChords[barChords.length - 1] = pivot;
+        pivotChord = pivot;
+      }
+    }
+
+    // このセクションを描く主音。A'' だけが新しい調（B の最終小節は下の tonicAtBar）。
+    const sectionTonic = s === MODULATION_SECTION ? modTonic : tonicMidi;
 
     // このセクションのフレーズの区切り方。ここで rng を1〜2回消費する。
     const phrasing = phrasePlan(rng, slotCount);
@@ -1067,6 +1238,20 @@ export function composeSong(seed, data, settings) {
       const deceptiveEnd = prog.cadence === 'deceptive'
         && (2 * k + 1) % prog.bars.length === prog.bars.length - 1;
       const dark = isDarkChord(chordA) || isDarkChord(chordB) || deceptiveEnd;
+
+      // 転調した調で鳴るスロットは、天井を「クライマックスに並ばない高さ」まで下げる。
+      //  - A''            … まるごと新しい調
+      //  - B の最終スロット … 後半の小節（つなぎ目の属和音）だけ新しい調
+      //  - A の再登場元スロット … 断片をそのまま A'' へ持っていくので、
+      //    A'' 側の天井を通らない。ここで下げておかないと +2 で頂点に並ぶ。
+      const inNewKey = s === MODULATION_SECTION
+        || (pivots && s === MODULATION_SECTION - 1 && k === slotCount - 1);
+      const recalledLater = cfg.motifRecall && s === 0
+        && recallSource(MODULATION_SECTION, k, slotCount) !== null;
+      const maxPeak = semitones !== 0 && (inNewKey || recalledLater)
+        ? Math.min(curve.maxPeak, modPeakCap)
+        : curve.maxPeak;
+
       const ctx = {
         mode,
         chordA,
@@ -1075,7 +1260,7 @@ export function composeSong(seed, data, settings) {
         chordBIdx: chordIndex(mode, chordB),
         prevEndDeg,
         tension: curve.tension,
-        maxPeak: curve.maxPeak,
+        maxPeak,
         minPeak: curve.minPeak,
         maxLeap: allowLeap ? cfg.maxLeap + 4 : cfg.maxLeap,
         // 頂点の直前と、陰りのコードの上。掛留（非和声音が順次下降で解決する形）が
@@ -1099,12 +1284,15 @@ export function composeSong(seed, data, settings) {
         // 楽節のどこにいるかで終わり方を変える（問いかけ／答え／締め）。
         endDegrees: CADENCE_BY_ROLE[role.name] ?? null,
         // 曲の1音目。ここだけは拍0から始めて、拍の位置を最初に示す。
-        preferDownbeat: s === 0 && k === 0,
+        // つなぎ目の属和音を置けない転調（16小節の曲）では A'' の頭も拍0から。
+        // 弱起のまま調だけ半音上がると、どこから新しい調になったのか耳が掴めない。
+        preferDownbeat: (s === 0 && k === 0)
+          || (semitones !== 0 && !pivots && s === MODULATION_SECTION && k === 0),
         // B の頂点までの楽節の頭（a）だけ、天井から3度ぶん余白を残す。
         // 登る距離がいちばん長いのが B で、ここが詰むとクライマックスへ辿り着かない。
         // 実測では、この余白の有無で B のゼクエンツの平均移動量が +0.3〜+0.6 変わる
         // （＝出だしが天井に着いていると、上に動かせる量がそのぶん消える）。
-        headroom: role.anchor === null && s === 2 && k < cs ? curve.maxPeak - 3 : null,
+        headroom: role.anchor === null && s === 2 && k < cs ? maxPeak - 3 : null,
       };
 
       let fragment = null;
@@ -1180,7 +1368,8 @@ export function composeSong(seed, data, settings) {
       if (s === 0) motif[k] = fragment;
 
       const slotStartBeat = (startBar + 2 * k) * 4;
-      for (const n of slotMelodyNotes(fragment, ctx, slotStartBeat, tonicMidi)) melody.push(n);
+      const slotTonics = [tonicAtBar(startBar + 2 * k), tonicAtBar(startBar + 2 * k + 1)];
+      for (const n of slotMelodyNotes(fragment, ctx, slotStartBeat, slotTonics)) melody.push(n);
 
       slotRecords.push({
         fragmentId: fragment.id,
@@ -1213,16 +1402,18 @@ export function composeSong(seed, data, settings) {
       const chord = barChords[b];
       const beat = (startBar + b) * 4;
       const isFinalBar = startBar + b === bars - 1;
+      // 主音は小節ごと。A'' と、つなぎ目の属和音の小節だけが新しい調で鳴る。
+      const barTonic = tonicAtBar(startBar + b);
       // ベースは直前の小節にいちばん近いオクターブへ。
       // これで I - V/3 - vi - I/5 が7度跳ね上がらずに素直に下降する。
-      const bassRaw = bassMidi(chord, mode, tonicMidi, BASS_LOWEST);
+      const bassRaw = bassMidi(chord, mode, barTonic, BASS_LOWEST);
       const bassNote = nearestOctave(bassRaw, prevBass, BASS_RANGE);
       prevBass = bassNote;
       bass.push({ midi: bassNote, beat, dur: 4, vel: BASS_VEL });
 
       // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
       // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
-      const raw = chordVoicing(chord, mode, tonicMidi, ACCOMP_LOWEST);
+      const raw = chordVoicing(chord, mode, barTonic, ACCOMP_LOWEST);
       const low = nearestOctave(raw[0], prevAccomp,
         [Math.max(ACCOMP_RANGE[0], bassNote + 1), ACCOMP_RANGE[1]]);
       prevAccomp = low;
@@ -1230,7 +1421,7 @@ export function composeSong(seed, data, settings) {
       const voicing = shift === 0 ? raw : raw.map((v) => v + shift);
       // パッドは伴奏と同じ和音なので、同じぶんだけ一緒に動かす。
       // 伴奏だけを持ち上げるとパッドを追い越して層が崩れる。
-      const padVoicing = chordVoicing(chord, mode, tonicMidi, PAD_LOWEST);
+      const padVoicing = chordVoicing(chord, mode, barTonic, PAD_LOWEST);
       pad.push({
         midis: shift === 0 ? padVoicing : padVoicing.map((v) => v + shift),
         beat,
@@ -1259,6 +1450,7 @@ export function composeSong(seed, data, settings) {
       name: SECTION_NAMES[s],
       progressionId: prog.id,
       startBar,
+      tonicMidi: sectionTonic,
       phrasePlan: phrasing,
       slots: slotRecords,
     });
@@ -1302,7 +1494,8 @@ export function composeSong(seed, data, settings) {
   //
   //  1. 最終小節の終わりまで伸ばす。断片の最後の音は8分や4分のことが多く、
   //     そのまま鳴らすと1拍で切れて、曲が終わらずに次の曲へなだれ込む。
-  //  2. 主音へ着地させる。断片プールの側で主音に終われる断片が用意できるのは
+  //  2. 主音へ着地させる。転調した曲では**新しい調の**主音（＝最終セクションの主音）。
+  //     断片プールの側で主音に終われる断片が用意できるのは
   //     全スロットの7割弱が上限で、選択だけでは「終わった」と聴こえる曲にならない。
   //     長く伸びた主音の上に主和音（varyProgression level 2 の最終小節）が鳴る、
   //     この一致が終止感そのものなので、ここは1音だけ書き換える。
@@ -1312,7 +1505,7 @@ export function composeSong(seed, data, settings) {
     for (let i = 1; i < melody.length; i++) if (melody[i].beat >= melody[last].beat) last = i;
     const tail = melody[last];
     tail.dur = Math.max(FINAL_NOTE_MIN_DUR, bars * 4 - tail.beat);
-    const below = tonicMidi + 12 * Math.floor((tail.midi - tonicMidi) / 12);
+    const below = modTonic + 12 * Math.floor((tail.midi - modTonic) / 12);
     const above = below + 12;
     const near = tail.midi - below <= above - tail.midi ? below : above;
     tail.midi = near < highest ? near : below;
@@ -1327,6 +1520,20 @@ export function composeSong(seed, data, settings) {
     totalBeats: bars * 4,
     climaxBeat,
     breathBar,
+    // 転調しない曲は null。転調する曲は A'' の頭（atBar）で主音が semitones ぶん上がる。
+    // pivotBar はその1小節前＝新しい調のドミナントに差し替えた「つなぎ目」の小節。
+    // この小節も既に新しい調で鳴っている（記譜の調号を変えるならこの小節から）。
+    // 16小節の曲は頂点のスロットと重なるので置かない（そのとき pivotBar は null）。
+    modulation: modulates
+      ? {
+        atBar: modBar,
+        semitones,
+        fromTonicMidi: tonicMidi,
+        toTonicMidi: modTonic,
+        pivotBar,
+        pivotChord,
+      }
+      : null,
     sections,
     melody,
     accomp,

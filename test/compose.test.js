@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   CHORD_VOCAB, chordIndex, isChordTone, splitBars, fitsBar, hasSuspension, bassMidi,
+  chordPitchClasses, degToSemitone,
 } from '../src/theory.js';
 import { defaultSettings } from '../src/settings.js';
 import { makeRng, seedFromString } from '../src/rng.js';
@@ -12,7 +13,11 @@ import {
   transposeFragment, deriveFragment, phraseRoles, phraseOffsets, rhythmKey,
   progressionWeight, arpeggioIndex, isDarkChord,
   phrasePlan, phraseEndFlags, soarsToPeak, hasLongEnding, nearestOctave,
+  modulatedPeakCap, keyFifths, keyDistance, chooseModulationStep,
 } from '../src/compose.js';
+// 調号の綴り（何番目の五度圏か）は notation.js が持っている。
+// compose.js は同じ表を自前で持つので、一致を機械で確かめるために読むだけ読む。
+import { keySignature } from '../src/notation.js';
 
 // ---------------------------------------------------------------------------
 // フィクスチャ
@@ -234,6 +239,20 @@ function slotsPerSection(song) {
   return song.bars / 4 / 2;
 }
 
+// 転調のつなぎ目。composeSong は B の最終小節を「新しい調のドミナント」へ差し替える。
+// 進行データから小節のコードを復元するときは、実装と同じ差し替えを掛けないと
+// 復元した並びが実際に鳴っているものとずれる。
+function withPivot(song, sectionIdx, chords) {
+  const mod = song.modulation;
+  if (!mod || mod.pivotBar === null || mod.pivotBar === undefined) return chords;
+  const sec = song.sections[sectionIdx];
+  const i = mod.pivotBar - sec.startBar;
+  if (i < 0 || i >= chords.length) return chords;
+  const out = chords.slice();
+  out[i] = mod.pivotChord;
+  return out;
+}
+
 // セクションが実際に使っている小節ごとのコードを復元する。
 function barChordsOf(song, sectionIdx) {
   const sec = song.sections[sectionIdx];
@@ -242,7 +261,7 @@ function barChordsOf(song, sectionIdx) {
   const prog = varyProgression(base, SECTION_LEVELS[sectionIdx]);
   const out = [];
   for (let r = 0; r < song.bars / 4 / 4; r++) for (const b of prog.bars) out.push(b.chord);
-  return out;
+  return withPivot(song, sectionIdx, out);
 }
 
 // スロットが実際に鳴らした断片を復元する。
@@ -890,7 +909,13 @@ test('I - V/3 - vi - I/5 のベースが4小節にわたって単調非増加', 
 function rawBassLine(song, chordsOf) {
   const out = [];
   song.sections.forEach((sec, si) => {
-    for (const chord of chordsOf(song, si)) out.push(bassMidi(chord, song.mode, song.tonicMidi, 36));
+    // 主音はセクションごと（転調した A'' と、つなぎ目の小節だけ新しい主音）。
+    const mod = song.modulation;
+    chordsOf(song, si).forEach((chord, b) => {
+      const bar = sec.startBar + b;
+      const tonic = mod && bar >= (mod.pivotBar ?? mod.atBar) ? mod.toTonicMidi : song.tonicMidi;
+      out.push(bassMidi(chord, song.mode, tonic, 36));
+    });
   });
   return out;
 }
@@ -1904,6 +1929,121 @@ test('息継ぎは1曲に最大1回、A か A\' のフレーズ末スロット�
 });
 
 // ---------------------------------------------------------------------------
+// 最終セクションの転調（合成フィクスチャ）
+// ---------------------------------------------------------------------------
+
+test('modulatedPeakCap: クライマックスの高さに並ばない最大の度数を返す', () => {
+  for (const mode of ['major', 'minor']) {
+    const climax = degToSemitone(12, mode); // curveFor がクライマックスに要求する高さ
+    for (const semitones of [0, 1, 2]) {
+      const cap = modulatedPeakCap(semitones, mode);
+      assert.ok(degToSemitone(cap, mode) + semitones < climax,
+        `${mode}/+${semitones}: cap=${cap} が頂点に届いてしまう`);
+      assert.ok(degToSemitone(cap + 1, mode) + semitones >= climax,
+        `${mode}/+${semitones}: cap=${cap} はまだ上げられる（下げすぎ）`);
+    }
+    // +1 なら deg11(=17半音)+1=18 < 19 で通る。+2 では 19 で並ぶので deg10 まで。
+    assert.equal(modulatedPeakCap(1, mode), 11);
+    assert.equal(modulatedPeakCap(2, mode), 10);
+  }
+});
+
+test('keyFifths: notation.js の調号（keySignature）と完全に一致する', () => {
+  // ここがずれると「楽譜に出る臨時記号の数」と「compose.js が最適化している距離」が
+  // 食い違う。綴りの表を2か所に持つ以上、一致は毎回機械で確かめる。
+  for (const mode of ['major', 'minor']) {
+    for (let pc = 0; pc < 12; pc++) {
+      const key = keySignature(60 + pc, mode);
+      const want = key.accidental === 'sharp' ? key.count
+        : key.accidental === 'flat' ? -key.count : 0;
+      assert.equal(keyFifths(60 + pc, mode), want, `${mode} pc${pc} (${key.label})`);
+    }
+  }
+});
+
+test('keyDistance: 半音上げは五度圏で必ず5以上、全音上げは2（綴りが飛ぶ2か所だけ10）', () => {
+  const of = (semitones) => {
+    const out = new Set();
+    for (const mode of ['major', 'minor']) {
+      for (let pc = 0; pc < 12; pc++) out.add(keyDistance(60 + pc, semitones, mode));
+    }
+    return [...out].sort((a, b) => a - b);
+  };
+  // 1半音 = 五度圏で7つ（反対回りに5つ）。**どう綴っても5未満にはならない**。
+  assert.deepEqual(of(1), [5, 7]);
+  assert.deepEqual(of(2), [2, 10]);
+  // 報告のあった実例: 変ニ長調(♭5) から。+1 は ニ長調(♯2) で距離7、+2 は 変ホ長調(♭3) で距離2。
+  const db = 61; // Db
+  assert.equal(keyDistance(db, 1, 'major'), 7);
+  assert.equal(keyDistance(db, 2, 'major'), 2);
+});
+
+test('chooseModulationStep: 調号が近いほうを選び、両方遠ければ近いほうに決め打つ', () => {
+  // 乱数を「必ず 0.0, 0.1, …, 0.9 を返す10本」で回して、選ばれる比率を数える。
+  const share = (tonicMidi, mode) => {
+    let ones = 0;
+    for (let i = 0; i < 10; i++) {
+      if (chooseModulationStep(() => i / 10, tonicMidi, mode) === 1) ones++;
+    }
+    return ones / 10;
+  };
+  // 変ニ長調: +1 は距離7、+2 は距離2。ほとんど +2 になる（が、両方出る余地は残す）。
+  const db = share(61, 'major');
+  assert.ok(db <= 0.2, `変ニ長調で +1 が多すぎる: ${db}`);
+  // ロ長調: +1 は距離5、+2 は ロ→変ニ で距離10。両方遠いので必ず近い +1。
+  assert.equal(keyDistance(59, 2, 'major'), 10);
+  assert.equal(share(59, 'major'), 1);
+  // 乱数の消費はどちらの道でも必ず1回。ここが揺れると同じシードで別の曲になる。
+  for (const [tonic, mode] of [[61, 'major'], [59, 'major'], [60, 'minor']]) {
+    let calls = 0;
+    chooseModulationStep(() => { calls++; return 0.5; }, tonic, mode);
+    assert.equal(calls, 1, `${mode}/${tonic}: 乱数を ${calls} 回消費した`);
+  }
+  // どの調でも、返るのは +1 か +2 だけ。
+  for (const mode of ['major', 'minor']) {
+    for (let pc = 0; pc < 12; pc++) {
+      for (let i = 0; i < 10; i++) {
+        const step = chooseModulationStep(() => i / 10, 60 + pc, mode);
+        assert.ok(step === 1 || step === 2, `${mode} pc${pc}: ${step}`);
+      }
+    }
+  }
+});
+
+test('曲は転調の記録を持ち、A\'\' だけが新しい主音で鳴る（合成フィクスチャ）', () => {
+  let modulated = 0;
+  let plain = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of SEEDS) {
+      const song = composeSong(seed, DATA, S({ songBars: bars }));
+      const m = song.modulation;
+      if (m === null) {
+        plain++;
+        for (const sec of song.sections) {
+          assert.equal(sec.tonicMidi, song.tonicMidi,
+            `${seed}/${bars}: 転調しない曲のセクションの主音がずれている`);
+        }
+        continue;
+      }
+      modulated++;
+      assert.ok(m.semitones === 1 || m.semitones === 2, `${seed}/${bars}: 上げ幅 ${m.semitones}`);
+      assert.equal(m.atBar, song.sections[3].startBar, `${seed}/${bars}: atBar が A'' の頭でない`);
+      assert.equal(m.fromTonicMidi, song.tonicMidi);
+      assert.equal(m.toTonicMidi, song.tonicMidi + m.semitones);
+      for (const si of [0, 1, 2]) {
+        assert.equal(song.sections[si].tonicMidi, song.tonicMidi,
+          `${seed}/${bars}: ${SECTION_NAMES[si]} が元の調で鳴っていない`);
+      }
+      assert.equal(song.sections[3].tonicMidi, m.toTonicMidi);
+      // 同じシード・同じ設定なら、転調も含めて完全に同じ曲になる。
+      assert.equal(JSON.stringify(song), JSON.stringify(composeSong(seed, DATA, S({ songBars: bars }))));
+    }
+  }
+  assert.ok(modulated > 0, '転調した曲が1つも出ない');
+  assert.ok(plain > 0, '転調しない曲が1つも出ない');
+});
+
+// ---------------------------------------------------------------------------
 // 実データ統合テスト
 //
 // src/data/*.json は別途生成されるので、無い環境ではスキップする。
@@ -2028,8 +2168,9 @@ test('実データ: ゼクエンツはリズムも音形も元と完全に一致
       const song = composeSong(seed, REAL, S({ songBars: bars }));
       song.sections.forEach((sec, si) => {
         const prog = varyProgression(progById.get(sec.progressionId), SECTION_LEVELS[si]);
-        const chords = [];
-        for (let r = 0; r < song.bars / 4 / 4; r++) for (const b of prog.bars) chords.push(b.chord);
+        const raw = [];
+        for (let r = 0; r < song.bars / 4 / 4; r++) for (const b of prog.bars) raw.push(b.chord);
+        const chords = withPivot(song, si, raw);
         sec.slots.forEach((slot, k) => {
           if (slot.offset === null || slot.offset === undefined) return;
           const anchor = fragmentOf(sec.slots[slot.derivedFrom], byId);
@@ -2132,8 +2273,9 @@ function walkSlots(seeds, barsList, fn) {
       const slots = slotsPerSection(song);
       song.sections.forEach((sec, si) => {
         const prog = varyProgression(progById.get(sec.progressionId), SECTION_LEVELS[si]);
-        const chords = [];
-        for (let r = 0; r < song.bars / 16; r++) for (const b of prog.bars) chords.push(b.chord);
+        const raw = [];
+        for (let r = 0; r < song.bars / 16; r++) for (const b of prog.bars) raw.push(b.chord);
+        const chords = withPivot(song, si, raw);
         sec.slots.forEach((slot, k) => {
           fn({ song, sec, si, slot, k, slots, chords, fragment: fragmentOf(slot, byId) });
         });
@@ -2310,7 +2452,9 @@ test('実データ: 曲は iv → I（VI → i）で閉じ、最後の音が主�
       assert.ok(tail.dur >= 3, `${seed}/${bars}: 最後の音が短い (${tail.dur})`);
       assert.ok(tail.beat + tail.dur >= song.totalBeats,
         `${seed}/${bars}: 最後の音が最終小節を埋めていない`);
-      if ((((tail.midi - song.tonicMidi) % 12) + 12) % 12 === 0) melodyTonic++;
+      // 着地する主音は「最終セクションの主音」。転調した曲では新しい調の主音になる
+      // （転調しない曲では song.tonicMidi と同じなので、この式は従来と同じ意味）。
+      if ((((tail.midi - song.sections[3].tonicMidi) % 12) + 12) % 12 === 0) melodyTonic++;
       // 最高音がただ一度だけ、という保証を最後の1音が壊していないこと。
       const top = Math.max(...song.melody.map((x) => x.midi));
       assert.equal(song.melody.filter((x) => x.midi === top).length, 1,
@@ -2482,7 +2626,7 @@ test('実データ: ベースと伴奏が隣の小節へ滑らかにつながる
     const prog = varyProgression(progById.get(song.sections[si].progressionId), SECTION_LEVELS[si]);
     const out = [];
     for (let r = 0; r < song.bars / 16; r++) for (const b of prog.bars) out.push(b.chord);
-    return out;
+    return withPivot(song, si, out);
   };
   let after = 0;
   let before = 0;
@@ -2564,4 +2708,328 @@ test('実データ: 下降ベースの進行で、ベースが実際に下降す
     + ` / 修正前 ${(100 * rawRate).toFixed(1)}%`;
   assert.ok(rate >= 0.95, `下降しない曲が多い: ${show}\n${samples.join('\n')}`);
   assert.ok(rate > rawRate, `正規化したままと変わらない: ${show}`);
+});
+
+// ---------------------------------------------------------------------------
+// 実データ: 最終セクションの転調
+//
+// 70〜80年代のアメリカとイタリアのラブソング、そして韓国のバラード。
+// 3つの伝統に共通する最大の高揚装置が「最後のサビで半音か全音上がる」で、
+// これは断片の組み立てだけでは絶対に出てこない。
+//
+// 転調は既存の保証をまとめて壊しうる（最高音の一回性・終止・音域）。
+// だから 600曲（200シード×3つの長さ）の実測で、壊れていないことを毎回確かめる。
+// ---------------------------------------------------------------------------
+
+const pcOf = (midi) => ((midi % 12) + 12) % 12;
+
+// その小節で実際に鳴っている音名（ベース・伴奏・パッド）。
+function soundingPitchClasses(song, bar) {
+  const out = new Set([pcOf(song.bass[bar].midi)]);
+  for (const m of song.pad[bar].midis) out.add(pcOf(m));
+  for (const n of song.accomp) {
+    if (Math.floor(n.beat / 4) !== bar) continue;
+    for (const m of n.midis ?? [n.midi]) out.add(pcOf(m));
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+function chordPcsOn(symbol, mode, tonicMidi) {
+  return [...new Set(chordPitchClasses(symbol, mode).map((s) => pcOf(s + tonicMidi)))]
+    .sort((a, b) => a - b);
+}
+
+test('実データ: 転調率が30〜50%で、上げ幅は +1 か +2 だけ', realOpts, () => {
+  let songs = 0;
+  let modulated = 0;
+  const steps = new Map();
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      songs++;
+      const m = song.modulation;
+      if (m === null) {
+        // 転調しない曲は、全セクションが曲の主音のまま。
+        for (const sec of song.sections) {
+          assert.equal(sec.tonicMidi, song.tonicMidi,
+            `${seed}/${bars}: 転調していないのに ${sec.name} の主音が違う`);
+        }
+        continue;
+      }
+      modulated++;
+      assert.ok(m.semitones === 1 || m.semitones === 2,
+        `${seed}/${bars}: 上げ幅が +${m.semitones}`);
+      steps.set(m.semitones, (steps.get(m.semitones) ?? 0) + 1);
+      assert.equal(m.atBar, song.sections[3].startBar, `${seed}/${bars}: atBar が A'' の頭でない`);
+      assert.equal(m.fromTonicMidi, song.tonicMidi);
+      assert.equal(m.toTonicMidi, song.tonicMidi + m.semitones);
+      assert.equal(song.sections[3].tonicMidi, song.tonicMidi + m.semitones,
+        `${seed}/${bars}: A'' の主音が転調ぶん上がっていない`);
+      for (const si of [0, 1, 2]) {
+        assert.equal(song.sections[si].tonicMidi, song.tonicMidi,
+          `${seed}/${bars}: ${SECTION_NAMES[si]} まで一緒に動いている`);
+      }
+    }
+  }
+  assert.ok(songs >= 200, `曲数が足りない: ${songs}`);
+  const rate = modulated / songs;
+  const up1 = steps.get(1) ?? 0;
+  const up2 = steps.get(2) ?? 0;
+  const show = `${(100 * rate).toFixed(1)}% (${modulated}/${songs}) +1:${up1} +2:${up2}`;
+  assert.ok(rate >= 0.30 && rate <= 0.50, `転調率が設定(40%)から外れている: ${show}`);
+  // 上げ幅は調号の近さで重みを付けて引くので半々にはならないが、
+  // どちらかが消えてはいけない（半音上げはバラードの定石そのもの）。
+  assert.ok(up1 / modulated >= 0.15 && up2 / modulated >= 0.15, `上げ幅が偏りきっている: ${show}`);
+});
+
+test('実データ: 転調した曲でも、最高音が曲中ちょうど1回・B の中で鳴る', realOpts, () => {
+  // 転調で最初に壊れるのがここ。A'' 全体が持ち上がるので、B のクライマックスを
+  // 追い越すか、並ぶ（長調 +2 なら deg11 が deg12 と同じ高さになる）。
+  let checked = 0;
+  let minGap = Infinity;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      if (song.modulation === null) continue;
+      checked++;
+      const label = `${seed}/${bars} +${song.modulation.semitones}`;
+      const top = Math.max(...song.melody.map((n) => n.midi));
+      const hits = song.melody.filter((n) => n.midi === top);
+      assert.equal(hits.length, 1, `${label}: 最高音が${hits.length}回`);
+      const from = song.sections[2].startBar * 4;
+      const to = song.sections[3].startBar * 4;
+      assert.ok(hits[0].beat >= from && hits[0].beat < to,
+        `${label}: 頂点が B の外 (${hits[0].beat} ∉ [${from}, ${to}))`);
+      assert.equal(song.climaxBeat, hits[0].beat, `${label}: climaxBeat が頂点と違う`);
+      // 転調した A'' の最高音は、頂点より必ず低い。
+      const inA2 = song.melody.filter((n) => n.beat >= to).map((n) => n.midi);
+      const gap = top - Math.max(...inA2);
+      assert.ok(gap > 0, `${label}: A'' が頂点に並んだ`);
+      minGap = Math.min(minGap, gap);
+    }
+  }
+  assert.ok(checked >= 150, `転調した曲が少ない: ${checked}`);
+  assert.ok(minGap >= 1, `頂点と A'' の差: ${minGap} 半音`);
+});
+
+test('実データ: 転調した曲は、新しい調で閉じる', realOpts, () => {
+  // 上がったまま元の調で終わると、曲が終わらない。最後の音も最後の和音も
+  // 「新しい調の主音・主和音」でなければならない。
+  let checked = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const m = song.modulation;
+      if (m === null) continue;
+      checked++;
+      const label = `${seed}/${bars} +${m.semitones}`;
+
+      // 最後の音は、新しい調の主音を最終小節の終わりまで伸ばす。
+      const tail = song.melody.reduce((a, b) => (b.beat >= a.beat ? b : a));
+      assert.equal(pcOf(tail.midi - m.toTonicMidi), 0, `${label}: 最終音が新しい調の主音でない`);
+      assert.notEqual(pcOf(tail.midi - m.fromTonicMidi), 0, `${label}: 元の調の主音のまま`);
+      assert.ok(tail.dur >= 3, `${label}: 最後の音が短い (${tail.dur})`);
+      assert.ok(tail.beat + tail.dur >= song.totalBeats, `${label}: 最後の音が最終小節を埋めていない`);
+
+      // 最終小節に鳴っているのは、新しい調の主和音の構成音だけ。
+      const lastBar = song.bars - 1;
+      const tonicChord = song.mode === 'major' ? 'I' : 'i';
+      assert.deepEqual(soundingPitchClasses(song, lastBar),
+        chordPcsOn(tonicChord, song.mode, m.toTonicMidi),
+        `${label}: 最終小節が新しい調の主和音でない`);
+      assert.equal(pcOf(song.bass[lastBar].midi - m.toTonicMidi), 0,
+        `${label}: 最終小節のベースが新しい主音でない`);
+      // 直前の小節は陰りのサブドミナントマイナー（アーメン終止）。これも新しい調で。
+      const sub = song.mode === 'major' ? 'iv' : 'VI';
+      assert.deepEqual(soundingPitchClasses(song, lastBar - 1),
+        chordPcsOn(sub, song.mode, m.toTonicMidi),
+        `${label}: 終止直前が新しい調のサブドミナントマイナーでない`);
+    }
+  }
+  assert.ok(checked >= 150, `転調した曲が少ない: ${checked}`);
+});
+
+test('実データ: 転調のつなぎ目が、新しい調のドミナントになっている', realOpts, () => {
+  // B の最後からいきなり半音上がると唐突に聴こえる。属和音を1小節挟んで、
+  // 耳が新しい調を受け入れてから A'' へ入る。
+  const progById = new Map(REAL.progressions.map((p) => [p.id, p]));
+  let withPivotBar = 0;
+  let withoutPivotBar = 0;
+  let downbeat = 0;
+  let toTonicChord = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const m = song.modulation;
+      if (m === null) continue;
+      const label = `${seed}/${bars} +${m.semitones}`;
+      const headBeat = m.atBar * 4;
+      const head = song.melody.filter((n) => n.beat >= headBeat)
+        .reduce((a, b) => (b.beat < a.beat ? b : a));
+      if (head.beat === headBeat) downbeat++;
+
+      if (m.pivotBar === null) {
+        // 頂点のスロットと重なる長さ（16小節）では属和音を置けない。
+        // そのときは A'' の頭を拍0から鳴らして境目を示す（下でまとめて検査）。
+        withoutPivotBar++;
+        assert.equal(song.bars, 16, `${label}: 16小節以外でつなぎ目が無い`);
+        continue;
+      }
+      withPivotBar++;
+      assert.equal(m.pivotBar, m.atBar - 1, `${label}: つなぎ目が A'' の直前でない`);
+      assert.ok(['V', 'V7'].includes(m.pivotChord), `${label}: つなぎ目が ${m.pivotChord}`);
+      assert.equal(m.pivotBar, song.sections[3].startBar - 1);
+      // その小節は既に新しい調で鳴っていて、根音は新しい主音の5度上（＝新調のドミナント）。
+      assert.deepEqual(soundingPitchClasses(song, m.pivotBar),
+        chordPcsOn(m.pivotChord, song.mode, m.toTonicMidi),
+        `${label}: つなぎ目が新しい調のドミナントで鳴っていない`);
+      assert.equal(pcOf(song.bass[m.pivotBar].midi - m.toTonicMidi), 7,
+        `${label}: つなぎ目のベースが新しい調の属音でない`);
+      // 元の調のドミナントではないこと（＝ただの V ではなく、上がった先の V）。
+      assert.notEqual(pcOf(song.bass[m.pivotBar].midi - m.fromTonicMidi), 7,
+        `${label}: 元の調のドミナントのまま`);
+      // その次の小節（A'' の頭）は、A'' の進行の1小節目を**新しい調で**鳴らす。
+      // 進行はセクションごとに違うので必ず主和音とは限らないが、
+      // 「新しい調で鳴っていること」だけは全曲で成り立つ。
+      const prog = varyProgression(progById.get(song.sections[3].progressionId), SECTION_LEVELS[3]);
+      const headChord = prog.bars[0].chord;
+      assert.deepEqual(soundingPitchClasses(song, m.atBar),
+        chordPcsOn(headChord, song.mode, m.toTonicMidi),
+        `${label}: A'' の頭が新しい調で鳴っていない (${headChord})`);
+      if (pcOf(song.bass[m.atBar].midi - m.toTonicMidi) === 0) toTonicChord++;
+    }
+  }
+  assert.ok(withPivotBar >= 100, `つなぎ目を検査した曲が少ない: ${withPivotBar}`);
+  assert.ok(withoutPivotBar > 0, '16小節の転調が1曲も無い（検査になっていない）');
+  // どちらの形でも、A'' は弱起にせず1拍目からはっきり始める。
+  assert.equal(downbeat, withPivotBar + withoutPivotBar,
+    `A'' が弱起で始まる転調がある: ${downbeat}/${withPivotBar + withoutPivotBar}`);
+  // V → I で着地できるのは A'' の進行が主和音で始まるときだけ。半分は超えていてほしい
+  // （半分を割るなら、つなぎ目が置かれる場所そのものを疑うべき）。
+  assert.ok(toTonicChord / withPivotBar >= 0.5,
+    `つなぎ目が主和音へ解決する曲が少ない: ${toTonicChord}/${withPivotBar}`);
+});
+
+test('実データ: 転調した曲でも、既存の保証がすべて残っている', realOpts, () => {
+  // fallback 0・無音の小節なし・音域・決定論・楽節の導出・クライマックスの舞い上がり。
+  const byId = new Map(REAL.melodies.map((m) => [m.id, m]));
+  let songs = 0;
+  let derived = 0;
+  let total = 0;
+  let soaring = 0;
+  const sources = {};
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS.slice(0, 80)) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      if (song.modulation === null) continue;
+      songs++;
+      const label = `${seed}/${bars} +${song.modulation.semitones}`;
+      assertNoSilentBar(song, label);
+      for (const midi of allMidis(song)) {
+        assert.ok(midi >= 21 && midi <= 108, `${label}: 音域外 ${midi}`);
+      }
+      assert.equal(JSON.stringify(song), JSON.stringify(composeSong(seed, REAL, S({ songBars: bars }))),
+        `${label}: 同じシードで同じ曲にならない`);
+
+      const slots = slotsPerSection(song);
+      const cs = climaxSlot(slots);
+      const roles = phraseRoles(slots);
+      song.sections.forEach((sec, si) => {
+        sec.slots.forEach((slot, k) => {
+          sources[slot.source] = (sources[slot.source] ?? 0) + 1;
+          assert.notEqual(slot.fragmentId, 'fallback', `${label}: ${sec.name}:${k} で fallback`);
+          if (si === 2 && k === cs) return;
+          if (!roles[k].derive || slot.reusedFrom !== null) return;
+          total++;
+          if (slot.derivedFrom !== null) derived++;
+        });
+      });
+      // クライマックスは跳び上がって届き、順次で降りる。
+      const climax = fragmentOf(song.sections[2].slots[cs], byId);
+      if (climax && soarsToPeak(climax)) soaring++;
+    }
+  }
+  assert.ok(songs >= 60, `転調した曲が少ない: ${songs}`);
+  const rate = derived / total;
+  assert.ok(rate >= 0.95,
+    `導出された割合が低い: ${(100 * rate).toFixed(1)}% (${derived}/${total}) ${JSON.stringify(sources)}`);
+  assert.equal(sources.fallback ?? 0, 0, 'fallback が出ている');
+  assert.ok(soaring / songs >= 0.95,
+    `クライマックスの舞い上がりが減った: ${(100 * soaring / songs).toFixed(1)}%`);
+});
+
+test('実データ: 転調は A\'\' を実際に高く鳴らす', realOpts, () => {
+  // 記録だけ書き換えて音が上がっていなければ意味がない。
+  // 主音からの高さ（半音）の平均を、転調した曲と転調しない曲で比べる。
+  const rel = { 0: [], 1: [], 2: [] };
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const semitones = song.modulation ? song.modulation.semitones : 0;
+      const from = song.sections[3].startBar * 4;
+      const notes = song.melody.filter((n) => n.beat >= from);
+      assert.ok(notes.length > 0, `${seed}/${bars}: A'' にメロディーが無い`);
+      rel[semitones].push(meanOf(notes.map((n) => n.midi)) - song.tonicMidi);
+    }
+  }
+  assert.ok(rel[1].length >= 50 && rel[2].length >= 50,
+    `標本が少ない: +1 ${rel[1].length} / +2 ${rel[2].length}`);
+  const base = meanOf(rel[0]);
+  const up1 = meanOf(rel[1]) - base;
+  const up2 = meanOf(rel[2]) - base;
+  const show = `非転調 ${base.toFixed(2)} / +1 で ${up1.toFixed(2)} / +2 で ${up2.toFixed(2)} 半音`;
+  assert.ok(up1 >= 0.5, `+1 で A'' が上がっていない: ${show}`);
+  assert.ok(up2 >= 1.2, `+2 で A'' が上がっていない: ${show}`);
+  assert.ok(up2 > up1, `+2 が +1 より上がっていない: ${show}`);
+});
+
+test('実データ: 転調で調号が飛ばない（五度圏の距離）', realOpts, () => {
+  // 「変ニ長調(♭5) から +1半音 で ニ長調(♯2)」は五度圏を7つ動く最悪の跳び方で、
+  // 楽譜では橋渡しの小節に臨時記号が9個並ぶ。同じ変ニ長調でも +2半音 なら
+  // 変ホ長調(♭3)＝距離2で、フラット系に留まったまま持ち上がる。
+  // 上げ幅は「調号が近いほう」を強く優先して引くので、遠い跳び方はめったに出ない。
+  const dist = [];
+  const baseline = [];
+  const steps = new Map();
+  let songs = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      songs++;
+      const m = song.modulation;
+      if (m === null) continue;
+      steps.set(m.semitones, (steps.get(m.semitones) ?? 0) + 1);
+      const from = keyFifths(m.fromTonicMidi, song.mode);
+      const to = keyFifths(m.toTonicMidi, song.mode);
+      // 記録した主音から計算した距離が、実際に選ばれた上げ幅の距離と一致すること。
+      assert.equal(Math.abs(to - from), keyDistance(m.fromTonicMidi, m.semitones, song.mode));
+      dist.push(Math.abs(to - from));
+      // 半々で機械的に引いていたら、この曲が持ったはずの距離（比較用）。
+      baseline.push(keyDistance(m.fromTonicMidi, 1, song.mode));
+      baseline.push(keyDistance(m.fromTonicMidi, 2, song.mode));
+    }
+  }
+  assert.ok(songs >= 200, `曲数が足りない: ${songs}`);
+  assert.ok(dist.length >= 100, `転調した曲が少ない: ${dist.length}`);
+  const mean = meanOf(dist);
+  const baseMean = meanOf(baseline);
+  const far7 = dist.filter((d) => d >= 7).length;
+  const far10 = dist.filter((d) => d >= 10).length;
+  const up1 = steps.get(1) ?? 0;
+  const up2 = steps.get(2) ?? 0;
+  const show = `平均 ${mean.toFixed(2)}（半々なら ${baseMean.toFixed(2)}）`
+    + ` / 距離7以上 ${far7}/${dist.length} / +1:${up1} +2:${up2}`;
+  assert.ok(mean <= 3.0, `調号が遠い転調が多い: ${show}`);
+  assert.ok(mean < baseMean - 1, `半々で引くのと大差ない: ${show}`);
+  // 最悪の跳び方（距離7）は5%以下、綴りごと飛ぶ距離10は1曲も出さない。
+  //
+  // 「距離5以上を5%以下」にはできない。1半音 = 五度圏で7つ（反対回りに5つ）で、
+  // **+1半音の転調はどう綴っても距離5以上にしかならない**（上の keyDistance の
+  // 単体テストで固定してある）。+1 を15%以上残すという要求と両立しないので、
+  // ここで潰すのは「5で済むのに7も動く」ほうだけにしてある。
+  assert.ok(far7 / dist.length <= 0.05, `最悪の跳び方が多い: ${show}`);
+  assert.equal(far10, 0, `綴りごと飛ぶ転調がある: ${show}`);
+  // 近さを優先しても、+1 と +2 の両方が残っていること。
+  assert.ok(up1 / dist.length >= 0.15, `+1半音がほとんど出ない: ${show}`);
+  assert.ok(up2 / dist.length >= 0.15, `+2半音がほとんど出ない: ${show}`);
 });
