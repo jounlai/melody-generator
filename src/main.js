@@ -18,6 +18,9 @@ import { renderScore, keySignature } from './notation.js';
 import { resolveInstrument } from './instrument.js';
 import { toMusicXML, toMidi, suggestFilename } from './export.js';
 import { loadStoredSettings, storeSettings, createSettingsPanel } from './ui.js';
+import {
+  createAudioSession, bindMediaKeys, setNowPlaying, setPlaybackState,
+} from './session.js';
 
 const NOTE_NAMES = [
   'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
@@ -243,6 +246,8 @@ function init() {
   let player = null;
   let panel = null;
   let statusTimer = null;
+  // iOS の消音スイッチ対策。無音の音声を鳴らして音声セッションを取りに行く。
+  const session = createAudioSession();
 
   // ---- ステータス表示 --------------------------------------------------
   function setStatus(text, clearAfterMs) {
@@ -269,6 +274,7 @@ function init() {
     if (els.playLabel) els.playLabel.textContent = isPlaying ? '停止' : '再生';
     // 再生中だけ、背景の光と波紋を動かす（CSS 側が data-playing を見ている）。
     document.body.dataset.playing = isPlaying ? 'true' : 'false';
+    setPlaybackState(isPlaying);
     syncTransport();
   }
 
@@ -315,6 +321,10 @@ function init() {
       setStatus(`音声を初期化できませんでした: ${err.message}`);
       return;
     }
+    // !!! 必ずクリックの中から呼ぶこと !!!
+    // iOS はユーザー操作の外からの再生を拒否するので、ここを非同期の後ろへ
+    // 動かすと消音スイッチ対策そのものが効かなくなる。
+    session.start();
     setPlayLabel(true);
     Promise.resolve(p.start(seed ?? undefined)).catch((err) => {
       console.error(err);
@@ -620,7 +630,10 @@ function init() {
       console.warn('URL ハッシュを更新できませんでした', err);
     }
 
-    if (els.nowPlaying) els.nowPlaying.textContent = describeSong(song);
+    const label = describeSong(song);
+    if (els.nowPlaying) els.nowPlaying.textContent = label;
+    // ロック画面と通知領域にも同じ内容を出す。
+    setNowPlaying(label, `曲コード ${song?.seed ?? ''}`);
     syncTransport();
   }
 
@@ -655,6 +668,7 @@ function init() {
     els.playToggle.addEventListener('click', () => {
       if (player?.isPlaying()) {
         player.stop();
+        session.stop();
         setPlayLabel(false);
         return;
       }
@@ -682,6 +696,19 @@ function init() {
       if (!player?.prev()) setStatus('これより前に聴いた曲はまだありません', 2000);
     });
   }
+
+  // ---- ロック画面・ヘッドセットのボタン --------------------------------
+  bindMediaKeys({
+    play: () => { if (!player?.isPlaying()) { pendingSeed = null; startPlayback(); } },
+    pause: () => {
+      if (!player?.isPlaying()) return;
+      player.stop();
+      session.stop();
+      setPlayLabel(false);
+    },
+    prev: () => { player?.prev?.(); },
+    next: () => { if (player?.isPlaying()) player.next(); },
+  });
 
   // ---- 道具の開閉 ----------------------------------------------------
   // 開くのは一度に1つ。3つとも開くと、それだけで画面1つぶんになる。

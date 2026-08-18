@@ -28,6 +28,31 @@ const REVERB_TONE = 0.28; // 1極ローパスの係数。小さいほど暗い�
 const WET_MAX = 1.1; // reverbAmount = 100 のときのウェットゲイン
 const DRY_GAIN = 1.0;
 
+// 出力の底上げ。
+//
+// 実測すると、書き出した音のピークは -11〜-15 dBFS しかなく、
+// 使える音量を10dB以上余らせていた。据え置きのスピーカーやヘッドホンでは
+// 「静かな曲」で済むが、スマートフォンの内蔵スピーカーではそのまま
+// 「聴こえない」になる。小さい音を小さく鳴らすのと、
+// 小さい音しか出せないのは別のことである。
+//
+// リミッタの手前で持ち上げるので、突出したところはリミッタが受け止める。
+// 値は実測で選んだ（音量つまみ85・30秒・3曲平均）。
+//   1.0  ピーク -5.3 / RMS -24.8 / 曲中の抑揚 11.6 dB   ← 元。小さすぎる
+//   2.4  ピーク -1.5 / RMS -19.7 / 抑揚 11.4 dB
+//   3.0  ピーク -0.7 / RMS -17.7 / 抑揚 11.6 dB          ← 採用。抑揚は無傷
+//   3.6  ピーク -1.7 / RMS -16.2 / 抑揚 11.5 dB（伸びが止まる）
+const OUTPUT_MAKEUP = 3.0;
+
+// 出力の天井。音量つまみを最大にしても 0 dBFS を越えないための余裕。
+//
+// リミッタは音楽的に効かせたい圧縮器であって、ぴったり止まる壁ではない。
+// 実測では、つまみ最大でピークが +1.1 dBFS まで出て歪む。
+// リミッタを固くして止めると抑揚まで潰れる（実測: しきい値 -6 で
+// 曲中の抑揚が 12.0 → 10.8 dB へ落ちた）ので、圧縮ではなく
+// 最後に一律で下げるほうを選ぶ。0.8 は -1.9 dB。
+const MASTER_CEILING = 0.8;
+
 const PAD_FILTER_Q = 0.5;
 const PAD_MIN_RELEASE_SEC = 2.0;
 const PAD_DETUNE_CENTS = 4; // ±4セントのランダムデチューンで厚みを出す
@@ -272,7 +297,7 @@ export function ensembleFor(instrumentKey) {
 // settings.js の PARAM_DEFS における既定値の写し。
 // settings が未指定・欠損でも音が出なくならないための保険であり、正は settings.js 側。
 const FALLBACK = {
-  masterVolume: 70,
+  masterVolume: 85,
   melodyVolume: 100,
   accompVolume: 45,
   padVolume: 35,
@@ -374,7 +399,10 @@ export function createEngine(audioCtx, settings) {
   const accompGain = ctx.createGain();
   const padGain = ctx.createGain();
 
-  limiter.threshold.value = -8;
+  // しきい値 -8 では、リミッタが音楽的なピークまで削っていた。
+  // 実測（makeup 3.0）: -8 で曲中の抑揚が 11.6 → 8.6 dB へ潰れ、
+  // -3 なら 11.6 dB のまま。突発的な山だけを受け止める高さに置く。
+  limiter.threshold.value = -3;
   limiter.knee.value = 6;
   limiter.ratio.value = 12;
   limiter.attack.value = 0.003;
@@ -383,7 +411,7 @@ export function createEngine(audioCtx, settings) {
   convolver.normalize = true;
   convolver.buffer = buildImpulseResponse(ctx);
 
-  bus.gain.value = 1;
+  bus.gain.value = OUTPUT_MAKEUP;
   dry.gain.value = DRY_GAIN;
 
   melodyGain.connect(bus);
@@ -431,10 +459,15 @@ export function createEngine(audioCtx, settings) {
     }
   }
 
+  /** 音量つまみと出力の天井を掛けた、実際のマスターゲイン */
+  function masterGain() {
+    return Math.max(pct(settings, 'masterVolume') * MASTER_CEILING, MIN_GAIN);
+  }
+
   function applySettings(next) {
     if (next) settings = next;
     // ノードは作り直さない。既存のゲインノードの値を書き換えるだけ。
-    master.gain.value = pct(settings, 'masterVolume');
+    master.gain.value = masterGain();
     melodyGain.gain.value = pct(settings, 'melodyVolume');
     accompGain.gain.value = pct(settings, 'accompVolume');
     padGain.gain.value = pct(settings, 'padVolume');
@@ -696,7 +729,7 @@ export function createEngine(audioCtx, settings) {
     if (disposed) return;
     const now = ctx.currentTime;
     const fade = Math.max(0.02, Math.min(SILENCE_FADE_SEC, gapSec * 0.4));
-    const target = Math.max(pct(settings, 'masterVolume'), MIN_GAIN);
+    const target = masterGain();
 
     master.gain.cancelScheduledValues(now);
     master.gain.setValueAtTime(Math.max(master.gain.value, MIN_GAIN), now);

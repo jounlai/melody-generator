@@ -33,7 +33,9 @@ const TEMPO_MAP = {
 // 出し戻したくなったら ui を true にするだけでよい。
 export const PARAM_DEFS = [
   // ---- 画面に出す3つ ----
-  { key: 'masterVolume', group: 'sound', label: '音量', type: 'range', min: 0, max: 100, step: 1, def: 70, unit: '%', apply: 'live', ui: true },
+  // 既定は 85。曲そのものが静かなので、つまみまで控えめにすると
+  // スマートフォンの内蔵スピーカーでは聴き取れなくなる。
+  { key: 'masterVolume', group: 'sound', label: '音量', type: 'range', min: 0, max: 100, step: 1, def: 85, unit: '%', apply: 'live', ui: true },
   { key: 'mood', group: 'compose', label: '曲の雰囲気', type: 'choice', apply: 'next', ui: true, code: 'md', def: 'balanced',
     hint: '長調と短調のどちらを多く引くか',
     options: [['bright', '明るめ'], ['balanced', 'バランス'], ['wistful', '切なめ']] },
