@@ -277,27 +277,14 @@ function init() {
 
   // ---- URL ハッシュ：作曲パラメータとシードを上書きする -------------------
   //
-  // ハッシュは鳴っている曲を映して常に書き換わるので、そのまま読むと
-  // 再読み込みのたびに同じ曲から始まってしまう。「開くたびに違う曲」と
-  // 「共有した URL ではその曲」を両立させるため、来かたで扱いを分ける。
+  // ハッシュに曲があれば、必ずその曲から始める。来かたでは分けない
+  // （分けると、共有された URL を開き直したときに別の曲になってしまい、
+  // 共有そのものが成り立たない）。
   //
-  //   reload        自分のタブを読み直した → ハッシュは自分が書いたもの。
-  //                 曲は引かず、設定だけ引き継いで新しい曲から始める
-  //   それ以外       リンクを踏んだ・URL を貼った・戻る進む → その曲を鳴らす
+  // 「毎回ちがう曲」は2曲目から効く。1曲目はハッシュの曲、そのあとは
+  // 履歴の末尾なので必ず新しいシードが引かれる（player.js の advance）。
   //
   // サウンド系は曲の内容に関係しないので localStorage の値を保つ。
-  function isReload() {
-    try {
-      const nav = globalThis.performance?.getEntriesByType?.('navigation') ?? [];
-      if (nav.length > 0) return nav[0].type === 'reload';
-      // 古いブラウザ向け。1 = TYPE_RELOAD
-      return globalThis.performance?.navigation?.type === 1;
-    } catch (err) {
-      console.warn('遷移の種類を判別できませんでした', err);
-      return false;
-    }
-  }
-
   const hash = String(globalThis.location?.hash ?? '').replace(/^#/, '');
   if (hash) {
     const decoded = decodeSongCode(hash);
@@ -305,7 +292,7 @@ function init() {
       ...settings,
       ...pickComposeParams(decoded.settings),
     });
-    pendingSeed = isReload() ? null : decoded.seed;
+    pendingSeed = decoded.seed;
   }
 
   // ---- 音まわりの生成は最初のクリックまで遅らせる -------------------------
