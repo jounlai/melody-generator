@@ -14,7 +14,7 @@ import {
 } from './settings.js';
 import { createEngine } from './synth.js';
 import { createPlayer } from './player.js';
-import { renderScore, keySignature } from './notation.js';
+import { renderScore, keySignature, scoreHeight } from './notation.js';
 import { resolveInstrument } from './instrument.js';
 import { toMusicXML, toMidi, suggestFilename } from './export.js';
 import { loadStoredSettings, storeSettings, createSettingsPanel } from './ui.js';
@@ -232,6 +232,12 @@ function init() {
     toolSettings: byId('tool-settings'),
     toolExport: byId('tool-export'),
   };
+
+  // 楽譜の高さは曲によらず一定なので、描く前から枠を取っておく。
+  // あとから伸びると、押した直後に再生ボタンが下へ動いてしまう。
+  if (els.scoreView) {
+    els.scoreView.style.setProperty('--score-h', `${scoreHeight()}px`);
+  }
 
   // 言語は他のどの表示より先に決める（設定パネルのラベルがこれを読む）。
   setLocale(detectLocale());

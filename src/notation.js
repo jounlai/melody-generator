@@ -558,6 +558,18 @@ const DEFAULT_LAYOUT = {
   keyGap: 12,         // 調号と最初の小節線の間
 };
 
+/**
+ * 楽譜の高さ。曲の中身によらず一定なので、描く前から分かる。
+ * 画面側は再生前からこの高さで枠を取る。あとから伸びると、
+ * 押した直後に再生ボタンが動いてしまう。
+ * @param {object} [options] DEFAULT_LAYOUT を上書きする値
+ * @returns {number}
+ */
+export function scoreHeight(options = {}) {
+  const L = { ...DEFAULT_LAYOUT, ...(options || {}) };
+  return L.topPad + 4 * L.staffSpace + L.staffGap + 4 * L.staffSpace + L.bottomPad;
+}
+
 /** 調号の位置。ト音記号での diatonicIndex（ヘ音記号は 14 引く＝2オクターブ下） */
 const SHARP_ROWS = [38, 35, 39, 36, 33, 37, 34];
 const FLAT_ROWS = [34, 37, 33, 36, 32, 35, 31];

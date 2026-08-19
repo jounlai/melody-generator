@@ -333,7 +333,11 @@
     position: relative;
     display: flex;
     align-items: center;
-    min-height: clamp(150px, 24vh, 260px);
+    /* --score-h は main.js が notation.js の実寸から入れる。
+       描く前と後で高さが変わらないようにするため。
+       上下の枠線を足した外寸で揃えたいので、ここだけ content-box にする */
+    box-sizing: content-box;
+    min-height: var(--score-h, 240px);
     color: var(--score-ink);
     background: var(--surface);
     border: 1px solid var(--line);
@@ -472,7 +476,22 @@
        流し込みのままでは設定や共有が画面の外へ出てしまう。 */
     .page { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
 
-    .stage { min-height: 70dvh; }
+    /*
+     * 狭い画面では楽譜を先に置く。
+     * 楽譜(242px)を全部出しつつ再生ボタンを画面中央に置くことは、
+     * 667px の画面では両立しない。順を入れ替えると、楽譜は最初の画面に
+     * 収まり、再生ボタンは下寄り＝親指の届くところへ落ちる。
+     * 高さの下限は外す。stage が残りを吸って、その中で中央寄せになる。
+     */
+    .score-section {
+      order: -1;
+      margin-top: clamp(10px, 3vw, 16px);
+    }
+
+    /* 楽譜を畳んだときに、余白だけが残らないようにする */
+    .score-section:has(#score-view[hidden]) { margin: 0; }
+
+    .stage { min-height: 0; }
 
     .tools {
       position: fixed;
@@ -6885,6 +6904,18 @@ const DEFAULT_LAYOUT = {
   keyGap: 12,         // 調号と最初の小節線の間
 };
 
+/**
+ * 楽譜の高さ。曲の中身によらず一定なので、描く前から分かる。
+ * 画面側は再生前からこの高さで枠を取る。あとから伸びると、
+ * 押した直後に再生ボタンが動いてしまう。
+ * @param {object} [options] DEFAULT_LAYOUT を上書きする値
+ * @returns {number}
+ */
+function scoreHeight(options = {}) {
+  const L = { ...DEFAULT_LAYOUT, ...(options || {}) };
+  return L.topPad + 4 * L.staffSpace + L.staffGap + 4 * L.staffSpace + L.bottomPad;
+}
+
 /** 調号の位置。ト音記号での diatonicIndex（ヘ音記号は 14 引く＝2オクターブ下） */
 const SHARP_ROWS = [38, 35, 39, 36, 33, 37, 34];
 const FLAT_ROWS = [34, 37, 33, 36, 32, 35, 31];
@@ -7357,6 +7388,7 @@ exports.chordName = chordName;
 exports.keyTimeline = keyTimeline;
 exports.durationSymbol = durationSymbol;
 exports.splitAtBarlines = splitAtBarlines;
+exports.scoreHeight = scoreHeight;
 exports.renderScore = renderScore;
 };
 
@@ -8545,7 +8577,7 @@ __mods["main.js"] = function (exports, require) {
 const { PARAM_DEFS, normalizeSettings, resolveSettings, encodeSongCode, decodeSongCode } = require('settings.js');
 const { createEngine } = require('synth.js');
 const { createPlayer } = require('player.js');
-const { renderScore, keySignature } = require('notation.js');
+const { renderScore, keySignature, scoreHeight } = require('notation.js');
 const { resolveInstrument } = require('instrument.js');
 const { toMusicXML, toMidi, suggestFilename } = require('export.js');
 const { loadStoredSettings, storeSettings, createSettingsPanel } = require('ui.js');
@@ -8762,6 +8794,12 @@ function init() {
     toolSettings: byId('tool-settings'),
     toolExport: byId('tool-export'),
   };
+
+  // 楽譜の高さは曲によらず一定なので、描く前から枠を取っておく。
+  // あとから伸びると、押した直後に再生ボタンが下へ動いてしまう。
+  if (els.scoreView) {
+    els.scoreView.style.setProperty('--score-h', `${scoreHeight()}px`);
+  }
 
   // 言語は他のどの表示より先に決める（設定パネルのラベルがこれを読む）。
   setLocale(detectLocale());

@@ -8,6 +8,7 @@ import {
   durationSymbol,
   splitAtBarlines,
   renderScore,
+  scoreHeight,
 } from '../src/notation.js';
 import { composeSong } from '../src/compose.js';
 import { resolveSettings } from '../src/settings.js';
@@ -863,4 +864,18 @@ test('renderScore: 合成した転調曲でも小節線と音符が揃う', () =
   assert.deepEqual([...new Set(bars)].sort((a, b) => a - b), [0, 1, 2, 3, 4]);
   assert.equal(bars.filter((b) => b === 2).length, 2, '転調位置が複縦線になっていない');
   assert.equal(bars.filter((b) => b === 1).length, 1, '普通の小節が複縦線になっている');
+});
+
+// 画面側は楽譜を描く前からこの高さで枠を取る（#score-view の --score-h）。
+// ずれると、再生ボタンを押した直後にボタン自身が下へ動く。
+test('scoreHeight は実際に描かれる高さと一致する', realOpts, () => {
+  for (const seed of SEEDS) {
+    assert.equal(renderScore(song(seed)).height, scoreHeight(), `${seed} で高さが違う`);
+  }
+});
+
+test('scoreHeight は小節数によらず一定', realOpts, () => {
+  for (const bars of ['16', '32', '48']) {
+    assert.equal(renderScore(song('a3f91c', bars)).height, scoreHeight(), `${bars}小節で高さが違う`);
+  }
 });

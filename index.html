@@ -323,7 +323,11 @@
     position: relative;
     display: flex;
     align-items: center;
-    min-height: clamp(150px, 24vh, 260px);
+    /* --score-h は main.js が notation.js の実寸から入れる。
+       描く前と後で高さが変わらないようにするため。
+       上下の枠線を足した外寸で揃えたいので、ここだけ content-box にする */
+    box-sizing: content-box;
+    min-height: var(--score-h, 240px);
     color: var(--score-ink);
     background: var(--surface);
     border: 1px solid var(--line);
@@ -462,7 +466,22 @@
        流し込みのままでは設定や共有が画面の外へ出てしまう。 */
     .page { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
 
-    .stage { min-height: 70dvh; }
+    /*
+     * 狭い画面では楽譜を先に置く。
+     * 楽譜(242px)を全部出しつつ再生ボタンを画面中央に置くことは、
+     * 667px の画面では両立しない。順を入れ替えると、楽譜は最初の画面に
+     * 収まり、再生ボタンは下寄り＝親指の届くところへ落ちる。
+     * 高さの下限は外す。stage が残りを吸って、その中で中央寄せになる。
+     */
+    .score-section {
+      order: -1;
+      margin-top: clamp(10px, 3vw, 16px);
+    }
+
+    /* 楽譜を畳んだときに、余白だけが残らないようにする */
+    .score-section:has(#score-view[hidden]) { margin: 0; }
+
+    .stage { min-height: 0; }
 
     .tools {
       position: fixed;
