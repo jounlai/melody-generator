@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node tools/serve.js 8080",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "data:progressions": "node tools/makeProgressions.js",
     "data:melodies": "node tools/makeMelodies.js",
     "data": "npm run data:progressions && npm run data:melodies",
