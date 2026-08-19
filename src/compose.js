@@ -18,7 +18,7 @@
 import { makeRng, seedFromString, randInt, pick } from './rng.js';
 import {
   degToMidi, degToSemitone, chordVoicing, bassMidi, nearestChordToneDeg, chordIndex,
-  splitBars, fitsBar, hasSuspension, chordSemitones, CHORD_VOCAB,
+  splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
 
@@ -1393,16 +1393,11 @@ export function composeSong(seed, data, settings) {
   const sources = chooseProgressions(rng, data?.progressions, mode);
 
   const sections = [];
-  const barInfo = [];      // 小節ごとの主音と和音。音階スタイルを掛けるときに引く
+  const chordPlan = [];    // 小節ごとの和音記号。配置と発音は全セクションを組んだあとにやる
   const melody = [];
-  const accomp = [];
-  const bass = [];
-  const pad = [];
   const motif = [];        // A で選ばれた断片（再登場のコピー元）
   const breathSlots = [];  // 息継ぎを置ける「A / A' のフレーズ末スロット」
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
-  let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
-  let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -1620,79 +1615,10 @@ export function composeSong(seed, data, settings) {
       }
     }
 
+    // 【変更前】この位置に小節ループがあり、bass/accomp/pad を push していた。
+    // 【変更後】和音の割り当てだけを記録して、配置と発音はループの外でやる。
     for (let b = 0; b < barChords.length; b++) {
-      const chord = barChords[b];
-      const beat = (startBar + b) * 4;
-      const isFinalBar = startBar + b === bars - 1;
-      // 主音は小節ごと。A'' と、つなぎ目の属和音の小節だけが新しい調で鳴る。
-      const barTonic = tonicAtBar(startBar + b);
-      // ベースは直前の小節にいちばん近いオクターブへ。
-      // これで I - V/3 - vi - I/5 が7度跳ね上がらずに素直に下降する。
-      const bassRaw = bassMidi(chord, mode, barTonic, BASS_LOWEST);
-      const bassNote = nearestOctave(bassRaw, prevBass, BASS_RANGE);
-      prevBass = bassNote;
-      bass.push({ midi: bassNote, beat, dur: 4, vel: BASS_VEL });
-
-      // 転回形では最低音が根音とは限らないので、根音は記号から取り直す。
-      const rootMidi = barTonic + chordSemitones(chord, mode)[0];
-      // その小節で旋律がいちばん低いところ。伴奏とパッドはこれより下に置く。
-      const ceiling = melodyCeiling(melody, startBar + b);
-
-      // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
-      // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
-      const raw = chordVoicing(chord, mode, barTonic, ACCOMP_LOWEST);
-      const accompLo = Math.max(ACCOMP_RANGE[0], bassNote + 1);
-      // 旋律が低く歌う小節では、普段の音域を割ってでもその下へ降りる。
-      // 降りる限界はベースと同じ高さまで。同じ音を重ねるのは左手の普通の書き方で、
-      // 土台が入れ替わるのは「ベースより下へ潜る」ときだけ。ここを1つ上に
-      // 締めると、旋律が低い小節で伴奏が降りられず、実測で8%が旋律の上に残った。
-      const accompFloor = Math.min(accompLo, bassNote);
-      const voicing = placeUnder(raw, prevAccomp, accompLo, ACCOMP_RANGE[1], ceiling, accompFloor);
-      prevAccomp = voicing[0];
-      // パッドは伴奏と同じ和音を、伴奏の上に薄く重ねる持続音。
-      const padVoicing = withoutRub(
-        placeUnder(chordVoicing(chord, mode, barTonic, PAD_LOWEST),
-          null, voicing[0], ACCOMP_RANGE[1], ceiling, voicing[0]),
-        melody, startBar + b);
-      // 楽譜のコードネームの材料。実際に鳴る積み方（voicing）から名前を作る。
-      barInfo[startBar + b] = {
-        bar: startBar + b,
-        symbol: chord,
-        tonicMidi: barTonic,
-        rootMidi,
-        // コードネームは「実際に鳴っている音の集まり」から作る。
-        // 天井に収めるために伴奏の上の音を省いた小節でも、パッドが持っていれば
-        // 和音としては鳴っているので、両方を合わせて名前を決める。
-        voicing: [...new Set([...voicing, ...padVoicing])].sort((x, y) => x - y),
-        bassNote,
-      };
-      pad.push({
-        midis: padVoicing,
-        beat,
-        dur: isFinalBar ? FINAL_PAD_DUR : 4,
-        vel: PAD_VEL,
-      });
-      if (isFinalBar) {
-        // 刻みをやめて和音を置く。midi は単音しか読まない再生系のための代表音で、
-        // 実際に鳴らしたい全構成音は midis に入れる。
-        accomp.push({
-          midi: voicing[0], midis: voicing.slice(), beat, dur: 4, vel: FINAL_ACCOMP_VEL,
-        });
-        continue;
-      }
-      for (let i = 0; i < ACCOMP_OFFSETS.length; i++) {
-        const at = ACCOMP_OFFSETS[i];
-        accomp.push({
-          midi: voicing[arpeggioIndex(i, voicing.length)],
-          beat: beat + at,
-          // 最後の8分だけは小節線で切る。ACCOMP_DUR はペダルのように隣と重ねる
-          // ための長さだが、小節の終わりでそれをやると前の和音が次の小節へ
-          // 0.25拍はみ出す。和音が変わったところへ古い和音が残るので、
-          // 強拍の半音衝突の27%がここから出ていた。
-          dur: Math.min(ACCOMP_DUR, BEATS_PER_BAR - at),
-          vel: ACCOMP_VEL,
-        });
-      }
+      chordPlan[startBar + b] = { bar: startBar + b, symbol: barChords[b] };
     }
 
     sections.push({
@@ -1721,8 +1647,6 @@ export function composeSong(seed, data, settings) {
       sections[chosen.sectionIdx].slots[chosen.slotIdx].breath = true;
     }
   }
-
-  const chords = describeChords(barInfo);
 
   // 頂点の拍。演奏側はここだけテヌートを掛けるので、同点なら最初の1つを指す。
   let climaxBeat = 0;
@@ -1761,6 +1685,98 @@ export function composeSong(seed, data, settings) {
     const near = tail.midi - below <= above - tail.midi ? below : above;
     tail.midi = near < highest ? near : below;
   }
+
+  // ---- 声部配置 ----
+  //
+  // ここを息継ぎ・クライマックス・最終音の書き換えより後ろに置くのが要。現行は
+  // 息継ぎを適用する「前」の旋律で天井 (melodyCeiling) を計算していたので、
+  // 息継ぎの小節だけ、鳴っていない旋律を避けて伴奏が不必要に低く抑えられていた。
+  const barInfo = [];
+  let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
+  let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
+  for (let bar = 0; bar < bars; bar++) {
+    const chord = chordPlan[bar]?.symbol;
+    if (!chord) continue;
+    // 主音は小節ごと。A'' と、つなぎ目の属和音の小節だけが新しい調で鳴る。
+    const barTonic = tonicAtBar(bar);
+    // ベースは直前の小節にいちばん近いオクターブへ。
+    // これで I - V/3 - vi - I/5 が7度跳ね上がらずに素直に下降する。
+    const bassRaw = bassMidi(chord, mode, barTonic, BASS_LOWEST);
+    const bassNote = nearestOctave(bassRaw, prevBass, BASS_RANGE);
+    prevBass = bassNote;
+
+    // 転回形では最低音が根音とは限らないので、根音は記号から取り直す。
+    const rootMidi = barTonic + chordSemitones(chord, mode)[0];
+    // その小節で旋律がいちばん低いところ。伴奏とパッドはこれより下に置く。
+    const ceiling = melodyCeiling(melody, bar);
+
+    // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
+    // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
+    const raw = chordVoicing(chord, mode, barTonic, ACCOMP_LOWEST);
+    const accompLo = Math.max(ACCOMP_RANGE[0], bassNote + 1);
+    // 旋律が低く歌う小節では、普段の音域を割ってでもその下へ降りる。
+    // 降りる限界はベースと同じ高さまで。同じ音を重ねるのは左手の普通の書き方で、
+    // 土台が入れ替わるのは「ベースより下へ潜る」ときだけ。ここを1つ上に
+    // 締めると、旋律が低い小節で伴奏が降りられず、実測で8%が旋律の上に残った。
+    const accompFloor = Math.min(accompLo, bassNote);
+    const voicing = placeUnder(raw, prevAccomp, accompLo, ACCOMP_RANGE[1], ceiling, accompFloor);
+    prevAccomp = voicing[0];
+
+    // パッドは伴奏と同じ和音を、伴奏の上に薄く重ねる持続音。
+    const padVoicing = withoutRub(
+      placeUnder(chordVoicing(chord, mode, barTonic, PAD_LOWEST),
+        null, voicing[0], ACCOMP_RANGE[1], ceiling, voicing[0]),
+      melody, bar);
+
+    barInfo[bar] = {
+      bar,
+      symbol: chord,
+      tonicMidi: barTonic,
+      rootMidi,
+      voicing,
+      padVoicing,
+      bassNote,
+      // ベースの5度が和音の音かどうかを編曲側が判定するために、実音の
+      // ピッチクラスを持たせる。転回形では最低音の5度上が和音の音とは限らない。
+      pcs: chordPitchClasses(chord, mode).map((pc) => (pc + barTonic) % 12),
+    };
+  }
+
+  // ---- 発音（この時点ではまだ現行と同じ8分アルペジオ） ----
+  const accomp = [];
+  const bass = [];
+  const pad = [];
+  for (let bar = 0; bar < bars; bar++) {
+    const info = barInfo[bar];
+    if (!info) continue;
+    const beat = bar * 4;
+    const isFinalBar = bar === bars - 1;
+    bass.push({ midi: info.bassNote, beat, dur: 4, vel: BASS_VEL });
+    pad.push({ midis: info.padVoicing, beat, dur: isFinalBar ? FINAL_PAD_DUR : 4, vel: PAD_VEL });
+    if (isFinalBar) {
+      // 刻みをやめて和音を置く。midi は単音しか読まない再生系のための代表音で、
+      // 実際に鳴らしたい全構成音は midis に入れる。
+      accomp.push({
+        midi: info.voicing[0], midis: info.voicing.slice(), beat, dur: 4, vel: FINAL_ACCOMP_VEL,
+      });
+      continue;
+    }
+    for (let i = 0; i < ACCOMP_OFFSETS.length; i++) {
+      const at = ACCOMP_OFFSETS[i];
+      accomp.push({
+        midi: info.voicing[arpeggioIndex(i, info.voicing.length)],
+        beat: beat + at,
+        // 最後の8分だけは小節線で切る。ACCOMP_DUR はペダルのように隣と重ねる
+        // ための長さだが、小節の終わりでそれをやると前の和音が次の小節へ
+        // 0.25拍はみ出す。和音が変わったところへ古い和音が残るので、
+        // 強拍の半音衝突の27%がここから出ていた。
+        dur: Math.min(ACCOMP_DUR, BEATS_PER_BAR - at),
+        vel: ACCOMP_VEL,
+      });
+    }
+  }
+
+  const chords = describeChords(barInfo);
 
   return {
     seed,
