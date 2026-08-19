@@ -15,7 +15,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="description" content="静かなピアノ曲を、途切れることなく生成し続けます。">
-<title>無限ヒーリングピアノ</title>
+<title data-i18n-title="app.title">無限ヒーリングピアノ</title>
 <style>
   :root {
     color-scheme: dark;
@@ -535,6 +535,13 @@
   /* ---- 設定パネル（src/ui.js が組み立てる） ---- */
 
   .settings { display: grid; gap: 8px; }
+
+  /* 言語は曲の設定ではないので、設定パネルの外に置いて線で仕切る */
+  .lang-field {
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
 
   /* 見出しの帯は出さない。項目名だけで足りる */
   .settings-group { border: 0; }
@@ -1752,16 +1759,16 @@
 <div class="page">
 
   <header class="site-head">
-    <h1>無限ヒーリングピアノ</h1>
+    <h1 data-i18n="app.tagline">無限ヒーリングピアノ</h1>
   </header>
 
   <main>
 
     <section class="stage" aria-label="再生">
-      <div class="transport" role="group" aria-label="再生操作">
+      <div class="transport" role="group" data-i18n-attr="aria-label:transport.group">
         <div class="pulse" aria-hidden="true"><i></i><i></i><i></i></div>
 
-        <button id="prev" class="transport-btn" type="button" aria-label="前の曲へ戻る">
+        <button id="prev" class="transport-btn" type="button" data-i18n-attr="aria-label:transport.prev">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M18 5.5v13a1 1 0 0 1-1.55.83L7.5 13.2v5.3a1 1 0 0 1-2 0v-13a1 1 0 0 1 2 0v5.3l8.95-6.13A1 1 0 0 1 18 5.5Z"/>
           </svg>
@@ -1778,31 +1785,31 @@
           </svg>
         </button>
 
-        <button id="next" class="transport-btn" type="button" aria-label="次の曲へ進む">
+        <button id="next" class="transport-btn" type="button" data-i18n-attr="aria-label:transport.next">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M6 5.5v13a1 1 0 0 0 1.55.83l8.95-6.13v5.3a1 1 0 0 0 2 0v-13a1 1 0 0 0-2 0v5.3L7.55 4.67A1 1 0 0 0 6 5.5Z"/>
           </svg>
         </button>
       </div>
 
-      <p id="now-playing" aria-live="polite">再生ボタンで、一曲目が生まれます</p>
+      <p id="now-playing" aria-live="polite" data-i18n="nowplaying.idle">再生ボタンで、一曲目が生まれます</p>
     </section>
 
-    <section class="score-section" aria-label="楽譜">
-      <div id="score-view" tabindex="0" role="group" aria-label="楽譜（横にスクロールできます）">
-        <p class="score-empty">再生すると、ここに楽譜が出ます</p>
+    <section class="score-section" data-i18n-attr="aria-label:tool.score">
+      <div id="score-view" tabindex="0" role="group" data-i18n-attr="aria-label:score.region">
+        <p class="score-empty" data-i18n="score.empty">再生すると、ここに楽譜が出ます</p>
       </div>
     </section>
 
   </main>
 
-  <nav class="tools" aria-label="道具">
+  <nav class="tools" data-i18n-attr="aria-label:tools.label">
     <button id="score-toggle" class="tool" type="button" aria-pressed="true" aria-controls="score-view">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M4 6h16M4 10h16M4 14h7M4 18h7"/>
         <circle cx="16" cy="17" r="2.6"/><path d="M18.6 17V9.4l2.4-.8"/>
       </svg>
-      楽譜
+      <span data-i18n="tool.score">楽譜</span>
     </button>
 
     <button id="tool-settings" class="tool" type="button" aria-haspopup="dialog">
@@ -1810,14 +1817,14 @@
         <path d="M4 7h9M17 7h3M4 17h3M11 17h9M4 12h5M13 12h7"/>
         <circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/><circle cx="11" cy="12" r="2"/>
       </svg>
-      設定
+      <span data-i18n="tool.settings">設定</span>
     </button>
 
     <button id="tool-export" class="tool" type="button" aria-haspopup="dialog">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M12 3.5v11M8 10.8l4 3.7 4-3.7M4.5 17.5v1.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>
       </svg>
-      保存
+      <span data-i18n="tool.export">保存</span>
     </button>
 
     <button id="copy-url" class="tool" type="button">
@@ -1825,21 +1832,21 @@
         <path d="M10.5 13.5a4 4 0 0 0 5.66 0l2.6-2.6a4 4 0 1 0-5.66-5.66l-1.1 1.1"/>
         <path d="M13.5 10.5a4 4 0 0 0-5.66 0l-2.6 2.6a4 4 0 1 0 5.66 5.66l1.1-1.1"/>
       </svg>
-      共有
+      <span data-i18n="tool.share">共有</span>
     </button>
   </nav>
 
   <footer class="site-foot">
     <p class="foot-credit">
-      <a href="./algorithm.html">メロディー生成アルゴリズムの解説</a>
+      <a id="link-algorithm" href="./algorithm.html" data-i18n="foot.algorithm">メロディー生成アルゴリズムの解説</a>
     </p>
-    <p class="foot-credit">Created by Jounlai Cho (cho@heuron.com)</p>
+    <p class="foot-credit" data-i18n="foot.created">Created by Jounlai Cho (cho@heuron.com)</p>
     <p class="foot-credit foot-links">
       <a href="https://x.com/jounlai" target="_blank" rel="noopener noreferrer">X @jounlai</a>
       <a href="https://github.com/jounlai/melody-generator" target="_blank" rel="noopener noreferrer">GitHub</a>
-      <a href="https://heuron.com" target="_blank" rel="noopener noreferrer">ヒューロン株式会社</a>
+      <a href="https://heuron.com" target="_blank" rel="noopener noreferrer" data-i18n="foot.company">ヒューロン株式会社</a>
     </p>
-    <p class="foot-built">Built with Anthropic Claude (Claude Code)</p>
+    <p class="foot-built" data-i18n="foot.built">Built with Anthropic Claude (Claude Code)</p>
   </footer>
 
 </div>
@@ -1847,21 +1854,25 @@
 <!-- 設定。変えた瞬間に、その設定で鳴り直す -->
 <dialog id="dlg-settings" class="sheet" aria-labelledby="dlg-settings-title">
   <div class="sheet-head">
-    <h2 id="dlg-settings-title">設定</h2>
-    <button class="sheet-close" type="button" data-close aria-label="閉じる">
+    <h2 id="dlg-settings-title" data-i18n="sheet.settings">設定</h2>
+    <button class="sheet-close" type="button" data-close data-i18n-attr="aria-label:sheet.close">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M6 6l12 12M18 6L6 18"/>
       </svg>
     </button>
   </div>
+  <div class="field field-choice lang-field">
+    <div class="field-head"><label class="field-label" for="lang-select" data-i18n="settings.language">言語</label></div>
+    <select id="lang-select" class="field-input"></select>
+  </div>
   <div id="settings-panel"></div>
-  <p class="sheet-note">変えた設定は、その場で鳴り直して反映されます。</p>
+  <p class="sheet-note" data-i18n="sheet.settingsNote">変えた設定は、その場で鳴り直して反映されます。</p>
 </dialog>
 
 <!-- 書き出し -->
 <dialog id="dlg-export" class="sheet" aria-labelledby="dlg-export-title">
   <div class="sheet-head">
-    <h2 id="dlg-export-title">保存</h2>
+    <h2 id="dlg-export-title" data-i18n="sheet.export">保存</h2>
     <button class="sheet-close" type="button" data-close aria-label="閉じる">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M6 6l12 12M18 6L6 18"/>
@@ -1872,7 +1883,7 @@
     <button id="export-musicxml" type="button" disabled>MusicXML</button>
     <button id="export-midi" type="button" disabled>MIDI</button>
   </div>
-  <p class="sheet-note">
+  <p class="sheet-note" data-i18n="sheet.exportNote">
     MusicXML は MuseScore などで五線譜として開けます。MIDI は DAW で編集できます。
   </p>
 </dialog>
@@ -1904,7 +1915,7 @@ __mods["instrument.js"] = function (exports, require) {
  * 楽節構造も和音も転調も1ミリも動かず、同じ曲コードは同じ曲のまま鳴る。
  *
  *   key      設定に保存される値。曲コードにも載る
- *   label    画面に出す名前
+ *   label    画面に出す名前の i18n キー（実体は i18n.js）
  *   layers   声部ごとの音色。実体は synth.js の TIMBRES / PADS
  *   midi     書き出す MIDI の音色番号（General MIDI）
  *
@@ -1916,49 +1927,49 @@ __mods["instrument.js"] = function (exports, require) {
 const INSTRUMENTS = [
   {
     key: 'piano',
-    label: 'ピアノ',
+    label: 'inst.piano',
     layers: { melody: 'piano', accomp: 'piano', bass: 'piano', pad: 'warm' },
     midi: { melody: 0, accomp: 0 },          // Acoustic Grand Piano
   },
   {
     key: 'epiano',
-    label: 'エレクトリックピアノ',
+    label: 'inst.epiano',
     layers: { melody: 'epiano', accomp: 'epiano', bass: 'epiano', pad: 'warm' },
     midi: { melody: 4, accomp: 4 },          // Electric Piano 1
   },
   {
     key: 'harp',
-    label: 'ハープ',
+    label: 'inst.harp',
     layers: { melody: 'harp', accomp: 'harp', bass: 'piano', pad: 'air' },
     midi: { melody: 46, accomp: 46 },        // Orchestral Harp
   },
   {
     key: 'guitar',
-    label: 'ガットギター',
+    label: 'inst.guitar',
     layers: { melody: 'guitar', accomp: 'guitar', bass: 'guitar', pad: 'warm' },
     midi: { melody: 24, accomp: 24 },        // Nylon String Guitar
   },
   {
     key: 'koto',
-    label: '箏（こと）',
+    label: 'inst.koto',
     layers: { melody: 'koto', accomp: 'koto', bass: 'piano', pad: 'air' },
     midi: { melody: 107, accomp: 107 },      // Koto
   },
   {
     key: 'flute',
-    label: '笛と箏',
+    label: 'inst.flute',
     layers: { melody: 'shakuhachi', accomp: 'koto', bass: 'piano', pad: 'air' },
     midi: { melody: 77, accomp: 107 },       // Shakuhachi / Koto
   },
   {
     key: 'strings',
-    label: '弦楽（擦弦とハープ）',
+    label: 'inst.strings',
     layers: { melody: 'strings', accomp: 'harp', bass: 'piano', pad: 'bowed' },
     midi: { melody: 110, accomp: 46 },       // Fiddle / Orchestral Harp
   },
   {
     key: 'santur',
-    label: 'ダルシマー（打弦）',
+    label: 'inst.santur',
     layers: { melody: 'santur', accomp: 'oud', bass: 'piano', pad: 'bowed' },
     midi: { melody: 15, accomp: 24 },        // Dulcimer / Nylon Guitar
   },
@@ -2005,10 +2016,12 @@ exports.DEFAULT_INSTRUMENT = DEFAULT_INSTRUMENT;
 __mods["settings.js"] = function (exports, require) {
 const { instrumentOptions, DEFAULT_INSTRUMENT } = require('instrument.js');
 
+// 表示文字列そのものではなく i18n のキーを持つ。
+// 画面に出すときに ui.js が t() を通す（言語を切り替えても定義は1つのまま）。
 const GROUP_LABELS = {
-  sound: '音',
-  compose: '曲',
-  humanize: '演奏',
+  sound: 'group.sound',
+  compose: 'group.compose',
+  humanize: 'group.humanize',
 };
 
 const KEY_OPTIONS = [
@@ -2040,42 +2053,42 @@ const PARAM_DEFS = [
   // ---- 画面に出す3つ ----
   // 既定は 85。曲そのものが静かなので、つまみまで控えめにすると
   // スマートフォンの内蔵スピーカーでは聴き取れなくなる。
-  { key: 'masterVolume', group: 'sound', label: '音量', type: 'range', min: 0, max: 100, step: 1, def: 85, unit: '%', apply: 'live', ui: true },
-  { key: 'mood', group: 'compose', label: '曲の雰囲気', type: 'choice', apply: 'next', ui: true, code: 'md', def: 'balanced',
-    hint: '長調と短調のどちらを多く引くか',
-    options: [['bright', '明るめ'], ['balanced', 'バランス'], ['wistful', '切なめ']] },
-  { key: 'tempoFeel', group: 'compose', label: 'テンポ', type: 'choice', apply: 'next', ui: true, code: 'tp', def: 'normal',
-    options: [['slow', 'ゆっくり'], ['normal', 'ふつう'], ['flowing', '少し速め']] },
+  { key: 'masterVolume', group: 'sound', label: 'param.masterVolume', type: 'range', min: 0, max: 100, step: 1, def: 85, unit: '%', apply: 'live', ui: true },
+  { key: 'mood', group: 'compose', label: 'param.mood', type: 'choice', apply: 'next', ui: true, code: 'md', def: 'balanced',
+    hint: 'hint.mood',
+    options: [['bright', 'opt.mood.bright'], ['balanced', 'opt.mood.balanced'], ['wistful', 'opt.mood.wistful']] },
+  { key: 'tempoFeel', group: 'compose', label: 'param.tempoFeel', type: 'choice', apply: 'next', ui: true, code: 'tp', def: 'normal',
+    options: [['slow', 'opt.tempo.slow'], ['normal', 'opt.tempo.normal'], ['flowing', 'opt.tempo.flowing']] },
   // 楽器。曲の中身は変えず、鳴らす音だけを変える（instrument.js が唯一の定義）。
-  { key: 'instrument', group: 'sound', label: '楽器', type: 'choice', apply: 'next', ui: true, code: 'it',
-    hint: '曲の作りはそのまま、鳴らす楽器だけが変わります',
+  { key: 'instrument', group: 'sound', label: 'param.instrument', type: 'choice', apply: 'next', ui: true, code: 'it',
+    hint: 'hint.instrument',
     def: DEFAULT_INSTRUMENT.key, options: instrumentOptions() },
 
   // ---- 以下は固定値。画面には出さない ----
 
   // 音のバランス。メロディーを最前面に、伴奏とパッドは下支えに徹させる
-  { key: 'melodyVolume', group: 'sound', label: 'メロディー音量', type: 'range', min: 0, max: 100, step: 1, def: 100, unit: '%', apply: 'live', ui: false },
-  { key: 'accompVolume', group: 'sound', label: '伴奏音量', type: 'range', min: 0, max: 100, step: 1, def: 80, unit: '%', apply: 'live', ui: false },
-  { key: 'padVolume', group: 'sound', label: 'パッド音量', type: 'range', min: 0, max: 100, step: 1, def: 62, unit: '%', apply: 'live', ui: false },
-  { key: 'reverbAmount', group: 'sound', label: 'リバーブ量', type: 'range', min: 0, max: 100, step: 1, def: 48, unit: '%', apply: 'live', ui: false },
-  { key: 'brightness', group: 'sound', label: '音色の明るさ', type: 'range', min: 0, max: 100, step: 1, def: 42, unit: '%', apply: 'live', ui: false },
+  { key: 'melodyVolume', group: 'sound', label: 'param.melodyVolume', type: 'range', min: 0, max: 100, step: 1, def: 100, unit: '%', apply: 'live', ui: false },
+  { key: 'accompVolume', group: 'sound', label: 'param.accompVolume', type: 'range', min: 0, max: 100, step: 1, def: 80, unit: '%', apply: 'live', ui: false },
+  { key: 'padVolume', group: 'sound', label: 'param.padVolume', type: 'range', min: 0, max: 100, step: 1, def: 62, unit: '%', apply: 'live', ui: false },
+  { key: 'reverbAmount', group: 'sound', label: 'param.reverbAmount', type: 'range', min: 0, max: 100, step: 1, def: 48, unit: '%', apply: 'live', ui: false },
+  { key: 'brightness', group: 'sound', label: 'param.brightness', type: 'range', min: 0, max: 100, step: 1, def: 42, unit: '%', apply: 'live', ui: false },
 
   // 人間らしさ。数値をいじる対象ではないので固定
-  { key: 'timingJitterMs', group: 'humanize', label: 'タイミングの揺らぎ', type: 'range', min: 0, max: 30, step: 1, def: 12, unit: 'ms', apply: 'next', ui: false },
-  { key: 'velocityJitter', group: 'humanize', label: 'ベロシティの揺らぎ', type: 'range', min: 0, max: 25, step: 1, def: 10, unit: '%', apply: 'next', ui: false },
-  { key: 'tenuto', group: 'humanize', label: '頂点音のテヌート', type: 'toggle', def: true, apply: 'next', ui: false },
-  { key: 'ritardando', group: 'humanize', label: '終盤のリタルダンド', type: 'toggle', def: true, apply: 'next', ui: false },
-  { key: 'gapSeconds', group: 'humanize', label: '曲間の余韻', type: 'range', min: 0, max: 10, step: 0.5, def: 3.5, unit: '秒', apply: 'live', ui: false },
+  { key: 'timingJitterMs', group: 'humanize', label: 'param.timingJitterMs', type: 'range', min: 0, max: 30, step: 1, def: 12, unit: 'ms', apply: 'next', ui: false },
+  { key: 'velocityJitter', group: 'humanize', label: 'param.velocityJitter', type: 'range', min: 0, max: 25, step: 1, def: 10, unit: '%', apply: 'next', ui: false },
+  { key: 'tenuto', group: 'humanize', label: 'param.tenuto', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'ritardando', group: 'humanize', label: 'param.ritardando', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'gapSeconds', group: 'humanize', label: 'param.gapSeconds', type: 'range', min: 0, max: 10, step: 0.5, def: 3.5, unit: '秒', apply: 'live', ui: false },
 
   // 作曲。mood / tempoFeel から導出されるか、変える意味が薄いので固定
-  { key: 'tempoMin', group: 'compose', label: 'テンポ下限', type: 'range', min: 52, max: 92, step: 1, def: 64, unit: 'BPM', apply: 'next', ui: false },
-  { key: 'tempoMax', group: 'compose', label: 'テンポ上限', type: 'range', min: 52, max: 92, step: 1, def: 74, unit: 'BPM', apply: 'next', ui: false },
-  { key: 'musicKey', group: 'compose', label: 'キー', type: 'choice', options: KEY_OPTIONS, def: 'random', apply: 'next', ui: false },
-  { key: 'majorRatio', group: 'compose', label: '長調の比率', type: 'range', min: 0, max: 100, step: 5, def: 55, unit: '%', apply: 'next', ui: false },
-  { key: 'songBars', group: 'compose', label: '曲の長さ', type: 'choice', options: [['16', '16小節'], ['32', '32小節'], ['64', '64小節']], def: '32', apply: 'next', ui: false },
-  { key: 'curveStrength', group: 'compose', label: '起伏カーブの強さ', type: 'range', min: 0, max: 100, step: 5, def: 100, unit: '%', apply: 'next', ui: false },
-  { key: 'maxLeap', group: 'compose', label: '接続の跳躍許容度', type: 'range', min: 2, max: 6, step: 1, def: 2, unit: '度', apply: 'next', ui: false },
-  { key: 'motifRecall', group: 'compose', label: 'モチーフ再登場', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'tempoMin', group: 'compose', label: 'param.tempoMin', type: 'range', min: 52, max: 92, step: 1, def: 64, unit: 'BPM', apply: 'next', ui: false },
+  { key: 'tempoMax', group: 'compose', label: 'param.tempoMax', type: 'range', min: 52, max: 92, step: 1, def: 74, unit: 'BPM', apply: 'next', ui: false },
+  { key: 'musicKey', group: 'compose', label: 'param.musicKey', type: 'choice', options: KEY_OPTIONS, def: 'random', apply: 'next', ui: false },
+  { key: 'majorRatio', group: 'compose', label: 'param.majorRatio', type: 'range', min: 0, max: 100, step: 5, def: 55, unit: '%', apply: 'next', ui: false },
+  { key: 'songBars', group: 'compose', label: 'param.songBars', type: 'choice', options: [['16', '16小節'], ['32', '32小節'], ['64', '64小節']], def: '32', apply: 'next', ui: false },
+  { key: 'curveStrength', group: 'compose', label: 'param.curveStrength', type: 'range', min: 0, max: 100, step: 5, def: 100, unit: '%', apply: 'next', ui: false },
+  { key: 'maxLeap', group: 'compose', label: 'param.maxLeap', type: 'range', min: 2, max: 6, step: 1, def: 2, unit: '度', apply: 'next', ui: false },
+  { key: 'motifRecall', group: 'compose', label: 'param.motifRecall', type: 'toggle', def: true, apply: 'next', ui: false },
 ];
 
 /** 画面に出すパラメータだけを返す。UI はこれだけを描く。 */
@@ -5901,6 +5914,415 @@ exports.randomSeed = randomSeed;
 exports.createPlayer = createPlayer;
 };
 
+// ===== src/i18n.js =====
+__mods["i18n.js"] = function (exports, require) {
+/**
+ * 表示文字列の多言語化。日本語・英語・中国語（簡体）。
+ *
+ * 文字列をここに集めてあるのは、翻訳のためだけではない。
+ * UI の言い回しが1か所に並んでいると、
+ * 「同じことを別の場所で違う言葉で言っている」がすぐ見つかる。
+ *
+ * ここに無いもの（音名・コードネーム・BPM）は翻訳しない。
+ * C や Am7 は世界共通の記号で、訳すとかえって読めなくなる。
+ */
+
+const LOCALES = [
+  ['ja', '日本語'],
+  ['en', 'English'],
+  ['zh', '中文'],
+];
+
+const STORAGE_KEY = 'melodyGenerator.locale';
+const DEFAULT_LOCALE = 'ja';
+
+const MESSAGES = {
+  ja: {
+    'app.title': '無限ヒーリングピアノ',
+    'app.description': '静かなピアノ曲を、途切れることなく生成し続けます。',
+    'app.tagline': '無限ヒーリングピアノ',
+
+    'transport.group': '再生操作',
+    'transport.prev': '前の曲へ戻る',
+    'transport.play': '再生する',
+    'transport.pause': '停止する',
+    'transport.next': '次の曲へ進む',
+
+    'nowplaying.idle': '再生ボタンで、一曲目が生まれます',
+    'song.bars': '{n}小節',
+    'meta.sep': ' ・ ',
+
+    'score.empty': '再生すると、ここに楽譜が出ます',
+    'score.region': '楽譜（横にスクロールできます）',
+    'score.failed': 'この曲の楽譜は表示できませんでした',
+    'score.show': '楽譜を出す',
+    'score.hide': '楽譜を隠す',
+
+    'tools.label': '道具',
+    'tool.score': '楽譜',
+    'tool.settings': '設定',
+    'tool.export': '保存',
+    'tool.share': '共有',
+
+    'sheet.close': '閉じる',
+    'sheet.settings': '設定',
+    'sheet.settingsNote': '変えた設定は、その場で鳴り直して反映されます。',
+    'sheet.export': '保存',
+    'sheet.exportNote':
+      'MusicXML は MuseScore などで五線譜として開けます。MIDI は DAW で編集できます。',
+
+    'settings.language': '言語',
+    'settings.reset': '既定値に戻す',
+
+    'group.sound': '音',
+    'group.compose': '曲',
+    'group.humanize': '演奏',
+
+    'param.masterVolume': '音量',
+    'param.instrument': '楽器',
+    'param.mood': '曲の雰囲気',
+    'param.tempoFeel': 'テンポ',
+    'hint.instrument': '曲の作りはそのまま、鳴らす楽器だけが変わります',
+    'hint.mood': '長調と短調のどちらを多く引くか',
+
+    'opt.mood.bright': '明るめ',
+    'opt.mood.balanced': 'バランス',
+    'opt.mood.wistful': '切なめ',
+    'opt.tempo.slow': 'ゆっくり',
+    'opt.tempo.normal': 'ふつう',
+    'opt.tempo.flowing': '少し速め',
+
+    'inst.piano': 'ピアノ',
+    'inst.epiano': 'エレクトリックピアノ',
+    'inst.harp': 'ハープ',
+    'inst.guitar': 'ガットギター',
+    'inst.koto': '箏（こと）',
+    'inst.flute': '笛と箏',
+    'inst.strings': '弦楽（擦弦とハープ）',
+    'inst.santur': 'ダルシマー（打弦）',
+
+    'status.copied': 'URL をコピーしました',
+    'status.copyFail': 'コピーできませんでした。アドレス欄の URL を控えてください',
+    'status.noSong': '再生すると、共有できる URL になります',
+    'status.noPrev': 'これより前に聴いた曲はまだありません',
+    'status.loading': 'データを読み込んでいます…',
+    'status.loadFail':
+      'データを読み込めませんでした（{message}）。ローカルサーバー経由で開いてください（npm start）。',
+    'status.audioFail': '音声を初期化できませんでした: {message}',
+    'status.playFail': '再生を開始できませんでした: {message}',
+    'status.noData': 'データを読み込めていないため再生できません',
+    'status.exportFail': '書き出せませんでした: {message}',
+
+    'foot.algorithm': 'メロディー生成アルゴリズムの解説',
+    'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
+    'foot.company': 'ヒューロン株式会社',
+    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+
+    'key.major': '長調',
+    'key.minor': '短調',
+  },
+
+  en: {
+    'app.title': 'Endless Healing Piano',
+    'app.description': 'Quiet piano music, composed continuously and never repeating.',
+    'app.tagline': 'Endless Healing Piano',
+
+    'transport.group': 'Playback controls',
+    'transport.prev': 'Previous piece',
+    'transport.play': 'Play',
+    'transport.pause': 'Pause',
+    'transport.next': 'Next piece',
+
+    'nowplaying.idle': 'Press play — the first piece is composed on the spot',
+    'song.bars': '{n} bars',
+    'meta.sep': ' · ',
+
+    'score.empty': 'The score appears here once playback starts',
+    'score.region': 'Score (scrolls horizontally)',
+    'score.failed': 'The score for this piece could not be drawn',
+    'score.show': 'Show score',
+    'score.hide': 'Hide score',
+
+    'tools.label': 'Tools',
+    'tool.score': 'Score',
+    'tool.settings': 'Settings',
+    'tool.export': 'Save',
+    'tool.share': 'Share',
+
+    'sheet.close': 'Close',
+    'sheet.settings': 'Settings',
+    'sheet.settingsNote': 'Changes apply at once — the piece restarts with the new setting.',
+    'sheet.export': 'Save',
+    'sheet.exportNote':
+      'MusicXML opens as staff notation in MuseScore and similar. MIDI can be edited in a DAW.',
+
+    'settings.language': 'Language',
+    'settings.reset': 'Reset to defaults',
+
+    'group.sound': 'Sound',
+    'group.compose': 'Music',
+    'group.humanize': 'Performance',
+
+    'param.masterVolume': 'Volume',
+    'param.instrument': 'Instrument',
+    'param.mood': 'Mood',
+    'param.tempoFeel': 'Tempo',
+    'hint.instrument': 'Only the sound changes; the music itself stays the same',
+    'hint.mood': 'How often major keys are drawn over minor',
+
+    'opt.mood.bright': 'Brighter',
+    'opt.mood.balanced': 'Balanced',
+    'opt.mood.wistful': 'Wistful',
+    'opt.tempo.slow': 'Slow',
+    'opt.tempo.normal': 'Moderate',
+    'opt.tempo.flowing': 'Flowing',
+
+    'inst.piano': 'Piano',
+    'inst.epiano': 'Electric piano',
+    'inst.harp': 'Harp',
+    'inst.guitar': 'Nylon-string guitar',
+    'inst.koto': 'Koto',
+    'inst.flute': 'Shakuhachi and koto',
+    'inst.strings': 'Strings and harp',
+    'inst.santur': 'Hammered dulcimer',
+
+    'status.copied': 'URL copied',
+    'status.copyFail': 'Could not copy. Please take the URL from the address bar.',
+    'status.noSong': 'Start playback to get a shareable URL',
+    'status.noPrev': 'Nothing played before this one yet',
+    'status.loading': 'Loading data…',
+    'status.loadFail':
+      'Could not load the data ({message}). Please open it through a local server (npm start).',
+    'status.audioFail': 'Could not start audio: {message}',
+    'status.playFail': 'Could not start playback: {message}',
+    'status.noData': 'Cannot play — the data has not loaded',
+    'status.exportFail': 'Could not export: {message}',
+
+    'foot.algorithm': 'How the melodies are generated',
+    'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
+    'foot.company': 'Heuron Inc.',
+    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+
+    'key.major': 'major',
+    'key.minor': 'minor',
+  },
+
+  zh: {
+    'app.title': '无限疗愈钢琴',
+    'app.description': '不间断地生成安静的钢琴曲。',
+    'app.tagline': '无限疗愈钢琴',
+
+    'transport.group': '播放控制',
+    'transport.prev': '上一首',
+    'transport.play': '播放',
+    'transport.pause': '暂停',
+    'transport.next': '下一首',
+
+    'nowplaying.idle': '按下播放键，第一首乐曲就此诞生',
+    'song.bars': '{n}小节',
+    'meta.sep': ' ・ ',
+
+    'score.empty': '播放后，乐谱会显示在这里',
+    'score.region': '乐谱（可横向滚动）',
+    'score.failed': '无法显示这首乐曲的乐谱',
+    'score.show': '显示乐谱',
+    'score.hide': '隐藏乐谱',
+
+    'tools.label': '工具',
+    'tool.score': '乐谱',
+    'tool.settings': '设置',
+    'tool.export': '保存',
+    'tool.share': '分享',
+
+    'sheet.close': '关闭',
+    'sheet.settings': '设置',
+    'sheet.settingsNote': '更改会立即生效，乐曲将以新设置重新播放。',
+    'sheet.export': '保存',
+    'sheet.exportNote':
+      'MusicXML 可用 MuseScore 等软件打开为五线谱，MIDI 可在 DAW 中编辑。',
+
+    'settings.language': '语言',
+    'settings.reset': '恢复默认',
+
+    'group.sound': '声音',
+    'group.compose': '乐曲',
+    'group.humanize': '演奏',
+
+    'param.masterVolume': '音量',
+    'param.instrument': '乐器',
+    'param.mood': '曲风',
+    'param.tempoFeel': '速度',
+    'hint.instrument': '乐曲本身不变，只改变演奏的乐器',
+    'hint.mood': '大调与小调的抽取比例',
+
+    'opt.mood.bright': '明亮',
+    'opt.mood.balanced': '均衡',
+    'opt.mood.wistful': '忧伤',
+    'opt.tempo.slow': '缓慢',
+    'opt.tempo.normal': '适中',
+    'opt.tempo.flowing': '稍快',
+
+    'inst.piano': '钢琴',
+    'inst.epiano': '电钢琴',
+    'inst.harp': '竖琴',
+    'inst.guitar': '尼龙弦吉他',
+    'inst.koto': '筝',
+    'inst.flute': '尺八与筝',
+    'inst.strings': '弦乐与竖琴',
+    'inst.santur': '扬琴',
+
+    'status.copied': '已复制链接',
+    'status.copyFail': '复制失败，请从地址栏复制链接。',
+    'status.noSong': '播放后即可获得可分享的链接',
+    'status.noPrev': '此前还没有播放过其他乐曲',
+    'status.loading': '正在加载数据…',
+    'status.loadFail': '无法加载数据（{message}）。请通过本地服务器打开（npm start）。',
+    'status.audioFail': '无法初始化音频：{message}',
+    'status.playFail': '无法开始播放：{message}',
+    'status.noData': '数据尚未加载，无法播放',
+    'status.exportFail': '导出失败：{message}',
+
+    'foot.algorithm': '旋律生成算法说明',
+    'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
+    'foot.company': 'Heuron 株式会社',
+    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+
+    'key.major': '大调',
+    'key.minor': '小调',
+  },
+};
+
+const KNOWN = new Set(LOCALES.map(([code]) => code));
+let current = DEFAULT_LOCALE;
+const listeners = new Set();
+
+/**
+ * 使う言語を決める。優先順は URL の ?lang → 保存された選択 → ブラウザの設定。
+ * 中国語は zh-Hans / zh-TW などいろいろな書き方で来るので、先頭2文字で見る。
+ */
+function detectLocale() {
+  try {
+    const url = new URL(globalThis.location?.href ?? 'http://x/');
+    const asked = url.searchParams.get('lang');
+    if (asked && KNOWN.has(asked)) return asked;
+  } catch (_) { /* location が無い環境 */ }
+  try {
+    const saved = globalThis.localStorage?.getItem(STORAGE_KEY);
+    if (saved && KNOWN.has(saved)) return saved;
+  } catch (_) { /* プライベートモード */ }
+  const langs = globalThis.navigator?.languages ?? [globalThis.navigator?.language ?? ''];
+  for (const raw of langs) {
+    const head = String(raw ?? '').slice(0, 2).toLowerCase();
+    if (KNOWN.has(head)) return head;
+  }
+  return DEFAULT_LOCALE;
+}
+
+function getLocale() {
+  return current;
+}
+
+/** 言語を切り替え、購読している側へ知らせる。保存できなくても切り替えは続ける。 */
+function setLocale(next) {
+  const value = KNOWN.has(next) ? next : DEFAULT_LOCALE;
+  if (value === current) return current;
+  current = value;
+  try {
+    globalThis.localStorage?.setItem(STORAGE_KEY, value);
+  } catch (_) { /* 保存できなくても表示は切り替わる */ }
+  try {
+    if (globalThis.document) globalThis.document.documentElement.lang = value;
+  } catch (_) { /* DOM が無い環境 */ }
+  for (const cb of listeners) {
+    try {
+      cb(value);
+    } catch (err) {
+      console.error('言語の切り替えに失敗しました', err);
+    }
+  }
+  return current;
+}
+
+function onLocaleChange(cb) {
+  if (typeof cb !== 'function') return () => {};
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
+/**
+ * 文字列を引く。`{name}` を vars で差し替える。
+ * 訳が無いキーは日本語へ、それも無ければキーそのものを返す
+ * （画面が空白になるより、キーが見えたほうが直せる）。
+ */
+function t(key, vars) {
+  const table = MESSAGES[current] ?? MESSAGES[DEFAULT_LOCALE];
+  const text = table[key] ?? MESSAGES[DEFAULT_LOCALE][key] ?? key;
+  if (!vars) return text;
+  return text.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
+}
+
+// 調名の綴り。日本語だけが音名を訳す（ハニホヘトイロ）。
+const JP_LETTER = { C: 'ハ', D: 'ニ', E: 'ホ', F: 'ヘ', G: 'ト', A: 'イ', B: 'ロ' };
+
+/**
+ * 調の名前。'Bb' + 'major' から、その言語での呼び方を作る。
+ *
+ *   ja  変ロ長調
+ *   en  B♭ major
+ *   zh  降B大调
+ */
+function keyLabel(tonicName, mode) {
+  const name = String(tonicName ?? 'C');
+  const letter = name[0];
+  const sign = name.length > 1 ? name[1] : '';
+  const quality = t(mode === 'minor' ? 'key.minor' : 'key.major');
+
+  if (current === 'ja') {
+    const prefix = sign === '#' ? '嬰' : sign === 'b' ? '変' : '';
+    return `${prefix}${JP_LETTER[letter] ?? letter}${quality}`;
+  }
+  if (current === 'zh') {
+    const prefix = sign === '#' ? '升' : sign === 'b' ? '降' : '';
+    return `${prefix}${letter}${quality}`;
+  }
+  const pretty = sign === '#' ? '♯' : sign === 'b' ? '♭' : '';
+  return `${letter}${pretty} ${quality}`;
+}
+
+/**
+ * data-i18n / data-i18n-attr が付いた要素へ訳を流し込む。
+ *
+ *   <span data-i18n="tool.score">楽譜</span>
+ *   <button data-i18n-attr="aria-label:transport.next">
+ *
+ * HTML 側に日本語を書いたまま属性を足せるので、印付けを1つずつ確かめられる。
+ */
+function applyI18n(root = globalThis.document) {
+  if (!root) return;
+  for (const el of root.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.dataset.i18n);
+  }
+  for (const el of root.querySelectorAll('[data-i18n-attr]')) {
+    for (const pair of el.dataset.i18nAttr.split(/\s*,\s*/)) {
+      const [attr, key] = pair.split(':');
+      if (attr && key) el.setAttribute(attr.trim(), t(key.trim()));
+    }
+  }
+  const title = root.querySelector?.('title[data-i18n-title]');
+  if (title) title.textContent = t(title.dataset.i18nTitle);
+}
+
+// --- exports ---
+exports.detectLocale = detectLocale;
+exports.getLocale = getLocale;
+exports.setLocale = setLocale;
+exports.onLocaleChange = onLocaleChange;
+exports.t = t;
+exports.keyLabel = keyLabel;
+exports.applyI18n = applyI18n;
+exports.LOCALES = LOCALES;
+};
+
 // ===== src/notation.js =====
 __mods["notation.js"] = function (exports, require) {
 /**
@@ -6301,6 +6723,9 @@ function splitAtBarlines(notes, beatsPerBar) {
 // SVG の小道具
 // ---------------------------------------------------------------------------
 
+// 調名だけは表示言語で書き分ける。他（音名・コードネーム）は記号なので訳さない。
+const { keyLabel: localeKeyLabel } = require('i18n.js');
+
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
 
 function esc(value) {
@@ -6594,8 +7019,10 @@ function renderScore(song, options = {}) {
   }
 
   const labelY = L.topPad - 52;
+  // keySignature が持つ label は日本語。楽譜に描くのは表示言語のほう。
+  const keyText = localeKeyLabel(key.tonicName, song?.mode === 'minor' ? 'minor' : 'major');
   out.push(`<text class="key-label" x="${num(L.leftPad)}" y="${num(labelY)}"`
-    + ` font-size="11" fill="currentColor" stroke="none">${esc(key.label)}</text>`);
+    + ` font-size="11" fill="currentColor" stroke="none">${esc(keyText)}</text>`);
 
   // ---- 小節線と小節番号 ----
   for (let i = 0; i < bars; i++) {
@@ -7659,6 +8086,7 @@ __mods["ui.js"] = function (exports, require) {
  * 触るファイルが settings.js だけで済むようにするため。
  */
 const { PARAM_DEFS, GROUP_LABELS, visibleParams, normalizeSettings, defaultSettings } = require('settings.js');
+const { t } = require('i18n.js');
 
 const STORAGE_KEY = 'melodyGenerator.settings';
 
@@ -7791,7 +8219,7 @@ function createSettingsPanel(rootEl, options = {}) {
     const id = `param-${def.key}`;
 
     const head = el('div', 'field-head');
-    const label = el('label', 'field-label', def.label);
+    const label = el('label', 'field-label', t(def.label));
     label.htmlFor = id;
     head.append(label);
 
@@ -7812,7 +8240,7 @@ function createSettingsPanel(rootEl, options = {}) {
       for (const [value, text] of def.options || []) {
         const option = doc.createElement('option');
         option.value = String(value);
-        option.textContent = String(text);
+        option.textContent = t(String(text));
         control.append(option);
       }
       control.addEventListener('change', () =>
@@ -7853,7 +8281,7 @@ function createSettingsPanel(rootEl, options = {}) {
 
     // 補足があれば操作の下に添える。何が起きるか分かってから触れるようにする。
     if (def.hint) {
-      const hint = el('p', 'field-hint', def.hint);
+      const hint = el('p', 'field-hint', t(def.hint));
       hint.id = `${id}-hint`;
       control.setAttribute('aria-describedby', hint.id);
       field.append(hint);
@@ -7863,6 +8291,7 @@ function createSettingsPanel(rootEl, options = {}) {
     return field;
   }
 
+  function build() {
   for (const group of groupOrder()) {
     const defs = visibleParams().filter((def) => def.group === group);
     if (defs.length === 0) continue;
@@ -7871,7 +8300,7 @@ function createSettingsPanel(rootEl, options = {}) {
     // 出す項目を絞ってあるので、畳む意味がない。常に開いておく。
     details.open = true;
     details.append(
-      el('summary', 'settings-group-title', GROUP_LABELS[group] || group),
+      el('summary', 'settings-group-title', t(GROUP_LABELS[group] || group)),
     );
 
     const fields = el('div', 'settings-fields');
@@ -7882,7 +8311,7 @@ function createSettingsPanel(rootEl, options = {}) {
 
   // ---- 既定値に戻す ---------------------------------------------------
   const footer = el('div', 'settings-footer');
-  const resetButton = el('button', 'settings-reset', '既定値に戻す');
+  const resetButton = el('button', 'settings-reset', t('settings.reset'));
   resetButton.type = 'button';
   resetButton.addEventListener('click', () => applyPatch(defaultSettings()));
   footer.append(resetButton);
@@ -7890,8 +8319,17 @@ function createSettingsPanel(rootEl, options = {}) {
 
   // 初期表示
   for (const key of syncers.keys()) syncOne(key, settings[key]);
+  }
+
+  build();
 
   return {
+    /** 言語が変わったときに、ラベルごと作り直す */
+    rebuild() {
+      syncers.clear();
+      rootEl.textContent = '';
+      build();
+    },
     /** 外部から値を流し込む。onChange は発火しない */
     setSettings(nextSettings) {
       settings = normalizeSettings(nextSettings);
@@ -8112,6 +8550,7 @@ const { resolveInstrument } = require('instrument.js');
 const { toMusicXML, toMidi, suggestFilename } = require('export.js');
 const { loadStoredSettings, storeSettings, createSettingsPanel } = require('ui.js');
 const { createAudioSession, bindMediaKeys, setNowPlaying, setPlaybackState } = require('session.js');
+const { LOCALES, t, getLocale, setLocale, detectLocale, applyI18n, keyLabel: localeKeyLabel } = require('i18n.js');
 
 const NOTE_NAMES = [
   'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
@@ -8150,7 +8589,8 @@ function pickComposeParams(source) {
 /** 楽譜と同じ調名。notation.js が出せなくても表示は続けたいので握りつぶす */
 function keyLabel(song) {
   try {
-    const label = String(keySignature(song?.tonicMidi, song?.mode)?.label ?? '').trim();
+    const key = keySignature(song?.tonicMidi, song?.mode);
+    const label = String(localeKeyLabel(key.tonicName, song?.mode) ?? '').trim();
     return label || null;
   } catch (err) {
     console.warn('調名を出せませんでした', err);
@@ -8162,13 +8602,19 @@ function keyLabel(song) {
 function describeSong(song) {
   const tonic = Math.round(Number(song?.tonicMidi));
   const name = Number.isFinite(tonic) ? NOTE_NAMES[((tonic % 12) + 12) % 12] : '?';
-  const mode = song?.mode === 'minor' ? '短調' : '長調';
   const tempo = Math.round(Number(song?.tempo)) || 0;
   const bars = Number(song?.bars) || 0;
-  // 調名は楽譜の調号と同じ呼び方（ハ長調）で出す。括弧の中は和音を追う人向けの音名。
+  // 調名は楽譜の調号と同じ呼び方で出す。日本語だけは音名を訳す（ニ長調）ので、
+  // 和音を追う人のために括弧で元の音名を添える。英語と中国語の調名には
+  // 音名がそのまま入っている（D minor / 降B大调）ので、添えると重複する。
   const label = keyLabel(song);
-  const key = label ? `${label}（${name}）` : `${name} ${mode}`;
-  return [resolveInstrument(song?.instrument).label, key, `${tempo} BPM`, `${bars}小節`].join(' ・ ');
+  const key = label && getLocale() === 'ja' ? `${label}（${name}）` : (label || name);
+  return [
+    t(resolveInstrument(song?.instrument).label),
+    key,
+    `${tempo} BPM`,
+    t('song.bars', { n: bars }),
+  ].join(t('meta.sep'));
 }
 
 // 単一ファイル版: fetch は file:// では使えないので、
@@ -8317,6 +8763,11 @@ function init() {
     toolExport: byId('tool-export'),
   };
 
+  // 言語は他のどの表示より先に決める（設定パネルのラベルがこれを読む）。
+  setLocale(detectLocale());
+  document.documentElement.lang = getLocale();
+  applyI18n(document);
+
   // ---- 状態 -----------------------------------------------------------
   let settings = normalizeSettings(loadStoredSettings());
   /** 次の再生で使うシード（URL ハッシュや曲コード由来）。使ったら捨てる */
@@ -8356,7 +8807,7 @@ function init() {
     if (!els.playToggle) return;
     els.playToggle.dataset.state = isPlaying ? 'playing' : 'stopped';
     els.playToggle.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
-    els.playToggle.setAttribute('aria-label', isPlaying ? '停止する' : '再生する');
+    els.playToggle.setAttribute('aria-label', t(isPlaying ? 'transport.pause' : 'transport.play'));
     if (els.playLabel) els.playLabel.textContent = isPlaying ? '停止' : '再生';
     // 再生中だけ、背景の光と波紋を動かす（CSS 側が data-playing を見ている）。
     document.body.dataset.playing = isPlaying ? 'true' : 'false';
@@ -8405,14 +8856,14 @@ function init() {
 
   function startPlayback(seed) {
     if (!data) {
-      setStatus('データを読み込めていないため再生できません');
+      setStatus(t('status.noData'));
       return;
     }
     let p;
     try {
       p = ensureAudio();
     } catch (err) {
-      setStatus(`音声を初期化できませんでした: ${err.message}`);
+      setStatus(t('status.audioFail', { message: err.message }));
       return;
     }
     // !!! 必ずクリックの中から呼ぶこと !!!
@@ -8423,7 +8874,7 @@ function init() {
     Promise.resolve(p.start(seed ?? undefined)).catch((err) => {
       console.error(err);
       setPlayLabel(false);
-      setStatus(`再生を開始できませんでした: ${err.message}`);
+      setStatus(t('status.playFail', { message: err.message }));
     });
   }
 
@@ -8495,7 +8946,7 @@ function init() {
     } catch (err) {
       // 楽譜が描けないだけで音は鳴らせる。再生は止めない。
       console.error('楽譜を描けませんでした', err);
-      showScorePlaceholder('この曲の楽譜は表示できませんでした');
+      showScorePlaceholder(t('score.failed'));
       return;
     }
 
@@ -8631,7 +9082,7 @@ function init() {
     // textContent を入れるとアイコンごと消える。
     if (els.scoreToggle) {
       els.scoreToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
-      els.scoreToggle.setAttribute('aria-label', visible ? '楽譜を隠す' : '楽譜を出す');
+      els.scoreToggle.setAttribute('aria-label', t(visible ? 'score.hide' : 'score.show'));
     }
     // 隠すあいだに付けっぱなしにしない。出したら次のフレームで付け直す。
     if (!visible) idleScore();
@@ -8786,7 +9237,52 @@ function init() {
   if (els.prev) {
     els.prev.addEventListener('click', () => {
       // 戻れるのは、この画面で実際に聴いた曲だけ。押せない状態は disabled で示す。
-      if (!player?.prev()) setStatus('これより前に聴いた曲はまだありません', 2000);
+      if (!player?.prev()) setStatus(t('status.noPrev'), 2000);
+    });
+  }
+
+  // ---- 言語 ------------------------------------------------------------
+  //
+  // 言語は曲の設定ではないので PARAM_DEFS には入れず、ここで面倒を見る。
+  // 切り替えたら、静的な文字列・設定パネル・いま鳴っている曲の説明・楽譜の
+  // 調名まで作り直す。楽譜は SVG の中に調名を焼き込んでいるので描き直しが要る。
+  function applyLocale() {
+    applyI18n(document);
+    setPlayLabel(Boolean(player?.isPlaying()));
+    setScoreVisible(score.visible);
+    panel?.rebuild?.();
+    const song = player?.getCurrentSong?.();
+    if (song) {
+      if (els.nowPlaying) els.nowPlaying.textContent = describeSong(song);
+      buildScore(song);
+    } else if (els.nowPlaying) {
+      els.nowPlaying.textContent = t('nowplaying.idle');
+    }
+    syncAlgorithmLink();
+  }
+
+  /** 解説ページは言語ごとに別ファイル。日本語だけ拡張子なしの本体を指す。 */
+  function syncAlgorithmLink() {
+    const link = byId('link-algorithm');
+    if (!link) return;
+    const loc = getLocale();
+    link.href = loc === 'ja' ? './algorithm.html' : `./algorithm.${loc}.html`;
+  }
+
+  syncAlgorithmLink();
+
+  const langSelect = byId('lang-select');
+  if (langSelect) {
+    for (const [code, name] of LOCALES) {
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = name;
+      langSelect.append(option);
+    }
+    langSelect.value = getLocale();
+    langSelect.addEventListener('change', () => {
+      setLocale(langSelect.value);
+      applyLocale();
     });
   }
 
@@ -8833,7 +9329,7 @@ function init() {
       // アドレス欄には、いま鳴っている曲がすでに映っている。それを渡す。
       const song = player?.getCurrentSong?.();
       if (!song) {
-        setStatus('再生すると、共有できる URL になります', 2500);
+        setStatus(t('status.noSong'), 2500);
         return;
       }
       const loc = globalThis.location;
@@ -8843,7 +9339,7 @@ function init() {
       if (clipboard?.writeText) {
         try {
           await clipboard.writeText(url);
-          setStatus('URL をコピーしました', 2000);
+          setStatus(t('status.copied'), 2000);
           return;
         } catch (err) {
           console.warn('クリップボードへの書き込みに失敗しました', err);
@@ -8861,12 +9357,12 @@ function init() {
           return;
         }
       }
-      setStatus('コピーできませんでした。アドレス欄の URL を控えてください', 4000);
+      setStatus(t('status.copyFail'), 4000);
     });
   }
 
   // ---- データ読み込み --------------------------------------------------
-  setStatus('データを読み込んでいます…');
+  setStatus(t('status.loading'));
   Promise.all([fetchJson(MELODIES_URL), fetchJson(PROGRESSIONS_URL)])
     .then(([melodies, progressions]) => {
       if (!Array.isArray(melodies) || melodies.length === 0) {
@@ -8885,10 +9381,7 @@ function init() {
       // 黙って壊れないこと。原因（file:// 直開きが多い）まで出す。
       for (const button of gatedButtons) button.disabled = true;
       setPlayLabel(false);
-      setStatus(
-        `データを読み込めませんでした（${err.message}）。` +
-          'ローカルサーバー経由で開いてください（npm start）。',
-      );
+      setStatus(t('status.loadFail', { message: err.message }));
     });
 }
 

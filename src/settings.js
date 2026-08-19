@@ -1,9 +1,11 @@
 import { instrumentOptions, DEFAULT_INSTRUMENT } from './instrument.js';
 
+// 表示文字列そのものではなく i18n のキーを持つ。
+// 画面に出すときに ui.js が t() を通す（言語を切り替えても定義は1つのまま）。
 export const GROUP_LABELS = {
-  sound: '音',
-  compose: '曲',
-  humanize: '演奏',
+  sound: 'group.sound',
+  compose: 'group.compose',
+  humanize: 'group.humanize',
 };
 
 const KEY_OPTIONS = [
@@ -35,42 +37,42 @@ export const PARAM_DEFS = [
   // ---- 画面に出す3つ ----
   // 既定は 85。曲そのものが静かなので、つまみまで控えめにすると
   // スマートフォンの内蔵スピーカーでは聴き取れなくなる。
-  { key: 'masterVolume', group: 'sound', label: '音量', type: 'range', min: 0, max: 100, step: 1, def: 85, unit: '%', apply: 'live', ui: true },
-  { key: 'mood', group: 'compose', label: '曲の雰囲気', type: 'choice', apply: 'next', ui: true, code: 'md', def: 'balanced',
-    hint: '長調と短調のどちらを多く引くか',
-    options: [['bright', '明るめ'], ['balanced', 'バランス'], ['wistful', '切なめ']] },
-  { key: 'tempoFeel', group: 'compose', label: 'テンポ', type: 'choice', apply: 'next', ui: true, code: 'tp', def: 'normal',
-    options: [['slow', 'ゆっくり'], ['normal', 'ふつう'], ['flowing', '少し速め']] },
+  { key: 'masterVolume', group: 'sound', label: 'param.masterVolume', type: 'range', min: 0, max: 100, step: 1, def: 85, unit: '%', apply: 'live', ui: true },
+  { key: 'mood', group: 'compose', label: 'param.mood', type: 'choice', apply: 'next', ui: true, code: 'md', def: 'balanced',
+    hint: 'hint.mood',
+    options: [['bright', 'opt.mood.bright'], ['balanced', 'opt.mood.balanced'], ['wistful', 'opt.mood.wistful']] },
+  { key: 'tempoFeel', group: 'compose', label: 'param.tempoFeel', type: 'choice', apply: 'next', ui: true, code: 'tp', def: 'normal',
+    options: [['slow', 'opt.tempo.slow'], ['normal', 'opt.tempo.normal'], ['flowing', 'opt.tempo.flowing']] },
   // 楽器。曲の中身は変えず、鳴らす音だけを変える（instrument.js が唯一の定義）。
-  { key: 'instrument', group: 'sound', label: '楽器', type: 'choice', apply: 'next', ui: true, code: 'it',
-    hint: '曲の作りはそのまま、鳴らす楽器だけが変わります',
+  { key: 'instrument', group: 'sound', label: 'param.instrument', type: 'choice', apply: 'next', ui: true, code: 'it',
+    hint: 'hint.instrument',
     def: DEFAULT_INSTRUMENT.key, options: instrumentOptions() },
 
   // ---- 以下は固定値。画面には出さない ----
 
   // 音のバランス。メロディーを最前面に、伴奏とパッドは下支えに徹させる
-  { key: 'melodyVolume', group: 'sound', label: 'メロディー音量', type: 'range', min: 0, max: 100, step: 1, def: 100, unit: '%', apply: 'live', ui: false },
-  { key: 'accompVolume', group: 'sound', label: '伴奏音量', type: 'range', min: 0, max: 100, step: 1, def: 80, unit: '%', apply: 'live', ui: false },
-  { key: 'padVolume', group: 'sound', label: 'パッド音量', type: 'range', min: 0, max: 100, step: 1, def: 62, unit: '%', apply: 'live', ui: false },
-  { key: 'reverbAmount', group: 'sound', label: 'リバーブ量', type: 'range', min: 0, max: 100, step: 1, def: 48, unit: '%', apply: 'live', ui: false },
-  { key: 'brightness', group: 'sound', label: '音色の明るさ', type: 'range', min: 0, max: 100, step: 1, def: 42, unit: '%', apply: 'live', ui: false },
+  { key: 'melodyVolume', group: 'sound', label: 'param.melodyVolume', type: 'range', min: 0, max: 100, step: 1, def: 100, unit: '%', apply: 'live', ui: false },
+  { key: 'accompVolume', group: 'sound', label: 'param.accompVolume', type: 'range', min: 0, max: 100, step: 1, def: 80, unit: '%', apply: 'live', ui: false },
+  { key: 'padVolume', group: 'sound', label: 'param.padVolume', type: 'range', min: 0, max: 100, step: 1, def: 62, unit: '%', apply: 'live', ui: false },
+  { key: 'reverbAmount', group: 'sound', label: 'param.reverbAmount', type: 'range', min: 0, max: 100, step: 1, def: 48, unit: '%', apply: 'live', ui: false },
+  { key: 'brightness', group: 'sound', label: 'param.brightness', type: 'range', min: 0, max: 100, step: 1, def: 42, unit: '%', apply: 'live', ui: false },
 
   // 人間らしさ。数値をいじる対象ではないので固定
-  { key: 'timingJitterMs', group: 'humanize', label: 'タイミングの揺らぎ', type: 'range', min: 0, max: 30, step: 1, def: 12, unit: 'ms', apply: 'next', ui: false },
-  { key: 'velocityJitter', group: 'humanize', label: 'ベロシティの揺らぎ', type: 'range', min: 0, max: 25, step: 1, def: 10, unit: '%', apply: 'next', ui: false },
-  { key: 'tenuto', group: 'humanize', label: '頂点音のテヌート', type: 'toggle', def: true, apply: 'next', ui: false },
-  { key: 'ritardando', group: 'humanize', label: '終盤のリタルダンド', type: 'toggle', def: true, apply: 'next', ui: false },
-  { key: 'gapSeconds', group: 'humanize', label: '曲間の余韻', type: 'range', min: 0, max: 10, step: 0.5, def: 3.5, unit: '秒', apply: 'live', ui: false },
+  { key: 'timingJitterMs', group: 'humanize', label: 'param.timingJitterMs', type: 'range', min: 0, max: 30, step: 1, def: 12, unit: 'ms', apply: 'next', ui: false },
+  { key: 'velocityJitter', group: 'humanize', label: 'param.velocityJitter', type: 'range', min: 0, max: 25, step: 1, def: 10, unit: '%', apply: 'next', ui: false },
+  { key: 'tenuto', group: 'humanize', label: 'param.tenuto', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'ritardando', group: 'humanize', label: 'param.ritardando', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'gapSeconds', group: 'humanize', label: 'param.gapSeconds', type: 'range', min: 0, max: 10, step: 0.5, def: 3.5, unit: '秒', apply: 'live', ui: false },
 
   // 作曲。mood / tempoFeel から導出されるか、変える意味が薄いので固定
-  { key: 'tempoMin', group: 'compose', label: 'テンポ下限', type: 'range', min: 52, max: 92, step: 1, def: 64, unit: 'BPM', apply: 'next', ui: false },
-  { key: 'tempoMax', group: 'compose', label: 'テンポ上限', type: 'range', min: 52, max: 92, step: 1, def: 74, unit: 'BPM', apply: 'next', ui: false },
-  { key: 'musicKey', group: 'compose', label: 'キー', type: 'choice', options: KEY_OPTIONS, def: 'random', apply: 'next', ui: false },
-  { key: 'majorRatio', group: 'compose', label: '長調の比率', type: 'range', min: 0, max: 100, step: 5, def: 55, unit: '%', apply: 'next', ui: false },
-  { key: 'songBars', group: 'compose', label: '曲の長さ', type: 'choice', options: [['16', '16小節'], ['32', '32小節'], ['64', '64小節']], def: '32', apply: 'next', ui: false },
-  { key: 'curveStrength', group: 'compose', label: '起伏カーブの強さ', type: 'range', min: 0, max: 100, step: 5, def: 100, unit: '%', apply: 'next', ui: false },
-  { key: 'maxLeap', group: 'compose', label: '接続の跳躍許容度', type: 'range', min: 2, max: 6, step: 1, def: 2, unit: '度', apply: 'next', ui: false },
-  { key: 'motifRecall', group: 'compose', label: 'モチーフ再登場', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'tempoMin', group: 'compose', label: 'param.tempoMin', type: 'range', min: 52, max: 92, step: 1, def: 64, unit: 'BPM', apply: 'next', ui: false },
+  { key: 'tempoMax', group: 'compose', label: 'param.tempoMax', type: 'range', min: 52, max: 92, step: 1, def: 74, unit: 'BPM', apply: 'next', ui: false },
+  { key: 'musicKey', group: 'compose', label: 'param.musicKey', type: 'choice', options: KEY_OPTIONS, def: 'random', apply: 'next', ui: false },
+  { key: 'majorRatio', group: 'compose', label: 'param.majorRatio', type: 'range', min: 0, max: 100, step: 5, def: 55, unit: '%', apply: 'next', ui: false },
+  { key: 'songBars', group: 'compose', label: 'param.songBars', type: 'choice', options: [['16', '16小節'], ['32', '32小節'], ['64', '64小節']], def: '32', apply: 'next', ui: false },
+  { key: 'curveStrength', group: 'compose', label: 'param.curveStrength', type: 'range', min: 0, max: 100, step: 5, def: 100, unit: '%', apply: 'next', ui: false },
+  { key: 'maxLeap', group: 'compose', label: 'param.maxLeap', type: 'range', min: 2, max: 6, step: 1, def: 2, unit: '度', apply: 'next', ui: false },
+  { key: 'motifRecall', group: 'compose', label: 'param.motifRecall', type: 'toggle', def: true, apply: 'next', ui: false },
 ];
 
 /** 画面に出すパラメータだけを返す。UI はこれだけを描く。 */

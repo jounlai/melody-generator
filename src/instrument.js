@@ -6,7 +6,7 @@
  * 楽節構造も和音も転調も1ミリも動かず、同じ曲コードは同じ曲のまま鳴る。
  *
  *   key      設定に保存される値。曲コードにも載る
- *   label    画面に出す名前
+ *   label    画面に出す名前の i18n キー（実体は i18n.js）
  *   layers   声部ごとの音色。実体は synth.js の TIMBRES / PADS
  *   midi     書き出す MIDI の音色番号（General MIDI）
  *
@@ -18,49 +18,49 @@
 export const INSTRUMENTS = [
   {
     key: 'piano',
-    label: 'ピアノ',
+    label: 'inst.piano',
     layers: { melody: 'piano', accomp: 'piano', bass: 'piano', pad: 'warm' },
     midi: { melody: 0, accomp: 0 },          // Acoustic Grand Piano
   },
   {
     key: 'epiano',
-    label: 'エレクトリックピアノ',
+    label: 'inst.epiano',
     layers: { melody: 'epiano', accomp: 'epiano', bass: 'epiano', pad: 'warm' },
     midi: { melody: 4, accomp: 4 },          // Electric Piano 1
   },
   {
     key: 'harp',
-    label: 'ハープ',
+    label: 'inst.harp',
     layers: { melody: 'harp', accomp: 'harp', bass: 'piano', pad: 'air' },
     midi: { melody: 46, accomp: 46 },        // Orchestral Harp
   },
   {
     key: 'guitar',
-    label: 'ガットギター',
+    label: 'inst.guitar',
     layers: { melody: 'guitar', accomp: 'guitar', bass: 'guitar', pad: 'warm' },
     midi: { melody: 24, accomp: 24 },        // Nylon String Guitar
   },
   {
     key: 'koto',
-    label: '箏（こと）',
+    label: 'inst.koto',
     layers: { melody: 'koto', accomp: 'koto', bass: 'piano', pad: 'air' },
     midi: { melody: 107, accomp: 107 },      // Koto
   },
   {
     key: 'flute',
-    label: '笛と箏',
+    label: 'inst.flute',
     layers: { melody: 'shakuhachi', accomp: 'koto', bass: 'piano', pad: 'air' },
     midi: { melody: 77, accomp: 107 },       // Shakuhachi / Koto
   },
   {
     key: 'strings',
-    label: '弦楽（擦弦とハープ）',
+    label: 'inst.strings',
     layers: { melody: 'strings', accomp: 'harp', bass: 'piano', pad: 'bowed' },
     midi: { melody: 110, accomp: 46 },       // Fiddle / Orchestral Harp
   },
   {
     key: 'santur',
-    label: 'ダルシマー（打弦）',
+    label: 'inst.santur',
     layers: { melody: 'santur', accomp: 'oud', bass: 'piano', pad: 'bowed' },
     midi: { melody: 15, accomp: 24 },        // Dulcimer / Nylon Guitar
   },

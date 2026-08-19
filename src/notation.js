@@ -396,6 +396,9 @@ export function splitAtBarlines(notes, beatsPerBar) {
 // SVG の小道具
 // ---------------------------------------------------------------------------
 
+// 調名だけは表示言語で書き分ける。他（音名・コードネーム）は記号なので訳さない。
+import { keyLabel as localeKeyLabel } from './i18n.js';
+
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
 
 function esc(value) {
@@ -689,8 +692,10 @@ export function renderScore(song, options = {}) {
   }
 
   const labelY = L.topPad - 52;
+  // keySignature が持つ label は日本語。楽譜に描くのは表示言語のほう。
+  const keyText = localeKeyLabel(key.tonicName, song?.mode === 'minor' ? 'minor' : 'major');
   out.push(`<text class="key-label" x="${num(L.leftPad)}" y="${num(labelY)}"`
-    + ` font-size="11" fill="currentColor" stroke="none">${esc(key.label)}</text>`);
+    + ` font-size="11" fill="currentColor" stroke="none">${esc(keyText)}</text>`);
 
   // ---- 小節線と小節番号 ----
   for (let i = 0; i < bars; i++) {

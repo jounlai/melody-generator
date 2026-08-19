@@ -21,6 +21,9 @@ import { loadStoredSettings, storeSettings, createSettingsPanel } from './ui.js'
 import {
   createAudioSession, bindMediaKeys, setNowPlaying, setPlaybackState,
 } from './session.js';
+import {
+  LOCALES, t, getLocale, setLocale, detectLocale, applyI18n, keyLabel as localeKeyLabel,
+} from './i18n.js';
 
 const NOTE_NAMES = [
   'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B',
@@ -59,7 +62,8 @@ function pickComposeParams(source) {
 /** 楽譜と同じ調名。notation.js が出せなくても表示は続けたいので握りつぶす */
 function keyLabel(song) {
   try {
-    const label = String(keySignature(song?.tonicMidi, song?.mode)?.label ?? '').trim();
+    const key = keySignature(song?.tonicMidi, song?.mode);
+    const label = String(localeKeyLabel(key.tonicName, song?.mode) ?? '').trim();
     return label || null;
   } catch (err) {
     console.warn('調名を出せませんでした', err);
@@ -71,13 +75,19 @@ function keyLabel(song) {
 function describeSong(song) {
   const tonic = Math.round(Number(song?.tonicMidi));
   const name = Number.isFinite(tonic) ? NOTE_NAMES[((tonic % 12) + 12) % 12] : '?';
-  const mode = song?.mode === 'minor' ? '短調' : '長調';
   const tempo = Math.round(Number(song?.tempo)) || 0;
   const bars = Number(song?.bars) || 0;
-  // 調名は楽譜の調号と同じ呼び方（ハ長調）で出す。括弧の中は和音を追う人向けの音名。
+  // 調名は楽譜の調号と同じ呼び方で出す。日本語だけは音名を訳す（ニ長調）ので、
+  // 和音を追う人のために括弧で元の音名を添える。英語と中国語の調名には
+  // 音名がそのまま入っている（D minor / 降B大调）ので、添えると重複する。
   const label = keyLabel(song);
-  const key = label ? `${label}（${name}）` : `${name} ${mode}`;
-  return [resolveInstrument(song?.instrument).label, key, `${tempo} BPM`, `${bars}小節`].join(' ・ ');
+  const key = label && getLocale() === 'ja' ? `${label}（${name}）` : (label || name);
+  return [
+    t(resolveInstrument(song?.instrument).label),
+    key,
+    `${tempo} BPM`,
+    t('song.bars', { n: bars }),
+  ].join(t('meta.sep'));
 }
 
 async function fetchJson(url) {
@@ -223,6 +233,11 @@ function init() {
     toolExport: byId('tool-export'),
   };
 
+  // 言語は他のどの表示より先に決める（設定パネルのラベルがこれを読む）。
+  setLocale(detectLocale());
+  document.documentElement.lang = getLocale();
+  applyI18n(document);
+
   // ---- 状態 -----------------------------------------------------------
   let settings = normalizeSettings(loadStoredSettings());
   /** 次の再生で使うシード（URL ハッシュや曲コード由来）。使ったら捨てる */
@@ -262,7 +277,7 @@ function init() {
     if (!els.playToggle) return;
     els.playToggle.dataset.state = isPlaying ? 'playing' : 'stopped';
     els.playToggle.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
-    els.playToggle.setAttribute('aria-label', isPlaying ? '停止する' : '再生する');
+    els.playToggle.setAttribute('aria-label', t(isPlaying ? 'transport.pause' : 'transport.play'));
     if (els.playLabel) els.playLabel.textContent = isPlaying ? '停止' : '再生';
     // 再生中だけ、背景の光と波紋を動かす（CSS 側が data-playing を見ている）。
     document.body.dataset.playing = isPlaying ? 'true' : 'false';
@@ -311,14 +326,14 @@ function init() {
 
   function startPlayback(seed) {
     if (!data) {
-      setStatus('データを読み込めていないため再生できません');
+      setStatus(t('status.noData'));
       return;
     }
     let p;
     try {
       p = ensureAudio();
     } catch (err) {
-      setStatus(`音声を初期化できませんでした: ${err.message}`);
+      setStatus(t('status.audioFail', { message: err.message }));
       return;
     }
     // !!! 必ずクリックの中から呼ぶこと !!!
@@ -329,7 +344,7 @@ function init() {
     Promise.resolve(p.start(seed ?? undefined)).catch((err) => {
       console.error(err);
       setPlayLabel(false);
-      setStatus(`再生を開始できませんでした: ${err.message}`);
+      setStatus(t('status.playFail', { message: err.message }));
     });
   }
 
@@ -401,7 +416,7 @@ function init() {
     } catch (err) {
       // 楽譜が描けないだけで音は鳴らせる。再生は止めない。
       console.error('楽譜を描けませんでした', err);
-      showScorePlaceholder('この曲の楽譜は表示できませんでした');
+      showScorePlaceholder(t('score.failed'));
       return;
     }
 
@@ -537,7 +552,7 @@ function init() {
     // textContent を入れるとアイコンごと消える。
     if (els.scoreToggle) {
       els.scoreToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
-      els.scoreToggle.setAttribute('aria-label', visible ? '楽譜を隠す' : '楽譜を出す');
+      els.scoreToggle.setAttribute('aria-label', t(visible ? 'score.hide' : 'score.show'));
     }
     // 隠すあいだに付けっぱなしにしない。出したら次のフレームで付け直す。
     if (!visible) idleScore();
@@ -692,7 +707,52 @@ function init() {
   if (els.prev) {
     els.prev.addEventListener('click', () => {
       // 戻れるのは、この画面で実際に聴いた曲だけ。押せない状態は disabled で示す。
-      if (!player?.prev()) setStatus('これより前に聴いた曲はまだありません', 2000);
+      if (!player?.prev()) setStatus(t('status.noPrev'), 2000);
+    });
+  }
+
+  // ---- 言語 ------------------------------------------------------------
+  //
+  // 言語は曲の設定ではないので PARAM_DEFS には入れず、ここで面倒を見る。
+  // 切り替えたら、静的な文字列・設定パネル・いま鳴っている曲の説明・楽譜の
+  // 調名まで作り直す。楽譜は SVG の中に調名を焼き込んでいるので描き直しが要る。
+  function applyLocale() {
+    applyI18n(document);
+    setPlayLabel(Boolean(player?.isPlaying()));
+    setScoreVisible(score.visible);
+    panel?.rebuild?.();
+    const song = player?.getCurrentSong?.();
+    if (song) {
+      if (els.nowPlaying) els.nowPlaying.textContent = describeSong(song);
+      buildScore(song);
+    } else if (els.nowPlaying) {
+      els.nowPlaying.textContent = t('nowplaying.idle');
+    }
+    syncAlgorithmLink();
+  }
+
+  /** 解説ページは言語ごとに別ファイル。日本語だけ拡張子なしの本体を指す。 */
+  function syncAlgorithmLink() {
+    const link = byId('link-algorithm');
+    if (!link) return;
+    const loc = getLocale();
+    link.href = loc === 'ja' ? './algorithm.html' : `./algorithm.${loc}.html`;
+  }
+
+  syncAlgorithmLink();
+
+  const langSelect = byId('lang-select');
+  if (langSelect) {
+    for (const [code, name] of LOCALES) {
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = name;
+      langSelect.append(option);
+    }
+    langSelect.value = getLocale();
+    langSelect.addEventListener('change', () => {
+      setLocale(langSelect.value);
+      applyLocale();
     });
   }
 
@@ -739,7 +799,7 @@ function init() {
       // アドレス欄には、いま鳴っている曲がすでに映っている。それを渡す。
       const song = player?.getCurrentSong?.();
       if (!song) {
-        setStatus('再生すると、共有できる URL になります', 2500);
+        setStatus(t('status.noSong'), 2500);
         return;
       }
       const loc = globalThis.location;
@@ -749,7 +809,7 @@ function init() {
       if (clipboard?.writeText) {
         try {
           await clipboard.writeText(url);
-          setStatus('URL をコピーしました', 2000);
+          setStatus(t('status.copied'), 2000);
           return;
         } catch (err) {
           console.warn('クリップボードへの書き込みに失敗しました', err);
@@ -767,12 +827,12 @@ function init() {
           return;
         }
       }
-      setStatus('コピーできませんでした。アドレス欄の URL を控えてください', 4000);
+      setStatus(t('status.copyFail'), 4000);
     });
   }
 
   // ---- データ読み込み --------------------------------------------------
-  setStatus('データを読み込んでいます…');
+  setStatus(t('status.loading'));
   Promise.all([fetchJson(MELODIES_URL), fetchJson(PROGRESSIONS_URL)])
     .then(([melodies, progressions]) => {
       if (!Array.isArray(melodies) || melodies.length === 0) {
@@ -791,10 +851,7 @@ function init() {
       // 黙って壊れないこと。原因（file:// 直開きが多い）まで出す。
       for (const button of gatedButtons) button.disabled = true;
       setPlayLabel(false);
-      setStatus(
-        `データを読み込めませんでした（${err.message}）。` +
-          'ローカルサーバー経由で開いてください（npm start）。',
-      );
+      setStatus(t('status.loadFail', { message: err.message }));
     });
 }
 

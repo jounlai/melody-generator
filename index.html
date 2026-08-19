@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="description" content="静かなピアノ曲を、途切れることなく生成し続けます。">
-<title>無限ヒーリングピアノ</title>
+<title data-i18n-title="app.title">無限ヒーリングピアノ</title>
 <style>
   :root {
     color-scheme: dark;
@@ -526,6 +526,13 @@
 
   .settings { display: grid; gap: 8px; }
 
+  /* 言語は曲の設定ではないので、設定パネルの外に置いて線で仕切る */
+  .lang-field {
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
   /* 見出しの帯は出さない。項目名だけで足りる */
   .settings-group { border: 0; }
   .settings-group-title { display: none; }
@@ -639,16 +646,16 @@
 <div class="page">
 
   <header class="site-head">
-    <h1>無限ヒーリングピアノ</h1>
+    <h1 data-i18n="app.tagline">無限ヒーリングピアノ</h1>
   </header>
 
   <main>
 
     <section class="stage" aria-label="再生">
-      <div class="transport" role="group" aria-label="再生操作">
+      <div class="transport" role="group" data-i18n-attr="aria-label:transport.group">
         <div class="pulse" aria-hidden="true"><i></i><i></i><i></i></div>
 
-        <button id="prev" class="transport-btn" type="button" aria-label="前の曲へ戻る">
+        <button id="prev" class="transport-btn" type="button" data-i18n-attr="aria-label:transport.prev">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M18 5.5v13a1 1 0 0 1-1.55.83L7.5 13.2v5.3a1 1 0 0 1-2 0v-13a1 1 0 0 1 2 0v5.3l8.95-6.13A1 1 0 0 1 18 5.5Z"/>
           </svg>
@@ -665,31 +672,31 @@
           </svg>
         </button>
 
-        <button id="next" class="transport-btn" type="button" aria-label="次の曲へ進む">
+        <button id="next" class="transport-btn" type="button" data-i18n-attr="aria-label:transport.next">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M6 5.5v13a1 1 0 0 0 1.55.83l8.95-6.13v5.3a1 1 0 0 0 2 0v-13a1 1 0 0 0-2 0v5.3L7.55 4.67A1 1 0 0 0 6 5.5Z"/>
           </svg>
         </button>
       </div>
 
-      <p id="now-playing" aria-live="polite">再生ボタンで、一曲目が生まれます</p>
+      <p id="now-playing" aria-live="polite" data-i18n="nowplaying.idle">再生ボタンで、一曲目が生まれます</p>
     </section>
 
-    <section class="score-section" aria-label="楽譜">
-      <div id="score-view" tabindex="0" role="group" aria-label="楽譜（横にスクロールできます）">
-        <p class="score-empty">再生すると、ここに楽譜が出ます</p>
+    <section class="score-section" data-i18n-attr="aria-label:tool.score">
+      <div id="score-view" tabindex="0" role="group" data-i18n-attr="aria-label:score.region">
+        <p class="score-empty" data-i18n="score.empty">再生すると、ここに楽譜が出ます</p>
       </div>
     </section>
 
   </main>
 
-  <nav class="tools" aria-label="道具">
+  <nav class="tools" data-i18n-attr="aria-label:tools.label">
     <button id="score-toggle" class="tool" type="button" aria-pressed="true" aria-controls="score-view">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M4 6h16M4 10h16M4 14h7M4 18h7"/>
         <circle cx="16" cy="17" r="2.6"/><path d="M18.6 17V9.4l2.4-.8"/>
       </svg>
-      楽譜
+      <span data-i18n="tool.score">楽譜</span>
     </button>
 
     <button id="tool-settings" class="tool" type="button" aria-haspopup="dialog">
@@ -697,14 +704,14 @@
         <path d="M4 7h9M17 7h3M4 17h3M11 17h9M4 12h5M13 12h7"/>
         <circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/><circle cx="11" cy="12" r="2"/>
       </svg>
-      設定
+      <span data-i18n="tool.settings">設定</span>
     </button>
 
     <button id="tool-export" class="tool" type="button" aria-haspopup="dialog">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M12 3.5v11M8 10.8l4 3.7 4-3.7M4.5 17.5v1.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>
       </svg>
-      保存
+      <span data-i18n="tool.export">保存</span>
     </button>
 
     <button id="copy-url" class="tool" type="button">
@@ -712,21 +719,21 @@
         <path d="M10.5 13.5a4 4 0 0 0 5.66 0l2.6-2.6a4 4 0 1 0-5.66-5.66l-1.1 1.1"/>
         <path d="M13.5 10.5a4 4 0 0 0-5.66 0l-2.6 2.6a4 4 0 1 0 5.66 5.66l1.1-1.1"/>
       </svg>
-      共有
+      <span data-i18n="tool.share">共有</span>
     </button>
   </nav>
 
   <footer class="site-foot">
     <p class="foot-credit">
-      <a href="./algorithm.html">メロディー生成アルゴリズムの解説</a>
+      <a id="link-algorithm" href="./algorithm.html" data-i18n="foot.algorithm">メロディー生成アルゴリズムの解説</a>
     </p>
-    <p class="foot-credit">Created by Jounlai Cho (cho@heuron.com)</p>
+    <p class="foot-credit" data-i18n="foot.created">Created by Jounlai Cho (cho@heuron.com)</p>
     <p class="foot-credit foot-links">
       <a href="https://x.com/jounlai" target="_blank" rel="noopener noreferrer">X @jounlai</a>
       <a href="https://github.com/jounlai/melody-generator" target="_blank" rel="noopener noreferrer">GitHub</a>
-      <a href="https://heuron.com" target="_blank" rel="noopener noreferrer">ヒューロン株式会社</a>
+      <a href="https://heuron.com" target="_blank" rel="noopener noreferrer" data-i18n="foot.company">ヒューロン株式会社</a>
     </p>
-    <p class="foot-built">Built with Anthropic Claude (Claude Code)</p>
+    <p class="foot-built" data-i18n="foot.built">Built with Anthropic Claude (Claude Code)</p>
   </footer>
 
 </div>
@@ -734,21 +741,25 @@
 <!-- 設定。変えた瞬間に、その設定で鳴り直す -->
 <dialog id="dlg-settings" class="sheet" aria-labelledby="dlg-settings-title">
   <div class="sheet-head">
-    <h2 id="dlg-settings-title">設定</h2>
-    <button class="sheet-close" type="button" data-close aria-label="閉じる">
+    <h2 id="dlg-settings-title" data-i18n="sheet.settings">設定</h2>
+    <button class="sheet-close" type="button" data-close data-i18n-attr="aria-label:sheet.close">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M6 6l12 12M18 6L6 18"/>
       </svg>
     </button>
   </div>
+  <div class="field field-choice lang-field">
+    <div class="field-head"><label class="field-label" for="lang-select" data-i18n="settings.language">言語</label></div>
+    <select id="lang-select" class="field-input"></select>
+  </div>
   <div id="settings-panel"></div>
-  <p class="sheet-note">変えた設定は、その場で鳴り直して反映されます。</p>
+  <p class="sheet-note" data-i18n="sheet.settingsNote">変えた設定は、その場で鳴り直して反映されます。</p>
 </dialog>
 
 <!-- 書き出し -->
 <dialog id="dlg-export" class="sheet" aria-labelledby="dlg-export-title">
   <div class="sheet-head">
-    <h2 id="dlg-export-title">保存</h2>
+    <h2 id="dlg-export-title" data-i18n="sheet.export">保存</h2>
     <button class="sheet-close" type="button" data-close aria-label="閉じる">
       <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M6 6l12 12M18 6L6 18"/>
@@ -759,7 +770,7 @@
     <button id="export-musicxml" type="button" disabled>MusicXML</button>
     <button id="export-midi" type="button" disabled>MIDI</button>
   </div>
-  <p class="sheet-note">
+  <p class="sheet-note" data-i18n="sheet.exportNote">
     MusicXML は MuseScore などで五線譜として開けます。MIDI は DAW で編集できます。
   </p>
 </dialog>

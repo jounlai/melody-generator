@@ -12,6 +12,7 @@ import {
   normalizeSettings,
   defaultSettings,
 } from './settings.js';
+import { t } from './i18n.js';
 
 const STORAGE_KEY = 'melodyGenerator.settings';
 
@@ -144,7 +145,7 @@ export function createSettingsPanel(rootEl, options = {}) {
     const id = `param-${def.key}`;
 
     const head = el('div', 'field-head');
-    const label = el('label', 'field-label', def.label);
+    const label = el('label', 'field-label', t(def.label));
     label.htmlFor = id;
     head.append(label);
 
@@ -165,7 +166,7 @@ export function createSettingsPanel(rootEl, options = {}) {
       for (const [value, text] of def.options || []) {
         const option = doc.createElement('option');
         option.value = String(value);
-        option.textContent = String(text);
+        option.textContent = t(String(text));
         control.append(option);
       }
       control.addEventListener('change', () =>
@@ -206,7 +207,7 @@ export function createSettingsPanel(rootEl, options = {}) {
 
     // 補足があれば操作の下に添える。何が起きるか分かってから触れるようにする。
     if (def.hint) {
-      const hint = el('p', 'field-hint', def.hint);
+      const hint = el('p', 'field-hint', t(def.hint));
       hint.id = `${id}-hint`;
       control.setAttribute('aria-describedby', hint.id);
       field.append(hint);
@@ -216,6 +217,7 @@ export function createSettingsPanel(rootEl, options = {}) {
     return field;
   }
 
+  function build() {
   for (const group of groupOrder()) {
     const defs = visibleParams().filter((def) => def.group === group);
     if (defs.length === 0) continue;
@@ -224,7 +226,7 @@ export function createSettingsPanel(rootEl, options = {}) {
     // 出す項目を絞ってあるので、畳む意味がない。常に開いておく。
     details.open = true;
     details.append(
-      el('summary', 'settings-group-title', GROUP_LABELS[group] || group),
+      el('summary', 'settings-group-title', t(GROUP_LABELS[group] || group)),
     );
 
     const fields = el('div', 'settings-fields');
@@ -235,7 +237,7 @@ export function createSettingsPanel(rootEl, options = {}) {
 
   // ---- 既定値に戻す ---------------------------------------------------
   const footer = el('div', 'settings-footer');
-  const resetButton = el('button', 'settings-reset', '既定値に戻す');
+  const resetButton = el('button', 'settings-reset', t('settings.reset'));
   resetButton.type = 'button';
   resetButton.addEventListener('click', () => applyPatch(defaultSettings()));
   footer.append(resetButton);
@@ -243,8 +245,17 @@ export function createSettingsPanel(rootEl, options = {}) {
 
   // 初期表示
   for (const key of syncers.keys()) syncOne(key, settings[key]);
+  }
+
+  build();
 
   return {
+    /** 言語が変わったときに、ラベルごと作り直す */
+    rebuild() {
+      syncers.clear();
+      rootEl.textContent = '';
+      build();
+    },
     /** 外部から値を流し込む。onChange は発火しない */
     setSettings(nextSettings) {
       settings = normalizeSettings(nextSettings);
