@@ -2336,6 +2336,44 @@ test('実データ: 伴奏が1小節8音で鳴り、最終小節だけ和音を�
   }
 });
 
+test('実データ: コードのpcsは伴奏とパッドを合わせた実音から作られる', realOpts, () => {
+  // song は barInfo を直接は返さないので、実際に鳴っている音（song.accomp と
+  // song.pad）から「その小節で本当に鳴っている音」を小節ごとに再構成し、
+  // song.chords[bar].pcs と突き合わせる。天井に収めるために伴奏の上の音を
+  // 省いた小節でも、パッドがその音を持っていれば和音としては鳴っているので、
+  // コードネームは両方を合わせて決めなければならない（describeChords のコメント参照）。
+  const pcOf = (m) => (((Math.round(m) % 12) + 12) % 12);
+  function soundingPcsInBar(song, bar) {
+    const from = bar * 4;
+    const to = from + 4;
+    const midis = [];
+    for (const n of song.accomp) {
+      if (n.beat < from || n.beat >= to) continue;
+      if (n.midis) midis.push(...n.midis); else midis.push(n.midi);
+    }
+    for (const n of song.pad) {
+      if (n.beat < from || n.beat >= to) continue;
+      if (n.midis) midis.push(...n.midis); else midis.push(n.midi);
+    }
+    return [...new Set(midis.map(pcOf))].sort((a, b) => a - b);
+  }
+  let checked = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS.slice(0, 5)) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const byBar = new Map(song.chords.map((c) => [c.bar, c]));
+      for (let bar = 0; bar < song.bars; bar++) {
+        const expected = soundingPcsInBar(song, bar);
+        const actual = byBar.get(bar).pcs;
+        assert.deepEqual(actual, expected,
+          `${seed}/${bars} ${bar}小節目: pcs=${JSON.stringify(actual)} 実際に鳴っている音=${JSON.stringify(expected)}`);
+        checked++;
+      }
+    }
+  }
+  assert.ok(checked >= 100, `検査した小節が少ない: ${checked}`);
+});
+
 test('実データ: 無音の小節が無く、音域も外れない', realOpts, () => {
   for (const bars of ['16', '32', '64']) {
     for (const seed of REAL_SEEDS.slice(0, 60)) {

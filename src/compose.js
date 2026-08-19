@@ -1329,12 +1329,16 @@ function describeChords(barInfo) {
   for (const info of barInfo) {
     if (!info) continue;
     const pcOf = (midi) => (((Math.round(midi) % 12) + 12) % 12);
+    // コードネームは「実際に鳴っている音の集まり」から作る。
+    // 天井に収めるために伴奏の上の音を省いた小節でも、パッドが持っていれば
+    // 和音としては鳴っているので、両方を合わせて名前を決める。
+    const sounding = [...new Set([...info.voicing, ...info.padVoicing])];
     out.push({
       bar: info.bar,
       symbol: info.symbol,
       rootPc: pcOf(info.rootMidi),
       bassPc: pcOf(info.bassNote),
-      pcs: [...new Set(info.voicing.map(pcOf))].sort((a, b) => a - b),
+      pcs: [...new Set(sounding.map(pcOf))].sort((a, b) => a - b),
     });
   }
   return out;
@@ -1691,6 +1695,9 @@ export function composeSong(seed, data, settings) {
   // ここを息継ぎ・クライマックス・最終音の書き換えより後ろに置くのが要。現行は
   // 息継ぎを適用する「前」の旋律で天井 (melodyCeiling) を計算していたので、
   // 息継ぎの小節だけ、鳴っていない旋律を避けて伴奏が不必要に低く抑えられていた。
+  // 最終音の書き換えより後ろに置くのも同じ理由による。天井は実際に鳴る旋律
+  // （＝これから上書きされる前の音ではなく、書き換えられたあとの音）から
+  // 計算しなければ、最終小節の伴奏が鳴らない音を避けて組まれてしまう。
   const barInfo = [];
   let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
   let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
