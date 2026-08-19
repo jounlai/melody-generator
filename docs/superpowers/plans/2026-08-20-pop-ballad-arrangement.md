@@ -70,7 +70,6 @@ node --test test/compose.test.js                                  # compose 全�
 - [ ] **Step 1: スナップショット生成器を書く**
 
 ```js
-// tools/snapshot.js
 #!/usr/bin/env node
 // 旋律の midi 列のスナップショットを作る。
 //
@@ -1613,7 +1612,6 @@ git commit -m "フレーズ末の音を次の音の手前0.5拍まで伸ばす
 - [ ] **Step 1: 計測スクリプトを書く**
 
 ```js
-// tools/monotony.js
 #!/usr/bin/env node
 // 単調さの5指標を実測する。仕様書 8.1 の検証に使う。
 // 初版の値は「1曲の伴奏の区間 1 / 小節線をまたぐ音 0.6% / 2拍以上の音 5.0% /
