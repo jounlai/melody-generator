@@ -301,6 +301,32 @@ test('splitBars は2小節に分け、beatを小節内ローカルに直す', ()
   assert.deepEqual(b.map((n) => [n.deg, n.beat]), [[5, 0], [8, 2]]);
 });
 
+test('splitBars: 小節線をまたぐ音は、次の小節の頭の音として扱う', () => {
+  // 食いは「次の小節の頭が半拍早く出た」音なので、和声も次の小節で見る。
+  const [a, b] = splitBars([
+    { deg: 1, beat: 0, dur: 1 },
+    { deg: 5, beat: 3.5, dur: 1 },   // 3.5〜4.5。小節線をまたぐ
+    { deg: 3, beat: 5, dur: 1 },
+  ]);
+  assert.deepEqual(a.map((n) => n.beat), [0], 'またぐ音が前の小節に残っている');
+  assert.equal(b.length, 2);
+  assert.deepEqual({ deg: b[0].deg, beat: b[0].beat, dur: b[0].dur, anticipates: b[0].anticipates },
+    { deg: 5, beat: 0, dur: 0.5, anticipates: true });
+  assert.deepEqual({ deg: b[1].deg, beat: b[1].beat }, { deg: 3, beat: 1 });
+});
+
+test('splitBars: またがない音の扱いは従来どおり', () => {
+  // 版1の断片にはまたぐ音が1つも無いので、ここが変わると既存の曲が変わる。
+  const [a, b] = splitBars([
+    { deg: 1, beat: 0, dur: 1 },
+    { deg: 2, beat: 3.5, dur: 0.5 },  // ちょうど小節線で終わる＝またがない
+    { deg: 3, beat: 4, dur: 4 },
+  ]);
+  assert.deepEqual(a.map((n) => [n.beat, n.dur]), [[0, 1], [3.5, 0.5]]);
+  assert.deepEqual(b.map((n) => [n.beat, n.dur]), [[0, 4]]);
+  assert.ok(a.every((n) => n.anticipates === undefined));
+});
+
 test('fitsBar: 強拍がコードトーンなら適合', () => {
   assert.equal(fitsBar([N(1, 0, 2), N(5, 2, 2)], 'major', 'I'), true);
 });
