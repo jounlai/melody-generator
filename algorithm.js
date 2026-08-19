@@ -217,6 +217,12 @@ function playSong(d, seed, { bars = 8, lift = 0, flat = false, seconds = null } 
 // 配線
 // ---------------------------------------------------------------------------
 
+// 3言語で同じスクリプトを共有しているので、画面に出る文字だけ lang で切り替える。
+const FAILED_TEXT = {
+  en: 'Playback failed',
+  zh: '无法播放',
+}[document.documentElement.lang] || '再生できませんでした';
+
 async function run(button) {
   const key = button.dataset.demo;
   const wasActive = active === button;
@@ -246,7 +252,7 @@ async function run(button) {
     begin(button, seconds);
   } catch (err) {
     console.error('試聴を再生できませんでした', err);
-    button.textContent = '再生できませんでした';
+    button.textContent = FAILED_TEXT;
   }
 }
 

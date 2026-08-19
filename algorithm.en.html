@@ -1,0 +1,1528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="How the melodies are generated: fragment catalogue, phrase structure, voice placement and performance design, with equations, measurements and audio.">
+<title>Melody generation algorithm — Endless Healing Piano</title>
+<link rel="stylesheet" href="./algorithm.css">
+</head>
+<body>
+<div class="paper">
+
+<nav class="langs" aria-label="Language">
+  <a href="./algorithm.html">日本語</a>
+  <a href="./algorithm.en.html" aria-current="page">English</a>
+  <a href="./algorithm.zh.html">中文</a>
+</nav>
+
+
+<a class="backlink" href="./index.html?lang=en">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>
+  Back to Endless Healing Piano
+</a>
+
+<h1 class="title">Automatic Generation of Healing Piano Melody<br>from a Fragment Catalogue and Phrase Structure</h1>
+<p class="subtitle">A formal description of <a href="https://github.com/jounlai/melody-generator">melody-generator</a></p>
+<p class="byline">Created by Jounlai Cho (cho@heuron.com) / Heuron Inc.</p>
+
+<p class="lede">
+This paper describes the design of a system that composes healing piano music
+in real time, without end. Its central claim is a single one:
+<em class="term">the beauty of a melody does not arise from deciding one note
+after another. It becomes controllable only once the problem is split into two
+layers — a finite set of fragments already guaranteed to be beautiful, and a
+temporal structure that places them.</em>
+The first layer is built by drawing 300,000 candidates and selecting 999 of them
+by stratified sampling against statistics induced from 125 public-domain melodies.
+The second is formulated as constraint satisfaction over phrase structure,
+an intensity curve, and voice placement. Generation is deterministic: a
+six-character seed fixes the piece.
+</p>
+
+<div class="listen">
+  <span class="listen-label">First, hear what the system actually produces (about 60 seconds)</span>
+  <button type="button" data-demo="full-song" aria-pressed="false">Play a full piece</button>
+</div>
+
+<p class="note">
+Listening buttons appear throughout. What they play is not audio prepared for
+illustration: it is the result of running the very process the surrounding
+section describes.
+</p>
+
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><a href="#s1">Problem and approach</a></li>
+    <li><a href="#s2">Notation</a></li>
+    <li><a href="#s3">Induction from a corpus</a></li>
+    <li><a href="#s4">Candidate generation and the scoring function</a></li>
+    <li><a href="#s5">Building the catalogue by stratified selection</a></li>
+    <li><a href="#s6">Precomputing chord compatibility</a></li>
+    <li><a href="#s7">Assembling a piece</a></li>
+    <li><a href="#s8">Modulation</a></li>
+    <li><a href="#s9">Voice placement</a></li>
+    <li><a href="#s10">Performance design</a></li>
+    <li><a href="#s11">Measurements</a></li>
+    <li><a href="#s12">Limitations</a></li>
+    <li><a href="#appendix">Appendix: the corpus</a></li>
+  </ol>
+</nav>
+
+<h2 id="s1"><span class="num">1</span>Problem and approach</h2>
+
+<p>
+The goal is solo piano music that is generated without interruption and that
+still has an emotional arc within each piece. This imposes two requirements that
+pull against each other. One is <em class="term">real time</em>: the next piece
+must be assembled before the current one finishes. The other is
+<em class="term">global structure</em>: without a design that spans tens of
+seconds — statement, development, peak, return — no amount of local beauty in
+the intervals will make the result sound like a piece of music.
+</p>
+
+<p>
+Note-by-note generation (a Markov chain, or an autoregressive model) satisfies
+the first and struggles with the second. Local transition probabilities can
+decide "the next note", but they do not express "what must be stated now so that
+the highest note lands sixteen bars from here". This system splits the problem
+instead.
+</p>
+
+<ol class="spaced">
+  <li><em class="term">The fragment layer.</em> Two-bar (eight-beat) melodic
+      fragments are generated in advance, scored for beauty, and catalogued.
+      Every property a fragment must have — interval distribution, filling in
+      after a leap, rhythmic variety — is checked here, once.</li>
+  <li><em class="term">The structure layer.</em> At run time, fragments are only
+      chosen and placed. The choice is governed by phrase structure, the
+      intensity curve, and smoothness of connection; individual notes are never
+      touched.</li>
+</ol>
+<figure>
+<svg viewBox="0 0 620 250" role="img" aria-label="Diagram of the fragment layer and the structure layer">
+  <rect class="dia-box" x="8" y="8" width="604" height="98" rx="8"/>
+  <text class="dia-text" x="24" y="32" font-weight="600">Fragment layer (offline, once)</text>
+  <text class="dia-muted" x="24" y="52">125 melodies &#8594; 490 formulas &#8594; 300,000 candidates &#8594; stratified selection &#8594; 999 fragments</text>
+  <rect class="dia-box" x="24" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="76" y="82" text-anchor="middle">Corpus statistics</text>
+  <path class="dia-accent" d="M134 78h26M154 73l6 5-6 5"/>
+  <rect class="dia-box" x="166" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="218" y="82" text-anchor="middle">Scoring S(f)</text>
+  <path class="dia-accent" d="M276 78h26M296 73l6 5-6 5"/>
+  <rect class="dia-box" x="308" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="360" y="82" text-anchor="middle">Stratified selection</text>
+  <path class="dia-accent" d="M418 78h26M438 73l6 5-6 5"/>
+  <rect class="dia-box" x="450" y="64" width="146" height="28" rx="5"/>
+  <text class="dia-muted" x="523" y="82" text-anchor="middle">Catalogue + chord fit</text>
+
+  <path class="dia-accent" d="M310 112v22M305 128l5 6 5-6"/>
+  <text class="dia-muted" x="322" y="128">passes precomputed sets</text>
+
+  <rect class="dia-box" x="8" y="142" width="604" height="100" rx="8"/>
+  <text class="dia-text" x="24" y="166" font-weight="600">Structure layer (real time, 6.5 ms per piece)</text>
+  <text class="dia-muted" x="24" y="186">Phrase structure, intensity curve, connection &#8594; choose and place (notes untouched)</text>
+  <rect class="dia-box" x="24" y="198" width="128" height="28" rx="5"/>
+  <text class="dia-muted" x="88" y="216" text-anchor="middle">Form A A&#8242; B A&#8243;</text>
+  <path class="dia-accent" d="M158 212h26M178 207l6 5-6 5"/>
+  <rect class="dia-box" x="190" y="198" width="128" height="28" rx="5"/>
+  <text class="dia-muted" x="254" y="216" text-anchor="middle">Curve and pitch window</text>
+  <path class="dia-accent" d="M324 212h26M344 207l6 5-6 5"/>
+  <rect class="dia-box" x="356" y="198" width="112" height="28" rx="5"/>
+  <text class="dia-muted" x="412" y="216" text-anchor="middle">Selection, placement</text>
+  <path class="dia-accent" d="M474 212h26M494 207l6 5-6 5"/>
+  <rect class="dia-box" x="506" y="198" width="90" height="28" rx="5"/>
+  <text class="dia-muted" x="551" y="216" text-anchor="middle">Performance</text>
+</svg>
+<figcaption>
+
+  Figure 1. The two layers. The upper one runs once, before any piece exists;
+  only the lower one runs in real time. Because the judgement of "beauty" is
+  finished upstream, the downstream layer can devote itself to constraint
+  satisfaction over fragments.
+
+</figcaption>
+</figure>
+<p>
+This split reduces the run-time computation to "draw one element from the set of
+fragments that satisfy the constraints". With 999 fragments and chord
+compatibility precomputed, assembling a 32-bar piece takes a measured 6.5
+milliseconds; converting it to performance events costs about the same again.
+</p>
+
+<h2 id="s2"><span class="num">2</span>Notation</h2>
+
+<h3><span class="num">2.1</span>Pitch space</h3>
+
+<p>
+Melodies are written in <em class="term">running scale degrees</em>, not absolute
+pitch. Degree <span class="sym">d &#8712; &#8484;</span> takes the tonic as
+<span class="sym">1</span>, so <span class="sym">8</span> is an octave above and
+<span class="sym">15</span> two octaves above. Writing the scale of mode
+<span class="sym">m &#8712; {major, minor}</span> as
+<span class="sym">s<sub>m</sub> = (s<sub>m</sub>[0], &#8230;, s<sub>m</sub>[6])</span>,
+the map from degree to semitone is
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi class="gk">σ</mi><mi>m</mi></msub><mo>(</mo><mi>d</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>12</mn>
+    <mo>&#x2062;</mo>
+    <mrow><mo>&#x230A;</mo><mfrac><mrow><mi>d</mi><mo>-</mo><mn>1</mn></mrow><mn>7</mn></mfrac><mo>&#x230B;</mo></mrow>
+    <mo>+</mo>
+    <msub><mi>s</mi><mi>m</mi></msub>
+    <mrow><mo>[</mo><mo>(</mo><mi>d</mi><mo>-</mo><mn>1</mn><mo>)</mo><mspace width="0.2em"/><mi>mod</mi><mspace width="0.2em"/><mn>7</mn><mo>]</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(1)</span>
+</div>
+<p>
+and with the tonic at MIDI note number <span class="sym">&#964;</span> the sounding
+pitch is <span class="sym">&#960;(d) = &#964; + &#963;<sub>m</sub>(d)</span>. Here
+<span class="sym">s<sub>major</sub> = (0,2,4,5,7,9,11)</span> and
+<span class="sym">s<sub>minor</sub> = (0,2,3,5,7,8,10)</span>.
+</p>
+
+<p>
+There are two reasons for this representation. First, a fragment becomes
+independent of key and mode, so the same fragment is reusable in major, in minor,
+and in any key. Second, the <em class="term">sequence</em> (parallel motion)
+described below becomes plain addition on degrees. Transposing by semitones would
+produce notes outside the scale; transposing by degrees never can.
+</p>
+
+<div class="listen">
+  <span class="listen-label">The same degree sequence (fragment m0100), with only the map changed. Not one note is rewritten</span>
+  <button type="button" data-demo="degrees-major" aria-pressed="false">In major</button>
+  <button type="button" data-demo="degrees-minor" aria-pressed="false">In minor</button>
+</div>
+
+<h3><span class="num">2.2</span>Fragments</h3>
+
+<p>
+A fragment <span class="sym">f</span> is a finite sequence of notes. A note
+<span class="sym">n = (d, &#946;, &#948;, v)</span> carries degree, onset beat,
+duration and velocity, with <span class="sym">&#946; &#8712; [0, 8)</span> — that
+is, within two bars. We write its interval sequence as
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi class="gk">Δ</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mo>(</mo>
+    <msub><mi>d</mi><mn>2</mn></msub><mo>-</mo><msub><mi>d</mi><mn>1</mn></msub>
+    <mo>,</mo>
+    <mo>…</mo>
+    <mo>,</mo>
+    <msub><mi>d</mi><mi>k</mi></msub><mo>-</mo><msub><mi>d</mi><mrow><mi>k</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>)</mo>
+  </mrow>
+</math>
+<span class="tag">(2)</span>
+</div>
+<p>
+A degree difference of 1 is a second (stepwise motion), 2 a third, and 3 or more
+a leap of a fourth or wider.
+</p>
+
+<h2 id="s3"><span class="num">3</span>Induction from a corpus</h2>
+
+<p>
+The coefficients of the scoring function were not chosen freely. They are fitted
+to statistics measured over <em class="term">125 public-domain melodies, 1,768
+notes, 1,643 intervals</em>, transcribed for this purpose. "Public domain" was
+taken to mean "the composer died in 1955 or earlier, or the piece is
+traditional" (the latest death year in the collection is 1952; 26 pieces are
+traditional). By mode: 93 major, 32 minor.
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>Table 1. Interval distribution over the 125-melody corpus (absolute degree difference)</caption>
+  <thead><tr><th>Difference</th><th>Interval</th><th class="num">Count</th><th class="num">Share</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>unison</td><td class="num">140</td><td class="num">8.5%</td></tr>
+    <tr><td>1</td><td>second</td><td class="num">1135</td><td class="num">69.1%</td></tr>
+    <tr><td>2</td><td>third</td><td class="num">301</td><td class="num">18.3%</td></tr>
+    <tr><td>3</td><td>fourth</td><td class="num">42</td><td class="num">2.6%</td></tr>
+    <tr><td>4</td><td>fifth</td><td class="num">19</td><td class="num">1.2%</td></tr>
+    <tr><td>5 or more</td><td>sixth and wider</td><td class="num">6</td><td class="num">0.4%</td></tr>
+  </tbody>
+</table>
+</div>
+<figure>
+<svg viewBox="0 0 620 210" role="img" aria-label="Bar chart of the interval distribution over the 125-melody corpus">
+  <line class="dia-line" x1="52" y1="168" x2="596" y2="168"/>
+  <g class="dia-fill">
+    <rect x="72"  y="146" width="58" height="22" opacity="0.5"/>
+    <rect x="160" y="14"  width="58" height="154"/>
+    <rect x="248" y="127" width="58" height="41" opacity="0.75"/>
+    <rect x="336" y="163" width="58" height="5"  opacity="0.6"/>
+    <rect x="424" y="166" width="58" height="2"  opacity="0.6"/>
+    <rect x="512" y="167" width="58" height="1"  opacity="0.6"/>
+  </g>
+  <g class="dia-muted" text-anchor="middle">
+    <text x="101" y="184">unison</text><text x="189" y="184">second</text><text x="277" y="184">third</text>
+    <text x="365" y="184">fourth</text><text x="453" y="184">fifth</text><text x="541" y="184">sixth+</text>
+    <text x="101" y="141">8.5%</text><text x="189" y="9">69.1%</text><text x="277" y="122">18.3%</text>
+    <text x="365" y="158">2.6%</text><text x="453" y="161">1.2%</text><text x="541" y="162">0.4%</text>
+  </g>
+  <text class="dia-muted" x="8" y="24">share</text>
+  <line class="dia-line" x1="52" y1="14" x2="52" y2="168"/>
+</svg>
+<figcaption>
+
+  Figure 2. The distribution over 1,643 intervals. Seconds account for about
+  seven tenths; leaps of a fourth or wider together come to 4.2%. The bands in
+  the scoring function (equation 6) come from this shape.
+
+</figcaption>
+</figure>
+<p>
+Two quantities are defined from this distribution: the stepwise ratio and the
+ratio of leaps that are filled in afterwards.
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>r</mi><mi>step</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mfrac>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>=</mo><mn>1</mn><mo>}</mo><mo>|</mo></mrow>
+      <mrow><mo>|</mo><mi class="gk">Δ</mi><mo>(</mo><mi>f</mi><mo>)</mo><mo>|</mo></mrow>
+    </mfrac>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <msub><mi>r</mi><mi>fill</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mfrac>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>&#x2265;</mo><mn>2</mn><mo>&#x2227;</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>|</mo><mo>=</mo><mn>1</mn><mo>}</mo><mo>|</mo></mrow>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>&#x2265;</mo><mn>2</mn><mo>}</mo><mo>|</mo></mrow>
+    </mfrac>
+  </mrow>
+</math>
+<span class="tag">(3)</span>
+</div>
+<p>
+The measured values are <span class="sym">r<sub>step</sub> = 0.691</span> and
+<span class="sym">r<sub>fill</sub> = 0.624</span>. The second shows that the
+vocal principle "after a leap, fill the gap by step" holds in more than six cases
+out of ten in celebrated melodies. A line that keeps leaping cannot be sung.
+</p>
+
+<h3><span class="num">3.1</span>Extracting melodic formulas</h3>
+
+<p>
+From the degree sequences of the corpus, relative <span class="sym">n</span>-grams
+are extracted as <em class="term">melodic formulas</em>. A subsequence of length
+<span class="sym">&#8467;</span> is identified with its normalised form
+<span class="sym">(0, d<sub>i+1</sub>-d<sub>i</sub>, &#8230;)</span>, and its
+frequency becomes its weight. This yields <em class="term">490 melodic formulas,
+26 cadential formulas, 58 soaring figures, and 147 rhythmic cells</em>.
+</p>
+
+<p>
+The most consequential is the soaring figure, typified by
+<span class="sym">(0, 3, 2, 1)</span> — rise a fourth, then descend by step.
+It occurs 189 times across the 125 melodies and creates the climactic moment in
+many of them.
+</p>
+
+<div class="listen">
+  <span class="listen-label">The extracted formulas themselves, played as relative degrees. These are the raw material of the fragments</span>
+  <button type="button" data-demo="formula-descend" aria-pressed="false">Descent (0,&#8722;1,&#8722;2,&#8722;3)</button>
+  <button type="button" data-demo="formula-turn" aria-pressed="false">Turn (0,1,0,&#8722;1,0)</button>
+  <button type="button" data-demo="soar" aria-pressed="false">Soar (0,3,2,1)</button>
+  <button type="button" data-demo="sigh" aria-pressed="false">Sigh (0,4,3,2,1)</button>
+</div>
+
+<h2 id="s4"><span class="num">4</span>Candidate generation and the scoring function</h2>
+
+<h3><span class="num">4.1</span>Generating candidates</h3>
+
+<p>
+Candidate fragments are made by chaining melodic formulas into a degree sequence
+and assigning rhythmic cells to it. Chaining shares the end of one formula as the
+start of the next. The only randomness is a seeded
+<span class="sym">mulberry32</span> generator (a 32-bit multiply-and-xorshift
+PRNG); <span class="sym">Math.random</span> is never used, and string seeds are
+folded to 32 bits with FNV-1a. Generation is therefore exactly reproducible.
+The candidate count is <span class="sym">N = 300,000</span>.
+</p>
+
+<h3><span class="num">4.2</span>The scoring function</h3>
+
+<p>
+The beauty score of a fragment <span class="sym">f</span> is defined below.
+It starts from a baseline of 50 and adds each term.
+<span class="sym">P</span> are non-negative penalties;
+<span class="sym">D</span> and <span class="sym">R</span> are signed (a bonus
+inside the band, a penalty outside); <span class="sym">B</span> and
+<span class="sym">&#946;</span> are non-negative bonuses.
+</p>
+
+<p>
+where <span class="sym">T(f)</span> is the set of expressive tags the fragment
+carries. <span class="sym">P<sub>span</sub></span> penalises range beyond a
+twelfth (<span class="sym">6&#183;(span &#8722; 12)<sup>+</sup></span>);
+<span class="sym">D<sub>dens</sub></span> adds 10 when note density (notes &#247; 8)
+falls in 0.9&#8211;1.8 and subtracts in proportion to the excursion below 0.7 or
+above 2.2. The main terms follow.
+</p>
+
+<p>Penalty for leaps, over degree differences <span class="sym">a = |&#916;<sub>i</sub>|</span>:</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>S</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>50</mn>
+    <mo>-</mo>
+    <msub><mi>P</mi><mi>leap</mi></msub>
+    <mo>-</mo>
+    <msub><mi>P</mi><mi>span</mi></msub>
+    <mo>+</mo>
+    <msub><mi>D</mi><mi>dens</mi></msub>
+    <mo>+</mo>
+    <msub><mi>R</mi><mi>rhythm</mi></msub>
+    <mo>+</mo>
+    <msub><mi>B</mi><mi>dist</mi></msub>
+    <mo>+</mo>
+    <mstyle displaystyle="true">
+      <munder><mo>&#x2211;</mo><mrow><mi>t</mi><mo>&#x2208;</mo><mi>T</mi><mo>(</mo><mi>f</mi><mo>)</mo></mrow></munder>
+    </mstyle>
+    <msub><mi class="gk">β</mi><mi>t</mi></msub>
+  </mrow>
+</math>
+<span class="tag">(4)</span>
+</div>
+<p>
+with <span class="sym">(x)<sup>+</sup> = max(x, 0)</span>. There is no penalty on
+thirds (<span class="sym">a = 2</span>) because, as Table 1 shows, the third is
+the most frequent leap in celebrated melody. Penalties begin at the fourth, and
+consecutive leaps — more so consecutive leaps in the same direction — are
+penalised further. Once <span class="sym">r<sub>leap</sub></span> exceeds twice
+the corpus value (10%), the excess is penalised steeply.
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <msub><mi>P</mi><mi>leap</mi></msub>
+        <mo>=</mo>
+        <mstyle displaystyle="true"><munder><mo>&#x2211;</mo><mi>i</mi></munder></mstyle>
+        <mrow>
+          <mo>[</mo>
+          <mn>3</mn><mo>&#x2062;</mo><msup><mrow><mo>(</mo><msub><mi>a</mi><mi>i</mi></msub><mo>-</mo><mn>3</mn><mo>)</mo></mrow><mo>+</mo></msup>
+          <mo>+</mo>
+          <mn>2</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>a</mi><mi>i</mi></msub><mo>=</mo><mn>0</mn><mo>]</mo>
+          <mo>+</mo>
+          <mn>10</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>a</mi><mrow><mi>i</mi><mo>-</mo><mn>1</mn></mrow></msub><mo>&#x2265;</mo><mn>4</mn><mo>&#x2227;</mo><msub><mi>a</mi><mi>i</mi></msub><mo>&#x2265;</mo><mn>4</mn><mo>]</mo>
+          <mo>]</mo>
+        </mrow>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>+</mo>
+        <mn>60</mn><mo>&#x22C5;</mo><msup><mrow><mo>(</mo><msub><mi>r</mi><mi>leap</mi></msub><mo>-</mo><mn>0.1</mn><mo>)</mo></mrow><mo>+</mo></msup>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(5)</span>
+</div><p>The distribution bonus is granted for landing inside the corpus bands.</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <msub><mi>B</mi><mi>dist</mi></msub>
+        <mo>=</mo>
+        <mn>12</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>step</mi></msub><mo>&#x2208;</mo><mo>[</mo><mn>0.6</mn><mo>,</mo><mn>0.8</mn><mo>]</mo><mo>]</mo>
+        <mo>+</mo>
+        <mn>8</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>third</mi></msub><mo>&#x2208;</mo><mo>[</mo><mn>0.1</mn><mo>,</mo><mn>0.3</mn><mo>]</mo><mo>]</mo>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>+</mo>
+        <mn>10</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>fill</mi></msub><mo>&#x2265;</mo><mn>0.6</mn><mo>]</mo>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(6)</span>
+</div>
+<div class="table-wrap">
+<table>
+  <caption>Table 2. Expressive tags and their bonus &#946;<sub>t</sub> (excerpt)</caption>
+  <thead><tr><th>Tag</th><th>Definition</th><th class="num">&#946;</th><th class="num">In catalogue</th></tr></thead>
+  <tbody>
+    <tr><td>inner-sequence</td><td>second bar is a transposition of the first</td><td class="num">18</td><td class="num">389</td></tr>
+    <tr><td>soar</td><td>rises a fourth or more to the peak, then descends by step</td><td class="num">16</td><td class="num">380</td></tr>
+    <tr><td>penta-major / minor</td><td>fits a pentatonic scale</td><td class="num">16</td><td class="num">543 / 278</td></tr>
+    <tr><td>sigh</td><td>a rise of a fifth or more, then two or more steps down</td><td class="num">14</td><td class="num">239</td></tr>
+    <tr><td>inner-repeat</td><td>second bar repeats the first exactly</td><td class="num">14</td><td class="num">240</td></tr>
+    <tr><td>stable-end</td><td>lands on a tonic-triad tone {1,3,5}</td><td class="num">10</td><td class="num">894</td></tr>
+    <tr><td>single-peak</td><td>the highest note occurs exactly once</td><td class="num">8</td><td class="num">737</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="listen">
+  <span class="listen-label">The highest- and lowest-scoring fragments in the catalogue, played in the same key over the same harmony</span>
+  <button type="button" data-demo="score-high" aria-pressed="false">Highest score</button>
+  <button type="button" data-demo="score-low" aria-pressed="false">Lowest score</button>
+</div>
+
+<p>
+The rhythm term <span class="sym">R<sub>rhythm</sub></span> maps the number of
+distinct note values to <span class="sym">{1 &#8594; &#8722;22, 2 &#8594; &#8722;8,
+3 &#8594; +6, &#8805;4 &#8594; +12}</span>. A fragment with a single note value
+sounds like a nursery rhyme however beautiful its intervals are, and can never
+become a phrase of a piece. Hence the single largest penalty in the function.
+</p>
+
+<h2 id="s5"><span class="num">5</span>Building the catalogue by stratified selection</h2>
+
+<p>
+Taking the top 999 by score fails. The score is one scale, so the top of it is
+uniformly "well-behaved", and anyone listening indefinitely will tire of it.
+Worse is the <em class="term">gap in coverage</em>: if no fragment fits some slot
+of some chord progression, any piece that draws that progression breaks.
+</p>
+
+<p>
+Selection is therefore posed as constrained subset selection. From the candidate
+set <span class="sym">C</span> (<span class="sym">|C| = 300,000</span>) choose
+<span class="sym">|X| = 999</span>.
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <munder><mo movablelimits="false">max</mo><mrow><mi>X</mi><mo>&#x2286;</mo><mi>C</mi></mrow></munder>
+    <mspace width="0.4em"/>
+    <mstyle displaystyle="true"><munder><mo>&#x2211;</mo><mrow><mi>f</mi><mo>&#x2208;</mo><mi>X</mi></mrow></munder></mstyle>
+    <mi>S</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mspace width="1.6em"/>
+    <mtext>s.t.</mtext>
+    <mspace width="0.6em"/>
+    <mrow>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>G</mi><mi>j</mi></msub><mo>|</mo>
+      <mo>&#x2265;</mo><msub><mi>g</mi><mi>j</mi></msub>
+      <mo>,</mo>
+      <mspace width="0.6em"/>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>K</mi><mi>l</mi></msub><mo>|</mo>
+      <mo>&#x2264;</mo><msub><mi>k</mi><mi>l</mi></msub>
+      <mo>,</mo>
+      <mspace width="0.6em"/>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>B</mi><mi>q</mi></msub><mo>|</mo>
+      <mo>&#x2265;</mo><mn>9</mn>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(7)</span>
+</div>
+<p>
+<span class="sym">B<sub>q</sub></span> are <em class="term">buckets</em>: the
+candidates partitioned into 6 contours &#215; 5 tension levels &#215; 2 cadence
+classes = 60 strata (10 of which are necessarily empty by definition).
+<span class="sym">G<sub>j</sub></span> are <em class="term">lower bounds</em> and
+<span class="sym">K<sub>l</sub></span> <em class="term">caps</em>.
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>Table 3. Examples of the lower bounds G<sub>j</sub> (excerpt from more than 90)</caption>
+  <thead><tr><th>Goal</th><th class="num">Minimum</th><th>Intent</th></tr></thead>
+  <tbody>
+    <tr><td>step-ratio &#8712; [0.6, 0.8]</td><td class="num">560</td><td>inside the corpus band</td></tr>
+    <tr><td>leap-then-step &#8805; 0.6</td><td class="num">560</td><td>fill in after a leap</td></tr>
+    <tr><td>penta-major</td><td class="num">400</td><td>singability</td></tr>
+    <tr><td>inner-sequence</td><td class="num">300</td><td>works as a motif</td></tr>
+    <tr><td>soar</td><td class="num">200</td><td>material for the climax</td></tr>
+    <tr><td>soar &#8743; peak &#8805; 12 &#8743; single peak</td><td class="num">120</td><td>soaring that reaches the top</td></tr>
+    <tr><td>fits each progression slot</td><td class="num">30</td><td>coverage (priority 0)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+The problem contains multi-cover and is therefore NP-hard. The implementation is
+greedy, with one ordering decision that matters:
+<em class="term">coverage goals are filled before quantity goals.</em> Coverage
+goals (rhythmic types, chord slots) are fine-grained and mutually disjoint;
+quantity goals (the stepwise band, note counts) can be met by almost any
+fragment. Fill quantity first and the 999 slots are consumed by similar
+high-scoring fragments, leaving coverage unmet. In the other order, a fragment
+taken for coverage satisfies the quantity goals as a side effect. Within each
+round, the candidate that satisfies the <em class="term">most unmet goals at
+once</em> is preferred.
+</p>
+
+<p>
+The caps <span class="sym">K<sub>l</sub></span> are weaker than the bounds: a cap
+is ignored only when it blocks a lower bound (a skewed catalogue beats a broken
+piece). The resulting catalogue has a median of 8 notes per fragment, ranging
+from 6 to 12.
+</p>
+
+<h2 id="s6"><span class="num">6</span>Precomputing chord compatibility</h2>
+
+<p>
+Deciding at run time whether a fragment fits a chord is expensive. Evaluating
+999 fragments &#215; 60 chords &#215; 2 bars measures 329 milliseconds — fifty
+times the cost of assembling a whole piece (6.5 ms). Compatibility against every
+member of the chord vocabulary is therefore computed once, per fragment.
+</p>
+
+<p>
+Writing <span class="sym">PC(c)</span> for the pitch-class set of chord
+<span class="sym">c</span>, a bar <span class="sym">B</span> (the first or second
+half of a fragment) fits <span class="sym">c</span> when
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <mtext>fits</mtext><mo>(</mo><mi>B</mi><mo>,</mo><mi>c</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mrow><mo>(</mo><mo>&#x2203;</mo><mi>n</mi><mo>&#x2208;</mo><mi>B</mi><mo>:</mo><mtext>pc</mtext><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2208;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo><mo>)</mo></mrow>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>&#x2227;</mo><mspace width="0.4em"/>
+        <mrow><mo>(</mo><mo>&#x2200;</mo><mi>n</mi><mo>&#x2208;</mo><mi>B</mi><mo>:</mo>
+          <mtext>exp</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+          <mo>&#x2227;</mo>
+          <mtext>pc</mtext><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2209;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo>
+          <mo>&#x21D2;</mo>
+          <mtext>res</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>)</mo></mrow>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(8)</span>
+</div>
+<p>where</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <mtext>exp</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mo>(</mo><mi class="gk">&#x03B2;</mi><mo>(</mo><mi>n</mi><mo>)</mo><mspace width="0.3em"/><mtext>mod</mtext><mspace width="0.3em"/><mn>2</mn><mo>=</mo><mn>0</mn><mo>)</mo>
+        <mo>&#x2228;</mo>
+        <mo>(</mo><mi class="gk">&#x03B4;</mi><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2265;</mo><mn>1.5</mn><mo>)</mo>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mtext>res</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mo>|</mo><msub><mi>d</mi><mrow><mtext>next</mtext></mrow></msub><mo>-</mo><mi>d</mi><mo>|</mo><mo>&#x2264;</mo><mn>1</mn>
+        <mo>&#x2227;</mo>
+        <mtext>pc</mtext><mo>(</mo><msub><mi>n</mi><mtext>next</mtext></msub><mo>)</mo><mo>&#x2208;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(9)</span>
+</div>
+<p>
+In words: a note that is <em class="term">exposed</em> — on a strong beat or held
+long — is allowed to be a non-chord tone, but only if it
+<em class="term">resolves by step to a chord tone</em>. This turns the
+contrapuntal treatment of suspensions and appoggiaturas into a computable
+predicate. Short non-chord tones on weak beats (passing and neighbour notes) are
+unconstrained.
+</p>
+
+<p>
+For each fragment <span class="sym">f</span>, the index sets over the chord
+vocabulary <span class="sym">V<sub>m</sub></span> (33 chords in major, 27 in
+minor)
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msubsup><mi>F</mi><mrow><mi>m</mi></mrow><mrow><mo>(</mo><mi>j</mi><mo>)</mo></mrow></msubsup>
+    <mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow><mo>{</mo>
+      <mi>i</mi>
+      <mo>:</mo>
+      <mtext>fits</mtext><mo>(</mo><msub><mi>B</mi><mi>j</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo><mo>,</mo><msub><mi>V</mi><mi>m</mi></msub><mo>[</mo><mi>i</mi><mo>]</mo><mo>)</mo>
+    <mo>}</mo></mrow>
+    <mo>,</mo>
+    <mspace width="0.8em"/>
+    <mi>j</mi><mo>&#x2208;</mo><mo>{</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>}</mo>
+  </mrow>
+</math>
+<span class="tag">(10)</span>
+</div>
+<p>
+are stored as JSON. At run time, "the fragments that fit these two chords" is a
+set-membership test. The chords on which a suspension is available are stored the
+same way.
+</p>
+
+<div class="note">
+Because these are stored as <em class="term">indices</em>, the order of existing
+entries in the chord vocabulary must never change. Inserting in the middle makes
+every fragment point at a different chord. Additions go at the end.
+</div>
+
+<h2 id="s7"><span class="num">7</span>Assembling a piece</h2>
+
+<h3><span class="num">7.1</span>Form</h3>
+
+<p>
+A piece consists of four sections, <span class="sym">A, A&#8242;, B, A&#8243;</span>.
+Each is divided into <span class="sym">L</span> slots, one slot per fragment
+(two bars). At the standard 32 bars, <span class="sym">L = 4</span>.
+<span class="sym">A, A&#8242;, A&#8243;</span> use variants of one chord
+progression; only <span class="sym">B</span> draws a different one.
+</p>
+<figure>
+<svg viewBox="0 0 620 178" role="img" aria-label="Diagram of the 32-bar form and the role of each slot">
+  <g class="dia-muted" text-anchor="middle">
+    <text x="85" y="20">A (statement)</text><text x="235" y="20">A&#8242; (rising)</text>
+    <text x="385" y="20">B (toward the peak)</text><text x="535" y="20">A&#8243; (landing)</text>
+  </g>
+  <g>
+    <rect class="dia-box" x="12" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="162" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="312" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="462" y="28" width="146" height="34" rx="5"/>
+  </g>
+  <g class="dia-muted" text-anchor="middle">
+    <text x="85" y="49">progression P&#8321;</text><text x="235" y="49">variant of P&#8321;</text>
+    <text x="385" y="49">progression P&#8322;</text><text x="535" y="49">variant of P&#8321; + cadence</text>
+  </g>
+  <g class="dia-muted" text-anchor="middle" font-size="9">
+    <text x="48" y="82">a</text><text x="85" y="82">a′</text><text x="122" y="82">b</text><text x="158" y="82">a″</text>
+    <text x="198" y="82">a</text><text x="235" y="82">a′</text><text x="272" y="82">b</text><text x="308" y="82">a″</text>
+    <text x="348" y="82">a</text><text x="385" y="82">a′</text><text x="422" y="82">b</text><text x="458" y="82">a″</text>
+    <text x="498" y="82">a</text><text x="535" y="82">a′</text><text x="572" y="82">b</text><text x="608" y="82">a″</text>
+  </g>
+  <g class="dia-box">
+    <rect x="30" y="88" width="36" height="20" rx="3"/><rect x="67" y="88" width="36" height="20" rx="3"/>
+    <rect x="104" y="88" width="36" height="20" rx="3"/><rect x="141" y="88" width="36" height="20" rx="3"/>
+    <rect x="180" y="88" width="36" height="20" rx="3"/><rect x="217" y="88" width="36" height="20" rx="3"/>
+    <rect x="254" y="88" width="36" height="20" rx="3"/><rect x="291" y="88" width="36" height="20" rx="3"/>
+    <rect x="330" y="88" width="36" height="20" rx="3"/><rect x="367" y="88" width="36" height="20" rx="3"/>
+    <rect x="404" y="88" width="36" height="20" rx="3"/><rect x="441" y="88" width="36" height="20" rx="3"/>
+    <rect x="480" y="88" width="36" height="20" rx="3"/><rect x="517" y="88" width="36" height="20" rx="3"/>
+    <rect x="554" y="88" width="36" height="20" rx="3"/><rect x="591" y="88" width="19" height="20" rx="3"/>
+  </g>
+  <rect x="404" y="88" width="36" height="20" rx="3" fill="var(--accent)" opacity="0.85"/>
+  <text class="dia-muted" x="422" y="102" text-anchor="middle" fill="#0b0d10" font-size="9">peak</text>
+  <text class="dia-muted" x="12" y="126">One slot = one fragment = two bars. a&#8242; and a&#8243; are sequences of a; only b contrasts.</text>
+  <path class="dia-accent" d="M48 116v-4M48 112h37M85 112v4" opacity="0.8"/>
+  <text class="dia-muted" x="52" y="146">T&#8342; (transposition)</text>
+  <text class="dia-muted" x="330" y="146">the peak sits at k* = L &#8722; 2, leaving the last slot to land on</text>
+</svg>
+<figcaption>
+
+  Figure 3. The 32-bar form: 4 sections &#215; 4 slots = 16 fragments.
+  The A group runs on variants of one progression, so only B "goes elsewhere".
+
+</figcaption>
+</figure>
+<p>
+Within a section, slots are assigned <em class="term">phrase roles</em>
+<span class="sym">(a, a&#8242;, b, a&#8243;)</span>. <span class="sym">a</span> is
+chosen freely; <span class="sym">a&#8242;</span> and <span class="sym">a&#8243;</span>
+are sequences of <span class="sym">a</span>; <span class="sym">b</span> is chosen
+freely but required to contrast with <span class="sym">a</span>.
+</p>
+
+<h3><span class="num">7.2</span>Sequences</h3>
+
+<p>The transposition operator is defined as</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>T</mi><mi>k</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow><mo>{</mo><mo>(</mo><mi>d</mi><mo>+</mo><mi>k</mi><mo>,</mo><mi class="gk">β</mi><mo>,</mo><mi class="gk">δ</mi><mo>,</mo><mi>v</mi><mo>)</mo><mo>:</mo><mo>(</mo><mi>d</mi><mo>,</mo><mi class="gk">β</mi><mo>,</mo><mi class="gk">δ</mi><mo>,</mo><mi>v</mi><mo>)</mo><mo>&#x2208;</mo><mi>f</mi><mo>}</mo></mrow>
+    <mo>,</mo>
+    <mspace width="1em"/>
+    <mtext>domain</mtext>
+    <mo>:</mo>
+    <mspace width="0.4em"/>
+    <mo>&#x2200;</mo><mi>d</mi><mo>:</mo><mn>1</mn><mo>&#x2264;</mo><mi>d</mi><mo>+</mo><mi>k</mi><mo>&#x2264;</mo><mn>15</mn>
+  </mrow>
+</math>
+<span class="tag">(11)</span>
+</div>
+<p>
+Rhythm and velocity are preserved; only degrees move. This is the substance of
+the sensation that "the same song is still going". The amount
+<span class="sym">k</span> is drawn from a preference table per section and role.
+The table carries a <em class="term">direction</em>.
+</p>
+
+<div class="listen">
+  <span class="listen-label">a alone, then a followed by T&#8330;&#8322;(a). The rhythm is identical; the pitch rises by a second</span>
+  <button type="button" data-demo="sequence-a" aria-pressed="false">a only</button>
+  <button type="button" data-demo="sequence-both" aria-pressed="false">a &#8594; a&#8242; (+2)</button>
+</div>
+
+<div class="table-wrap">
+<table>
+  <caption>Table 4. Preference order for the transposition amount k (earlier is preferred)</caption>
+  <thead><tr><th>Section</th><th>a&#8242;</th><th>a&#8243;</th><th>Intent</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>1, 2, &#8722;1, 3, &#8722;2, 0</td><td>1, 2, 3, &#8722;1, &#8722;2, 0</td><td>state quietly, lift a little</td></tr>
+    <tr><td>A&#8242;</td><td>1, 2, 3, &#8722;1, 0</td><td>2, 3, 1, &#8722;1, 0</td><td>rise clearly</td></tr>
+    <tr><td>B</td><td>2, 3, 1, 4, 0</td><td>3, 4, 2, 1, 0</td><td>climb to the peak</td></tr>
+    <tr><td>A&#8243;</td><td>&#8722;1, &#8722;2, 1, &#8722;3, 0</td><td>&#8722;2, &#8722;3, &#8722;1, &#8722;4, 0</td><td>descend and settle</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+<span class="sym">k = 0</span> sits last in every row. Zero is not a sequence: it
+is <em class="term">literal repetition</em>. Put it first, as an earlier version
+did, and bars are mass-produced in which the harmony moves while the melody does
+not change by a single note — 28% of all exactly-identical two-bar fragments came
+from this.
+</p>
+
+<p>
+The chosen amount is not the first one that fits, but the minimum under the
+lexicographic order
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mo>(</mo>
+    <mi>lift</mi><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mrow><mo>&#x230A;</mo><mi>ord</mi><mo>/</mo><mn>3</mn><mo>&#x230B;</mo></mrow><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mi>cad</mi><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mi>ord</mi>
+    <mo>)</mo>
+  </mrow>
+</math>
+<span class="tag">(12)</span>
+</div>
+<p>
+where <span class="sym">lift</span> is 1 when a climbing slot fails to reach the
+required height, <span class="sym">ord</span> is the position in the table, and
+<span class="sym">cad</span> ranks the desirability of the closing degree.
+The point is the second component, which rounds <span class="sym">ord</span> into
+<em class="term">tiers</em> of three: within a tier the cadence decides, across
+tiers the direction wins. Prefer direction alone and the rate at which
+<span class="sym">a&#8242;</span> "answers" falls from a measured 82.8% to 53.4%;
+prefer cadence alone and the A&#8594;A&#8242; rise disappears. Choosing either one
+outright always destroys the other.
+</p>
+
+<h3><span class="num">7.3</span>The intensity curve and the pitch window</h3>
+
+<p>
+Each slot <span class="sym">(&#963;, k)</span> — section index and position — is
+given a required tension and a pitch window. The raw tension is
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi class="gk">ρ</mi><mo>(</mo><mi class="gk">σ</mi><mo>,</mo><mi>k</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>3</mn><mo>+</mo><mn>2</mn><mi>k</mi><mo>/</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup></mtd><mtd><mtext>σ = 2, k &lt; k*</mtext></mtd></mtr>
+        <mtr><mtd><mn>5</mn></mtd><mtd><mtext>σ = 2, k = k*</mtext></mtd></mtr>
+        <mtr><mtd><mn>3</mn></mtd><mtd><mtext>σ = 2, k &gt; k*</mtext></mtd></mtr>
+        <mtr><mtd><msub><mi>u</mi><mi class="gk">σ</mi></msub><mo>+</mo><mo>(</mo><msub><mi>w</mi><mi class="gk">σ</mi></msub><mo>-</mo><msub><mi>u</mi><mi class="gk">σ</mi></msub><mo>)</mo><mo>&#x22C5;</mo><mi>k</mi><mo>/</mo><mo>(</mo><mi>L</mi><mo>-</mo><mn>1</mn><mo>)</mo></mtd><mtd><mtext>otherwise</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(13)</span>
+</div>
+<p>
+<span class="sym">k*</span> is the climax slot: <span class="sym">L &#8722; 2</span>
+when <span class="sym">L &#8805; 3</span>, otherwise <span class="sym">L &#8722; 1</span>.
+It sits one before the last so that something is left to land on.
+<span class="sym">(u, w)</span> is <span class="sym">A: (1,2)</span>,
+<span class="sym">A&#8242;: (2,3)</span>, <span class="sym">A&#8243;: (3,1)</span>.
+</p>
+
+<p>
+The pitch window, with <span class="sym">peak(f)</span> the highest degree of the
+fragment, is
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>p</mi><mi>max</mi></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>14</mn></mtd><mtd><mtext>climax</mtext></mtd></mtr>
+        <mtr><mtd><mn>10</mn></mtd><mtd><mtext>A&#8243; and after the peak</mtext></mtd></mtr>
+        <mtr><mtd><mn>11</mn></mtd><mtd><mtext>otherwise</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+    <mo>,</mo>
+    <mspace width="1.2em"/>
+    <msub><mi>p</mi><mi>min</mi></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>12</mn></mtd><mtd><mtext>climax</mtext></mtd></mtr>
+        <mtr><mtd><mn>1</mn></mtd><mtd><mtext>otherwise</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(14)</span>
+</div><figure>
+<svg viewBox="0 0 620 210" role="img" aria-label="Diagram of the pitch window per slot and the position of the climax">
+  <line class="dia-line" x1="46" y1="176" x2="600" y2="176"/>
+  <line class="dia-line" x1="46" y1="16" x2="46" y2="176"/>
+  <text class="dia-muted" x="6" y="20">degree</text>
+  <g class="dia-muted" text-anchor="end">
+    <text x="40" y="30">15</text><text x="40" y="66">12</text><text x="40" y="86">11</text><text x="40" y="106">10</text><text x="40" y="172">1</text>
+  </g>
+  <line class="dia-line" x1="46" y1="66" x2="600" y2="66" stroke-dasharray="3 4"/>
+  <line class="dia-line" x1="46" y1="86" x2="600" y2="86" stroke-dasharray="3 4"/>
+
+  <g fill="var(--line-strong)" opacity="0.45">
+    <rect x="60"  y="86" width="86" height="88"/><rect x="198" y="86" width="86" height="88"/>
+    <rect x="336" y="86" width="60" height="88"/><rect x="474" y="106" width="86" height="68"/>
+  </g>
+  <rect x="404" y="30" width="52" height="36" fill="var(--accent)" opacity="0.85"/>
+  <text x="430" y="52" text-anchor="middle" font-size="10" fill="#0b0d10"
+        font-family="system-ui, sans-serif">peak</text>
+
+  <path class="dia-accent" d="M74 150 L108 146 L142 140 L212 138 L246 130 L280 124 L350 118 L384 104 L404 66"/>
+  <path class="dia-accent" d="M456 66 L490 128 L524 136 L558 146" opacity="0.75"/>
+
+  <g class="dia-muted" text-anchor="middle">
+    <text x="103" y="194">A</text><text x="241" y="194">A′</text><text x="396" y="194">B</text><text x="517" y="194">A″</text>
+  </g>
+  <text class="dia-muted" x="60" y="78">non-climax ceiling = 11</text>
+  <text class="dia-muted" x="468" y="60">lower bound = 12</text>
+</svg>
+<figcaption>
+
+  Figure 4. The pitch window. Grey bands are the range allowed in each section;
+  the line is the actual height of the melody. Because the non-climax ceiling
+  (11) and the climax lower bound (12) do not meet, the highest note of the whole
+  piece can occur only in the climax slot. After the peak, and throughout
+  A&#8243;, the ceiling drops one further (to 10) so the music settles.
+
+</figcaption>
+</figure>
+<p>
+Since <span class="sym">&#963;<sub>m</sub></span> is strictly increasing and the
+non-climax ceiling (11) never meets the climax lower bound (12), it follows
+structurally that <em class="term">the highest note of the piece appears only in
+the climax slot</em>. The climax additionally requires the fragment's own peak to
+occur exactly once, so the highest note sounds exactly once in the whole piece.
+What moves a listener is not height as such, but the singularity of having
+arrived there for the first time.
+</p>
+
+<h3><span class="num">7.4</span>Climbing to the climax</h3>
+
+<p>
+A ceiling alone is not enough: if the bars before the peak stay low, the peak is
+reached by a leap. Climbing slots are therefore given a
+<em class="term">preferred</em> lower bound.
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>rise</mi><mo>(</mo><mn>2</mn><mo>,</mo><mi>k</mi><mo>)</mo>
+    <mo>=</mo>
+    <mi>max</mi><mo>(</mo><mn>2</mn><mo>,</mo>
+    <mspace width="0.2em"/>
+    <mn>10</mn><mo>-</mo><mo>(</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup><mo>-</mo><mn>1</mn><mo>-</mo><mi>k</mi><mo>)</mo>
+    <mo>)</mo>
+    <mo>,</mo>
+    <mspace width="1em"/>
+    <mn>0</mn><mo>&lt;</mo><mi>k</mi><mo>&lt;</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup>
+  </mrow>
+</math>
+<span class="tag">(15)</span>
+</div>
+<p>
+This is a preference, not a constraint; if no candidate satisfies it the system
+gives up silently (see below). This single change raised the highest note of the
+bar before the peak from 12.5 to 13.8 semitones above the tonic, and shrank the
+final step from 9.1 to 6.3 semitones.
+</p>
+
+<h3><span class="num">7.5</span>The filter cascade</h3>
+
+<p>
+The fragment for a slot is drawn by first forming the candidate set
+<span class="sym">C<sub>0</sub></span> from the
+<em class="term">hard constraints</em> (chord fit and the pitch window), then
+narrowing it with <em class="term">preferences</em> in order. Each preference is
+a monotone, non-emptying filter.
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>C</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><msub><mi class="gk">φ</mi><mi>i</mi></msub><mo>(</mo><msub><mi>C</mi><mi>i</mi></msub><mo>)</mo></mtd><mtd><msub><mi class="gk">φ</mi><mi>i</mi></msub><mo>(</mo><msub><mi>C</mi><mi>i</mi></msub><mo>)</mo><mo>&#x2260;</mo><mi>&#x2205;</mi></mtd></mtr>
+        <mtr><mtd><msub><mi>C</mi><mi>i</mi></msub></mtd><mtd><mtext>otherwise</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(16)</span>
+</div>
+<p>
+Because of this "do not narrow if nothing matches" rule, no number of stacked
+preferences can empty the set, and the measured rate of falling back to the
+emergency fragment is zero. The order is not by strength of effect but by
+<em class="term">what must be applied while the pool is still wide</em>.
+</p>
+
+<ol class="spaced">
+  <li>Contrast of contour (<span class="sym">b</span> differs from
+      <span class="sym">a</span> in contour and in onset pattern)</li>
+  <li>Soaring (climax only)</li>
+  <li>Climb (equation 15)</li>
+  <li>Preferred closing degree, by role (<span class="sym">a</span> stays open,
+      <span class="sym">a&#8243;</span> lands on the tonic)</li>
+  <li>Breath (phrase ends close; mid-phrase slots do not)</li>
+  <li>Suspension (over the darkening chords, and just before the peak)</li>
+  <li>Pentatonic (singability)</li>
+</ol>
+
+<p>
+Cadence is applied before pentatonic and suspension because, applied later, the
+already-narrowed set no longer contains the closing degree in question and the
+filter silently does nothing. For the same reason, suspension precedes pentatonic
+over the darkening chords.
+</p>
+
+<h2 id="s8"><span class="num">8</span>Modulation</h2>
+
+<p>
+Only the final section <span class="sym">A&#8243;</span> is written with a new
+tonic. Chord symbols are relative to the tonic, so not one of them is rewritten:
+only <span class="sym">&#964;</span> moves, and the progression, the phrase
+structure and the sequences all rise with it. The step is
+<span class="sym">s &#8712; {1, 2}</span> semitones.
+</p>
+
+<p>
+Drawing the step by a coin flip produces combinations whose key signatures fly
+apart. From D-flat major (five flats), +1 semitone lands on D major (two sharps),
+a move of seven positions around the circle of fifths — the farthest possible
+jump. From the same key, +2 semitones lands on E-flat major (three flats), a
+distance of two. Writing <span class="sym">&#966;(&#964;, m)</span> for the
+position on the circle of fifths, the distance and the weight are
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>d</mi><mo>(</mo><mi>s</mi><mo>)</mo>
+    <mo>=</mo>
+    <mo>|</mo><mi class="gk">φ</mi><mo>(</mo><mi class="gk">τ</mi><mo>+</mo><mi>s</mi><mo>,</mo><mi>m</mi><mo>)</mo><mo>-</mo><mi class="gk">φ</mi><mo>(</mo><mi class="gk">τ</mi><mo>,</mo><mi>m</mi><mo>)</mo><mo>|</mo>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <mi>P</mi><mo>(</mo><mi>s</mi><mo>)</mo>
+    <mo>&#x221D;</mo>
+    <msup><mrow><mo>(</mo><mn>1</mn><mo>+</mo><mi>d</mi><mo>(</mo><mi>s</mi><mo>)</mo><mo>)</mo></mrow><mrow><mo>-</mo><mn>3</mn></mrow></msup>
+  </mrow>
+</math>
+<span class="tag">(17)</span>
+</div>
+<p>
+When both steps are far (<span class="sym">d &#8805; 5</span>) no lottery is held
+and the nearer one is taken. The exponent 3 was chosen by measurement: the mean
+distance and the frequency of the worst case (7) over 3,000 draws are as follows.
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>Table 6. Weighting of the step and the resulting key-signature distance (3,000 draws)</caption>
+  <thead><tr><th>Weight</th><th class="num">Mean distance</th><th class="num">Distance 7</th><th class="num">Distance &#8805; 10</th></tr></thead>
+  <tbody>
+    <tr><td>coin flip</td><td class="num">4.43</td><td class="num">19.5%</td><td class="num">6.1%</td></tr>
+    <tr><td>(1+d)<sup>&#8722;2</sup></td><td class="num">2.93</td><td class="num">4.9%</td><td class="num">0.0%</td></tr>
+    <tr><td>(1+d)<sup>&#8722;3</sup> (adopted)</td><td class="num">2.64</td><td class="num">2.0%</td><td class="num">0.0%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+Raising the exponent further all but eliminates the +1 step, which would remove
+the semitone lift — the very cliché of the ballad — from the system.
+</p>
+
+<p>
+As a pivot, the last bar of <span class="sym">B</span> is replaced by the
+<em class="term">dominant of the new key</em>. Rising a semitone without warning
+sounds abrupt; one bar of the dominant lets the ear accept the new key before
+landing on its tonic. The pivot is omitted when that bar would fall inside the
+climax slot (in 16-bar pieces). A slot is two bars, so changing key halfway
+through it could make some other note equal the peak in pitch. The singularity
+guaranteed by equation 14 outranks the smoothness of the join.
+</p>
+
+<h2 id="s9"><span class="num">9</span>Voice placement</h2>
+
+<p>
+Fragments are written in degrees, so realising them as pitches needs a tonic.
+Accompaniment, bass and pad are generated from the harmony independently. The
+naive implementation places the accompaniment by
+<em class="term">absolute range</em>, which never looks at where the melody is
+singing: measurement showed 33.8% of melody notes overtaken by the accompaniment
+or the pad, by as much as 13 semitones. When the accompaniment crosses above the
+melody, the roles invert and the melody is buried.
+</p>
+<figure>
+<svg viewBox="0 0 620 190" role="img" aria-label="Comparison of accompaniment crossing above the melody and kept under the ceiling">
+  <text class="dia-muted" x="8" y="16">old: placed by absolute range alone</text>
+  <text class="dia-muted" x="326" y="16">new: ceiling from the lowest melody note</text>
+
+  <g>
+    <line class="dia-line" x1="12" y1="26" x2="300" y2="26"/>
+    <path class="dia-accent" d="M24 62 L60 50 L96 58 L132 44 L168 56 L204 48 L240 60 L276 52"/>
+    <g fill="var(--line-strong)" opacity="0.85">
+      <rect x="24" y="34" width="24" height="6" rx="2"/><rect x="60" y="70" width="24" height="6" rx="2"/>
+      <rect x="96" y="40" width="24" height="6" rx="2"/><rect x="132" y="74" width="24" height="6" rx="2"/>
+      <rect x="168" y="36" width="24" height="6" rx="2"/><rect x="204" y="72" width="24" height="6" rx="2"/>
+      <rect x="240" y="42" width="24" height="6" rx="2"/><rect x="276" y="70" width="24" height="6" rx="2"/>
+    </g>
+    <text class="dia-muted" x="12" y="104">accompaniment crosses above and below (33.8% measured)</text>
+  </g>
+
+  <g>
+    <line class="dia-line" x1="330" y1="26" x2="612" y2="26"/>
+    <path class="dia-accent" d="M338 62 L374 50 L410 58 L446 44 L482 56 L518 48 L554 60 L590 52"/>
+    <line class="dia-line" x1="330" y1="70" x2="612" y2="70" stroke-dasharray="4 4"/>
+    <text class="dia-muted" x="334" y="84">ceiling C(b) = lowest melody note &#8722; 2</text>
+    <g fill="var(--line-strong)" opacity="0.85">
+      <rect x="338" y="90" width="24" height="6" rx="2"/><rect x="374" y="104" width="24" height="6" rx="2"/>
+      <rect x="410" y="94" width="24" height="6" rx="2"/><rect x="446" y="108" width="24" height="6" rx="2"/>
+      <rect x="482" y="92" width="24" height="6" rx="2"/><rect x="518" y="106" width="24" height="6" rx="2"/>
+      <rect x="554" y="96" width="24" height="6" rx="2"/><rect x="590" y="104" width="24" height="6" rx="2"/>
+    </g>
+    <text class="dia-muted" x="330" y="132">accompaniment always below the melody (0.0% measured)</text>
+  </g>
+
+  <text class="dia-muted" x="12" y="160">line = melody / bars = accompaniment arpeggio. Vertical position is pitch.</text>
+  <text class="dia-muted" x="12" y="178">Only octave moves and dropping upper voices are allowed; note names never change.</text>
+</svg>
+<figcaption>
+
+  Figure 5. Voice placement. On the left the accompaniment is placed by absolute
+  range and covers the melody. On the right a ceiling is set per bar, so the
+  relation "melody leads, accompaniment supports" is preserved.
+
+</figcaption>
+</figure>
+<div class="listen">
+  <span class="listen-label">The same eight bars, with only the accompaniment placement changed. Listen for whether the melody comes through</span>
+  <button type="button" data-demo="voicing-crossed" aria-pressed="false">Old: above the melody</button>
+  <button type="button" data-demo="voicing-good" aria-pressed="false">New: below the melody</button>
+</div>
+
+<p>
+The ceiling in bar <span class="sym">b</span> is set from the lowest melody note.
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>C</mi><mo>(</mo><mi>b</mi><mo>)</mo>
+    <mo>=</mo>
+    <munder><mo movablelimits="false">min</mo><mrow><mi>n</mi><mo>&#x2208;</mo><mi>M</mi><mo>(</mo><mi>b</mi><mo>)</mo></mrow></munder>
+    <mspace width="0.3em"/>
+    <mi class="gk">π</mi><mo>(</mo><mi>n</mi><mo>)</mo>
+    <mo>-</mo>
+    <mi class="gk">Δ</mi>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <mi class="gk">Δ</mi><mo>=</mo><mn>2</mn>
+  </mrow>
+</math>
+<span class="tag">(18)</span>
+</div>
+<p>
+A chord <span class="sym">V = (v<sub>1</sub> &lt; &#8230; &lt; v<sub>r</sub>)</span>
+is then fitted under the ceiling.
+<em class="term">The only permitted operations are octave transposition and
+dropping upper voices; note names are never changed.</em> Pushing a chord down by
+semitones turns it into a different chord. The octave shift
+<span class="sym">j &#8712; &#8484;</span> is chosen by the cost
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>J</mi><mo>(</mo><mi>j</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>1000</mn><mo>&#x22C5;</mo><msup><mrow><mo>(</mo><msub><mi>v</mi><mn>1</mn></msub><mo>+</mo><mn>12</mn><mi>j</mi><mo>+</mo><mi>w</mi><mo>-</mo><mi>C</mi><mo>)</mo></mrow><mo>+</mo></msup>
+    <mo>+</mo>
+    <mn>10</mn><mo>&#x22C5;</mo><mi>out</mi><mo>(</mo><mi>j</mi><mo>)</mo>
+    <mo>+</mo>
+    <mo>|</mo><msub><mi>v</mi><mn>1</mn></msub><mo>+</mo><mn>12</mn><mi>j</mi><mo>-</mo><msub><mi>v</mi><mi>prev</mi></msub><mo>|</mo>
+  </mrow>
+</math>
+<span class="tag">(19)</span>
+</div>
+<p>
+where <span class="sym">w = v<sub>r</sub> &#8722; v<sub>1</sub></span> is the
+spread of the chord, <span class="sym">out(j)</span> the excursion outside the
+normal register, and the last term is voice leading against the previous bar.
+The factor 1000 makes obedience to the ceiling absolute; the normal register
+comes next, smoothness last. If it still does not fit, upper voices are dropped
+(at least two are kept).
+</p>
+
+<p>
+The pad, which is held for four beats, is additionally checked for semitone
+friction: tones a semitone away from an <em class="term">exposed</em> melody note
+in the bar (the <span class="sym">exp</span> of equation 9) are removed.
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msup><mi>V</mi><mo>&#x2032;</mo></msup>
+    <mo>=</mo>
+    <mrow><mo>{</mo>
+      <mi>v</mi><mo>&#x2208;</mo><mi>V</mi>
+      <mo>:</mo>
+      <mo>&#x00AC;</mo><mo>&#x2203;</mo><mi>n</mi><mo>&#x2208;</mo><msup><mi>M</mi><mi>exp</mi></msup><mo>(</mo><mi>b</mi><mo>)</mo>
+      <mspace width="0.3em"/>
+      <mo>[</mo><mo>(</mo><mi>v</mi><mo>-</mo><mi class="gk">π</mi><mo>(</mo><mi>n</mi><mo>)</mo><mo>)</mo><mspace width="0.2em"/><mi>mod</mi><mspace width="0.2em"/><mn>12</mn><mo>&#x2208;</mo><mo>{</mo><mn>1</mn><mo>,</mo><mn>11</mn><mo>}</mo><mo>]</mo>
+    <mo>}</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(20)</span>
+</div>
+<p>
+An arpeggio makes semitone friction vanish in an instant; a sustained tone does
+not. The seventh of <span class="sym">IM7</span>, for example, sits a semitone
+below the tonic, and while the melody sings the tonic it beats without resolving.
+</p>
+
+<div class="note">
+What matters is that this check must <em class="term">not</em> be applied to
+every semitone clash on a strong beat. In the breakdown taken before equation 20
+was introduced, 448 of 559 strong-beat clashes (80%) were non-chord tones, and
+99% of those resolved by step to the following note. Those are suspensions and
+appoggiaturas — precisely the shading this system sets out to produce. Only the
+remaining 111, where the melody is a chord tone and still muddied, were worth
+removing. After the change, accidents fall to 11 and 98% of the remaining clashes
+are resolving suspensions. (That is why the clash rate in Table 5 only goes from
+20.1% to 9.8%: the suspensions were not reduced.)
+</div>
+
+<h2 id="s10"><span class="num">10</span>Performance design</h2>
+
+<p>
+Beats and velocities played as written are mechanical. Dynamic design is not
+seasoning but skeleton, and is applied regardless of settings. Velocity is the
+product of three layers.
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>v</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+    <mo>=</mo>
+    <mi>clamp</mi><mrow><mo>(</mo>
+      <msub><mi>v</mi><mn>0</mn></msub>
+      <mo>&#x22C5;</mo>
+      <mo>(</mo><mn>1</mn><mo>+</mo><mi class="gk">ε</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>L</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>W</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>K</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+    <mo>)</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(21)</span>
+</div><figure>
+<svg viewBox="0 0 620 204" role="img" aria-label="Diagram of the three dynamic layers and their product">
+  <g class="dia-muted">
+    <text x="8" y="20">L (section)</text>
+    <text x="8" y="72">W (within phrase)</text>
+    <text x="8" y="124">K (climax)</text>
+    <text x="8" y="182">product = actual velocity</text>
+  </g>
+  <line class="dia-line" x1="120" y1="30" x2="612" y2="30" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 34 L243 34 L243 28 L366 28 L366 18 L489 18 L489 32 L612 44"/>
+  <line class="dia-line" x1="120" y1="82" x2="612" y2="82" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 88 L151 76 L182 88 L212 76 L243 88 L274 76 L305 88 L335 76 L366 88 L397 76 L428 88 L458 76 L489 88 L520 76 L551 88 L581 76 L612 88"/>
+  <line class="dia-line" x1="120" y1="134" x2="612" y2="134" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 134 L376 134 L416 124 L440 114 L452 148 L472 138 L612 134"/>
+  <path class="dia-accent" d="M120 180 L200 177 L280 173 L360 169 L416 162 L440 154 L455 190 L500 182 L560 186 L612 191" opacity="0.9"/>
+  <text class="dia-muted" x="440" y="110" text-anchor="middle">peak 1.20</text>
+  <text class="dia-muted" x="466" y="150">after 0.75</text>
+</svg>
+<figcaption>
+
+  Figure 6. The three dynamic layers: the section baseline, the swell within each
+  phrase, and the climax with its release. The bottom trace is the velocity
+  actually sounded — the deepest trough falls immediately after the peak.
+  That drop is what makes the release after a chorus.
+
+</figcaption>
+</figure>
+<ul class="spaced">
+  <li><span class="sym">L</span> — the section baseline:
+      <span class="sym">A: 0.85</span>, <span class="sym">A&#8242;: 0.95</span>,
+      <span class="sym">B: 1.10</span>,
+      <span class="sym">A&#8243;: 0.80 &#8594; 0.55</span> (falling linearly).</li>
+  <li><span class="sym">W</span> — the swell within a phrase (8 beats), peaking
+      at the phrase's highest note:
+      <span class="sym">1 &#8722; 0.18&#183;|p &#8722; q| / max(q, 1&#8722;q, 0.25)</span>.</li>
+  <li><span class="sym">K</span> — the climax curve: 0.88 &#8594; 1.20 over the
+      eight beats before the peak, then down to 0.75 over the four beats after.
+      That drop makes the release after a chorus.</li>
+  <li><span class="sym">&#949;</span> — seed-derived velocity jitter (&#177;10%).</li>
+</ul>
+
+<div class="listen">
+  <span class="listen-label">The same twelve bars, with the dynamic design applied and with it flattened</span>
+  <button type="button" data-demo="dynamics-on" aria-pressed="false">With design</button>
+  <button type="button" data-demo="dynamics-flat" aria-pressed="false">Flattened</button>
+</div>
+
+<p>
+In time, the system applies tenuto (the peak note alone, delayed 30 ms and
+lengthened by a factor of 1.15), a breath at phrase ends (15 ms), a hesitation
+before the climax (up to 0.1 beat over two beats), and a ritardando over the last
+two bars (up to 0.5 beat). All are produced deterministically from the seeded
+PRNG, so the same song code reproduces even the fluctuations of the performance.
+</p>
+
+<p>
+These decisions are also written into the score as notation. Dynamics, hairpins,
+slurs, tenuto, pedal and <em>rit.</em> all derive from the same
+<span class="sym">L, W, K</span>, so the sound and the score cannot drift apart.
+</p>
+
+<h2 id="s11"><span class="num">11</span>Measurements</h2>
+
+<p>
+The properties of the system are managed by measurement, not by impression.
+The figures below are at default settings; the sample size differs per metric
+(60 pieces for crossing and clashes, 80&#8211;200 for the peak and repetition,
+8 pieces &#215; 60 seconds for loudness).
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>Table 5. Before and after the design changes</caption>
+  <thead><tr><th>Metric</th><th class="num">Before</th><th class="num">After</th></tr></thead>
+  <tbody>
+    <tr><td>melody notes overtaken by accompaniment or pad</td><td class="num">33.8%</td><td class="num">0.0%</td></tr>
+    <tr><td>semitone clashes on strong beats (suspensions included)</td><td class="num">20.1%</td><td class="num">9.8%</td></tr>
+    <tr><td>&#8195;of which accidental (melody is a chord tone)</td><td class="num">111</td><td class="num">11</td></tr>
+    <tr><td>highest note of the bar before the peak (above tonic)</td><td class="num">+12.5 st</td><td class="num">+13.8 st</td></tr>
+    <tr><td>distance to the peak (the final step)</td><td class="num">9.1 st</td><td class="num">6.3 st</td></tr>
+    <tr><td>exactly identical two-bar fragments</td><td class="num">6.7 pairs</td><td class="num">5.2 pairs</td></tr>
+    <tr><td>fallback fragments used</td><td class="num">0</td><td class="num">0</td></tr>
+    <tr><td>pieces whose highest note sounds exactly once</td><td class="num">200/200</td><td class="num">200/200</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+The audio side is decided the same way. Before the change, the default volume
+peaked at &#8722;7.1 dBFS with an RMS of &#8722;26.1 dB, leaving a great deal of
+available level unused. On a desk speaker that merely reads as "a quiet piece";
+through a phone's built-in speaker it is inaudible. The limiter threshold was
+raised from &#8722;8 to &#8722;3, the gain multiplied by 3.0, a flat ceiling (0.8)
+applied to the output, and the default volume raised from 70 to 85.
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>Table 7. Output level and dynamics (8 pieces &#215; 60 s; dynamics = loudest 2-second RMS minus quietest)</caption>
+  <thead><tr><th>Condition</th><th class="num">Peak</th><th class="num">RMS</th><th class="num">Dynamics</th></tr></thead>
+  <tbody>
+    <tr><td>before, default volume 70</td><td class="num">&#8722;7.1 dBFS</td><td class="num">&#8722;26.1 dB</td><td class="num">12.9 dB</td></tr>
+    <tr><td>before, volume 85</td><td class="num">&#8722;5.2 dBFS</td><td class="num">&#8722;24.6 dB</td><td class="num">12.2 dB</td></tr>
+    <tr><td>after, default volume 85</td><td class="num">&#8722;2.6 dBFS</td><td class="num">&#8722;19.7 dB</td><td class="num">12.2 dB</td></tr>
+    <tr><td>after, volume at maximum 100</td><td class="num">&#8722;1.2 dBFS</td><td class="num">&#8722;18.3 dB</td><td class="num">12.1 dB</td></tr>
+    <tr><td>gain 3.0, threshold &#8722;8, volume 85</td><td class="num">&#8722;4.0 dBFS</td><td class="num">&#8722;18.4 dB</td><td class="num">9.9 dB</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+Comparing each version at its own default, RMS rose by 6.4 dB, and even at
+maximum volume the worst-case peak is &#8722;0.9 dBFS, so nothing clips.
+<em class="term">The dynamics did not widen.</em> At the same volume (85) they are
+12.2 dB before and after; including the raised default they narrow slightly, from
+12.9 to 12.2 dB. The honest claim is only this: the level rose by 6.4 dB without
+appreciable loss of dynamics.
+</p>
+
+<p>
+What preserves them is where the compression starts. Multiply the gain by 3.0
+while leaving the threshold at &#8722;8 and the dynamics collapse to 9.9 dB (the
+last row of Table 7), because the limiter eats into musical peaks. At &#8722;3 it
+only catches sudden transients. The output ceiling is a flat attenuation rather
+than compression for the same reason.
+</p>
+
+<h2 id="s12"><span class="num">12</span>Limitations</h2>
+
+<ol class="spaced">
+  <li><em class="term">Rhythmic variety is bounded by the arithmetic of the form.</em>
+      Only seven or eight rhythmic types appear across 32 bars. That follows
+      directly from <span class="sym">a&#8242;</span> and
+      <span class="sym">a&#8243;</span> being sequences of <span class="sym">a</span>
+      that preserve rhythm — two types per four slots, across four phrase groups.
+      Break it and the sense that "the same song is still going" goes with it.
+      This is not a defect to be removed.</li>
+  <li><em class="term">Motivic return is literal repetition.</em> 58% of the
+      exactly-identical fragments come from motifs returning across sections.
+      That is the structure of verse one, verse two and the final verse of a song;
+      whether it should be varied is a question of style, not of correctness.</li>
+  <li><em class="term">The final step to the peak is still a leap.</em> This
+      follows from the explicit demand for a soaring figure — rise a fourth or
+      more, land, descend by step — which was observed 189 times in the corpus.
+      The climb across bars improved, but the leap itself is retained by design.</li>
+  <li><em class="term">The harmonic vocabulary is closed under functional harmony.</em>
+      Borrowed chords and secondary dominants are included; modal harmony and
+      non-functional progressions are not. Because fragment compatibility is
+      precomputed over degrees, extending the vocabulary requires regenerating the
+      catalogue.</li>
+</ol>
+
+<h2 id="appendix"><span class="num">Appendix</span>The corpus</h2>
+
+<p>
+Every coefficient of the scoring function, and every melodic formula, was induced
+from these pieces. "Public domain" was taken to mean "the composer died in 1955
+or earlier, or the piece is traditional"; the latest death year in the collection
+is 1952 (B&#233;la Bart&#243;k, d. 1945, is included; John Ireland, d. 1962, is not).
+56 composers and 99 pieces, plus 26 traditional pieces: 125 in all.
+By mode, 93 major and 32 minor.
+</p>
+
+<p>
+What was transcribed is, from each piece, the one memorable phrase of the main
+melody (8&#8211;27 beats, median 13). Neither harmony nor accompaniment was taken.
+What this system learns is <em class="term">the succession of intervals and the
+rhythmic shapes, and nothing else</em>; the harmonic vocabulary was defined
+independently, from functional harmony.
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>Table 8. By region</caption>
+  <thead><tr><th>Region</th><th class="num">Pieces</th><th>Region</th><th class="num">Pieces</th></tr></thead>
+  <tbody>
+    <tr><td>Anglo-American</td><td class="num">30</td><td>Italian</td><td class="num">13</td></tr>
+    <tr><td>German / Austrian</td><td class="num">20</td><td>Slavic</td><td class="num">11</td></tr>
+    <tr><td>Japanese</td><td class="num">17</td><td>Latin American</td><td class="num">10</td></tr>
+    <tr><td>French</td><td class="num">16</td><td>Korean</td><td class="num">4</td></tr>
+    <tr><td colspan="2"></td><td>Other</td><td class="num">4</td></tr>
+  </tbody>
+</table>
+</div>
+
+<ul class="roster">
+
+    <li><span class="who">Johann Pachelbel <span class="died">(d. 1706)</span></span><br><span class="what">Canon in D</span></li>
+    <li><span class="who">Johann Sebastian Bach <span class="died">(d. 1750)</span></span><br><span class="what">Air on the G String (BWV 1068) ／ Jesu, Joy of Man's Desiring (BWV 147)</span></li>
+    <li><span class="who">Christian Petzold <span class="died">(d. 1762)</span></span><br><span class="what">Minuet in G (BWV Anh.114)</span></li>
+    <li><span class="who">Wolfgang Amadeus Mozart <span class="died">(d. 1791)</span></span><br><span class="what">Ave Verum Corpus (K.618) ／ Piano Sonata K.545, 1st mvt ／ Lacrimosa (Requiem K.626)</span></li>
+    <li><span class="who">Jean-Paul-Égide Martini <span class="died">(d. 1816)</span></span><br><span class="what">Plaisir d'amour</span></li>
+    <li><span class="who">Ludwig van Beethoven <span class="died">(d. 1827)</span></span><br><span class="what">Für Elise (WoO 59) ／ Piano Sonata Op.27-2 "Moonlight", 1st mvt ／ Piano Sonata Op.13 "Pathétique", 2nd mvt ／ Ode to Joy (Symphony No.9, 4th mvt)</span></li>
+    <li><span class="who">Franz Schubert <span class="died">(d. 1828)</span></span><br><span class="what">Ave Maria (D.839) ／ Ständchen "Serenade" (D.957-4) ／ Der Lindenbaum (D.911-5) ／ Heidenröslein (D.257) ／ An die Musik (D.547)</span></li>
+    <li><span class="who">Thomas Haynes Bayly <span class="died">(d. 1839)</span></span><br><span class="what">Long, Long Ago</span></li>
+    <li><span class="who">Felix Mendelssohn <span class="died">(d. 1847)</span></span><br><span class="what">Auf Flügeln des Gesanges (Op.34-2)</span></li>
+    <li><span class="who">Frédéric Chopin <span class="died">(d. 1849)</span></span><br><span class="what">Nocturne Op.9 No.2 ／ Prelude Op.28 No.4 ／ Prelude Op.28 No.7 ／ Étude Op.10 No.3 "Tristesse" ／ Nocturne Op.55 No.1</span></li>
+    <li><span class="who">Henry Rowley Bishop <span class="died">(d. 1855)</span></span><br><span class="what">Home! Sweet Home!</span></li>
+    <li><span class="who">Robert Schumann <span class="died">(d. 1856)</span></span><br><span class="what">Träumerei (Kinderszenen Op.15-7) ／ Widmung (Op.25-1)</span></li>
+    <li><span class="who">Stephen Foster <span class="died">(d. 1864)</span></span><br><span class="what">Beautiful Dreamer ／ Jeanie with the Light Brown Hair ／ Hard Times Come Again No More ／ My Old Kentucky Home</span></li>
+    <li><span class="who">Sebastián Iradier <span class="died">(d. 1865)</span></span><br><span class="what">La Paloma</span></li>
+    <li><span class="who">George R. Poulton <span class="died">(d. 1867)</span></span><br><span class="what">Aura Lee</span></li>
+    <li><span class="who">Georges Bizet <span class="died">(d. 1875)</span></span><br><span class="what">L'amour est un oiseau rebelle (Carmen)</span></li>
+    <li><span class="who">Narciso Serradell Sevilla <span class="died">(d. 1877)</span></span><br><span class="what">La Golondrina</span></li>
+    <li><span class="who">Teodoro Cottrau <span class="died">(d. 1879)</span></span><br><span class="what">Santa Lucia</span></li>
+    <li><span class="who">Jacques Offenbach <span class="died">(d. 1880)</span></span><br><span class="what">Barcarolle (Les contes d'Hoffmann)</span></li>
+    <li><span class="who">Franz Liszt <span class="died">(d. 1886)</span></span><br><span class="what">Liebestraum No.3 (S.541-3)</span></li>
+    <li><span class="who">César Franck <span class="died">(d. 1890)</span></span><br><span class="what">Panis Angelicus</span></li>
+    <li><span class="who">Pyotr Ilyich Tchaikovsky <span class="died">(d. 1893)</span></span><br><span class="what">Barcarolle "June" (The Seasons Op.37a) ／ Swan Theme (Swan Lake Op.20) ／ None but the Lonely Heart (Op.6-6)</span></li>
+    <li><span class="who">Juventino Rosas <span class="died">(d. 1894)</span></span><br><span class="what">Sobre las Olas</span></li>
+    <li><span class="who">Johannes Brahms <span class="died">(d. 1897)</span></span><br><span class="what">Wiegenlied (Op.49-4)</span></li>
+    <li><span class="who">Alicia Ann Scott <span class="died">(d. 1900)</span></span><br><span class="what">Annie Laurie</span></li>
+    <li><span class="who">Giuseppe Verdi <span class="died">(d. 1901)</span></span><br><span class="what">La donna è mobile (Rigoletto) ／ Libiamo ne' lieti calici (La traviata)</span></li>
+    <li><span class="who">Rentarō Taki <span class="died">(d. 1903)</span></span><br><span class="what">Kōjō no Tsuki (荒城の月) ／ Hana (花) ／ Hakone Hachiri (箱根八里)</span></li>
+    <li><span class="who">Antonín Dvořák <span class="died">(d. 1904)</span></span><br><span class="what">Largo (Symphony No.9 "From the New World", 2nd mvt) ／ Songs My Mother Taught Me (Op.55-4)</span></li>
+    <li><span class="who">Edvard Grieg <span class="died">(d. 1907)</span></span><br><span class="what">Solveig's Song (Peer Gynt Op.55) ／ Morning Mood (Peer Gynt Op.46) ／ Jeg elsker Dig (Op.5-3)</span></li>
+    <li><span class="who">James A. Bland <span class="died">(d. 1911)</span></span><br><span class="what">Carry Me Back to Old Virginny</span></li>
+    <li><span class="who">Jules Massenet <span class="died">(d. 1912)</span></span><br><span class="what">Méditation (Thaïs)</span></li>
+    <li><span class="who">Francesco Paolo Tosti <span class="died">(d. 1916)</span></span><br><span class="what">Ideale ／ 'A vucchella</span></li>
+    <li><span class="who">Eduardo di Capua <span class="died">(d. 1917)</span></span><br><span class="what">Maria, Marì!</span></li>
+    <li><span class="who">Claude Debussy <span class="died">(d. 1918)</span></span><br><span class="what">Clair de lune (Suite bergamasque) ／ Rêverie (L.68) ／ Arabesque No.1 (L.66)</span></li>
+    <li><span class="who">Ángel Villoldo <span class="died">(d. 1919)</span></span><br><span class="what">El Choclo</span></li>
+    <li><span class="who">Camille Saint-Saëns <span class="died">(d. 1921)</span></span><br><span class="what">Le Cygne (Le Carnaval des animaux)</span></li>
+    <li><span class="who">Luigi Denza <span class="died">(d. 1922)</span></span><br><span class="what">Funiculì, Funiculà</span></li>
+    <li><span class="who">Gabriel Fauré <span class="died">(d. 1924)</span></span><br><span class="what">Sicilienne (Op.78) ／ Après un rêve (Op.7-1) ／ Pavane (Op.50)</span></li>
+    <li><span class="who">Giacomo Puccini <span class="died">(d. 1924)</span></span><br><span class="what">O mio babbino caro (Gianni Schicchi) ／ Nessun dorma (Turandot)</span></li>
+    <li><span class="who">Erik Satie <span class="died">(d. 1925)</span></span><br><span class="what">Gymnopédie No.1 ／ Gnossienne No.1 ／ Je te veux</span></li>
+    <li><span class="who">Sakunosuke Koyama <span class="died">(d. 1927)</span></span><br><span class="what">Natsu wa Kinu (夏は来ぬ)</span></li>
+    <li><span class="who">Akira Nakada <span class="died">(d. 1931)</span></span><br><span class="what">Sōshunfu (早春賦)</span></li>
+    <li><span class="who">Edward Elgar <span class="died">(d. 1934)</span></span><br><span class="what">Salut d'Amour (Op.12) ／ Nimrod (Enigma Variations Op.36)</span></li>
+    <li><span class="who">Carlos Gardel <span class="died">(d. 1935)</span></span><br><span class="what">Por una Cabeza ／ El día que me quieras ／ Volver</span></li>
+    <li><span class="who">Maurice Ravel <span class="died">(d. 1937)</span></span><br><span class="what">Pavane pour une infante défunte</span></li>
+    <li><span class="who">Ernesto De Curtis <span class="died">(d. 1937)</span></span><br><span class="what">Torna a Surriento ／ Non ti scordar di me</span></li>
+    <li><span class="who">Vincenzo Di Chiara <span class="died">(d. 1937)</span></span><br><span class="what">La Spagnola</span></li>
+    <li><span class="who">José María Lacalle García <span class="died">(d. 1937)</span></span><br><span class="what">Amapola</span></li>
+    <li><span class="who">Teiichi Okano <span class="died">(d. 1941)</span></span><br><span class="what">Furusato (ふるさと) ／ Oborozukiyo (朧月夜) ／ Haru no Ogawa (春の小川) ／ Momiji (紅葉)</span></li>
+    <li><span class="who">Sergei Rachmaninoff <span class="died">(d. 1943)</span></span><br><span class="what">Vocalise (Op.34-14)</span></li>
+    <li><span class="who">Tamezō Narita <span class="died">(d. 1945)</span></span><br><span class="what">Hamabe no Uta (浜辺の歌)</span></li>
+    <li><span class="who">Nagayo Motoori <span class="died">(d. 1945)</span></span><br><span class="what">Nanatsu no Ko (七つの子) ／ Akai Kutsu (赤い靴)</span></li>
+    <li><span class="who">Salvatore Cardillo <span class="died">(d. 1947)</span></span><br><span class="what">Core 'ngrato (Catarì)</span></li>
+    <li><span class="who">Gerardo Matos Rodríguez <span class="died">(d. 1948)</span></span><br><span class="what">La Cumparsita</span></li>
+    <li><span class="who">Manuel M. Ponce <span class="died">(d. 1948)</span></span><br><span class="what">Estrellita</span></li>
+    <li><span class="who">Ryūtarō Hirota <span class="died">(d. 1952)</span></span><br><span class="what">Kutsu ga Naru (靴が鳴る) ／ Hamachidori (浜千鳥)</span></li>
+    <li><span class="who">Traditional <span class="died">(Anglo-American)</span></span><br><span class="what">Londonderry Air (Danny Boy) ／ Greensleeves ／ Amazing Grace (New Britain) ／ Auld Lang Syne ／ Scarborough Fair ／ Shenandoah ／ Loch Lomond ／ Deep River ／ Swing Low, Sweet Chariot ／ Sometimes I Feel Like a Motherless Child ／ Nobody Knows the Trouble I've Seen ／ The Water Is Wide (O Waly Waly) ／ All Through the Night (Ar Hyd y Nos) ／ The Ash Grove (Llwyn Onn) ／ The Last Rose of Summer ／ My Bonnie Lies Over the Ocean ／ Red River Valley ／ Down in the Valley ／ Comin' Thro' the Rye</span></li>
+    <li><span class="who">Traditional <span class="died">(Korean)</span></span><br><span class="what">아리랑 (Arirang) ／ 밀양아리랑 (Miryang Arirang) ／ 도라지타령 (Doraji Taryeong) ／ 새야 새야 (Saeya Saeya)</span></li>
+    <li><span class="who">Traditional <span class="died">(Japanese)</span></span><br><span class="what">Sakura Sakura (さくらさくら) ／ Etenraku Imayō (越天楽今様) ／ Edo Komoriuta (江戸子守唄)</span></li>
+</ul>
+
+<div class="foot">
+  <p>
+    Implementation: <a href="https://github.com/jounlai/melody-generator">github.com/jounlai/melody-generator</a>
+    &#8195;999 fragments, 99 chord progressions, a corpus of 125 melodies and 1,768 notes.
+    Generation is deterministic: a six-character seed fixes the piece, the
+    performance and the score.
+  </p>
+  <p>Created by Jounlai Cho (cho@heuron.com) / <a href="https://heuron.com">Heuron Inc.</a>
+     &#8195;Built with Anthropic Claude (Claude Code).</p>
+  <p><a class="backlink" href="./index.html?lang=en">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>
+    Back to Endless Healing Piano</a></p>
+</div>
+
+
+</div>
+<script type="module" src="./algorithm.js"></script>
+</body>
+</html>

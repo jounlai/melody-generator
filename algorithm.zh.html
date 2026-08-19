@@ -1,0 +1,1441 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="旋律如何生成：片段目录、乐段结构、声部配置与演奏设计，附公式、实测与试听。">
+<title>旋律生成算法 — 无限疗愈钢琴</title>
+<link rel="stylesheet" href="./algorithm.css">
+</head>
+<body>
+<div class="paper">
+
+<nav class="langs" aria-label="Language">
+  <a href="./algorithm.html">日本語</a>
+  <a href="./algorithm.en.html">English</a>
+  <a href="./algorithm.zh.html" aria-current="page">中文</a>
+</nav>
+
+
+<a class="backlink" href="./index.html?lang=zh">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>
+  返回无限疗愈钢琴
+</a>
+
+<h1 class="title">基于片段目录与乐段结构的<br>疗愈钢琴旋律自动生成</h1>
+<p class="subtitle">对 <a href="https://github.com/jounlai/melody-generator">melody-generator</a> 的形式化描述</p>
+<p class="byline">Created by Jounlai Cho (cho@heuron.com) ／ Heuron 株式会社</p>
+
+<p class="lede">
+本文形式化地描述一个实时、无止境地生成疗愈钢琴曲的系统。核心主张只有一点：
+<em class="term">旋律之美并非来自逐音的顺次决定；只有把问题拆成两层——
+一组事先已保证其美感的有限片段，以及安放这些片段的时间结构——它才变得可控。</em>
+前者的做法是：以从125首公有领域名曲归纳出的统计为准绳，从300,000个候选中分层抽取999个；
+后者则形式化为对乐段结构、起伏曲线与声部配置的约束满足。生成是确定性的，
+六个字符的种子即可唯一确定一首乐曲。
+</p>
+
+<div class="listen">
+  <span class="listen-label">先听听这个系统实际生成的乐曲（约60秒）</span>
+  <button type="button" data-demo="full-song" aria-pressed="false">完整播放</button>
+</div>
+
+<p class="note">
+正文各处设有试听按钮。播放的并非为讲解另行准备的音频，
+而是当场执行该节所述处理后的结果本身。
+</p>
+
+<nav class="toc" aria-label="目录">
+  <ol>
+    <li><a href="#s1">问题设定与设计方针</a></li>
+    <li><a href="#s2">记法</a></li>
+    <li><a href="#s3">从语料库归纳</a></li>
+    <li><a href="#s4">候选的生成与评价函数</a></li>
+    <li><a href="#s5">以分层抽取构建目录</a></li>
+    <li><a href="#s6">和弦适配的预计算</a></li>
+    <li><a href="#s7">乐曲的组装</a></li>
+    <li><a href="#s8">转调</a></li>
+    <li><a href="#s9">声部的配置</a></li>
+    <li><a href="#s10">演奏设计</a></li>
+    <li><a href="#s11">实测</a></li>
+    <li><a href="#s12">局限</a></li>
+    <li><a href="#appendix">附录：语料库收录曲目</a></li>
+  </ol>
+</nav>
+
+<h2 id="s1"><span class="num">1</span>问题设定与设计方针</h2>
+
+<p>
+目标是「不间断地生成、且每一首都具有情感起伏的钢琴独奏曲」。
+这对生成系统提出了两个彼此矛盾的要求。其一是<em class="term">实时性</em>：
+下一首必须在前一首奏完之前组装完毕。其二是<em class="term">全局结构</em>：
+若缺少呈示、发展、顶点、回归这种数十秒尺度的设计，
+无论单个音程多么优美，听起来都不成其为一首乐曲。
+</p>
+
+<p>
+以音符为单位的顺次生成（马尔可夫链，或自回归模型）满足前者，却不擅长后者。
+局部的转移概率能决定「下一个音」，却无法表达
+「为了在十六小节之后抵达最高音，现在应当呈示什么」。本系统采用如下拆分。
+</p>
+
+<ol class="spaced">
+  <li><em class="term">片段层</em>。预先生成两小节（八拍）的旋律片段，
+      以美感评价函数筛选并编成目录。片段应当满足的性质
+      （音程分布、跳进后的填补、节奏的多样性）在此一次性检查完毕。</li>
+  <li><em class="term">结构层</em>。实时阶段只做「选取片段并排列」。
+      排列方式由乐段结构、起伏曲线与衔接的平滑度决定，
+      绝不触碰单个音符。</li>
+</ol>
+<figure>
+<svg viewBox="0 0 620 250" role="img" aria-label="片段层与结构层的两层构造示意图">
+  <rect class="dia-box" x="8" y="8" width="604" height="98" rx="8"/>
+  <text class="dia-text" x="24" y="32" font-weight="600">片段层（事前，仅一次）</text>
+  <text class="dia-muted" x="24" y="52">名曲125首 &#8594; 旋律型490种 &#8594; 候选300,000 &#8594; 分层抽取 &#8594; 片段999个</text>
+  <rect class="dia-box" x="24" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="76" y="82" text-anchor="middle">语料库统计</text>
+  <path class="dia-accent" d="M134 78h26M154 73l6 5-6 5"/>
+  <rect class="dia-box" x="166" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="218" y="82" text-anchor="middle">评价函数 S(f)</text>
+  <path class="dia-accent" d="M276 78h26M296 73l6 5-6 5"/>
+  <rect class="dia-box" x="308" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="360" y="82" text-anchor="middle">分层抽取</text>
+  <path class="dia-accent" d="M418 78h26M438 73l6 5-6 5"/>
+  <rect class="dia-box" x="450" y="64" width="146" height="28" rx="5"/>
+  <text class="dia-muted" x="523" y="82" text-anchor="middle">片段目录＋和弦适配</text>
+
+  <path class="dia-accent" d="M310 112v22M305 128l5 6 5-6"/>
+  <text class="dia-muted" x="322" y="128">传递预计算好的集合</text>
+
+  <rect class="dia-box" x="8" y="142" width="604" height="100" rx="8"/>
+  <text class="dia-text" x="24" y="166" font-weight="600">结构层（实时，每首 6.5 毫秒）</text>
+  <text class="dia-muted" x="24" y="186">乐段结构・起伏曲线・衔接 &#8594; 选取片段并排列（不触碰音符）</text>
+  <rect class="dia-box" x="24" y="198" width="128" height="28" rx="5"/>
+  <text class="dia-muted" x="88" y="216" text-anchor="middle">曲式 A A&#8242; B A&#8243;</text>
+  <path class="dia-accent" d="M158 212h26M178 207l6 5-6 5"/>
+  <rect class="dia-box" x="190" y="198" width="128" height="28" rx="5"/>
+  <text class="dia-muted" x="254" y="216" text-anchor="middle">起伏与音高窗口</text>
+  <path class="dia-accent" d="M324 212h26M344 207l6 5-6 5"/>
+  <rect class="dia-box" x="356" y="198" width="112" height="28" rx="5"/>
+  <text class="dia-muted" x="412" y="216" text-anchor="middle">选取与配置</text>
+  <path class="dia-accent" d="M474 212h26M494 207l6 5-6 5"/>
+  <rect class="dia-box" x="506" y="198" width="90" height="28" rx="5"/>
+  <text class="dia-muted" x="551" y="216" text-anchor="middle">演奏设计</text>
+</svg>
+<figcaption>
+
+  图1　两层构造。上层在乐曲生成之前只运行一次，只有下层是实时运行的。
+  由于「美感」的判定已在上层完成，下层得以专注于片段的约束满足。
+
+</figcaption>
+</figure>
+<p>
+这一拆分把实时侧的计算归结为「从满足约束的片段集合中抽取一个」。
+片段共999个、和弦适配已预先算好，因此组装一首（32小节）实测为 6.5 毫秒，
+连同转换为演奏事件也大致相同。
+</p>
+
+<h2 id="s2"><span class="num">2</span>记法</h2>
+
+<h3><span class="num">2.1</span>音高空间</h3>
+
+<p>
+旋律不以绝对音高、而以<em class="term">贯通音阶级数</em>表示。
+级数 <span class="sym">d &#8712; &#8484;</span> 以主音为 <span class="sym">1</span>，
+<span class="sym">8</span> 高一个八度，<span class="sym">15</span> 高两个八度。
+将调式 <span class="sym">m &#8712; {major, minor}</span> 的音阶记为
+<span class="sym">s<sub>m</sub> = (s<sub>m</sub>[0], &#8230;, s<sub>m</sub>[6])</span>，
+则级数到半音的映射为
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi class="gk">σ</mi><mi>m</mi></msub><mo>(</mo><mi>d</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>12</mn>
+    <mo>&#x2062;</mo>
+    <mrow><mo>&#x230A;</mo><mfrac><mrow><mi>d</mi><mo>-</mo><mn>1</mn></mrow><mn>7</mn></mfrac><mo>&#x230B;</mo></mrow>
+    <mo>+</mo>
+    <msub><mi>s</mi><mi>m</mi></msub>
+    <mrow><mo>[</mo><mo>(</mo><mi>d</mi><mo>-</mo><mn>1</mn><mo>)</mo><mspace width="0.2em"/><mi>mod</mi><mspace width="0.2em"/><mn>7</mn><mo>]</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(1)</span>
+</div>
+<p>
+设主音的 MIDI 音符号为 <span class="sym">&#964;</span>，则实际音高为
+<span class="sym">&#960;(d) = &#964; + &#963;<sub>m</sub>(d)</span>。其中
+<span class="sym">s<sub>major</sub> = (0,2,4,5,7,9,11)</span>、
+<span class="sym">s<sub>minor</sub> = (0,2,3,5,7,8,10)</span>。
+</p>
+
+<p>
+采用这一表示有两个理由。其一，片段因此独立于调与调式，
+同一片段在大调、小调、任何调上都可复用。其二，后述的
+<em class="term">模进</em>（平行移动）化为级数上的简单加法。
+若以半音平移会产生音阶外的音，而以级数平移则必然留在音阶之内。
+</p>
+
+<div class="listen">
+  <span class="listen-label">同一级数序列（片段 m0100），只更换映射后播放。音符一个也没有改写</span>
+  <button type="button" data-demo="degrees-major" aria-pressed="false">以大调</button>
+  <button type="button" data-demo="degrees-minor" aria-pressed="false">以小调</button>
+</div>
+
+<h3><span class="num">2.2</span>片段</h3>
+
+<p>
+片段 <span class="sym">f</span> 是音符的有限序列。音符
+<span class="sym">n = (d, &#946;, &#948;, v)</span> 具有级数、起始拍、时值与力度，
+其中 <span class="sym">&#946; &#8712; [0, 8)</span>，即收在两小节之内。
+其音程序列记为
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi class="gk">Δ</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mo>(</mo>
+    <msub><mi>d</mi><mn>2</mn></msub><mo>-</mo><msub><mi>d</mi><mn>1</mn></msub>
+    <mo>,</mo>
+    <mo>…</mo>
+    <mo>,</mo>
+    <msub><mi>d</mi><mi>k</mi></msub><mo>-</mo><msub><mi>d</mi><mrow><mi>k</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>)</mo>
+  </mrow>
+</math>
+<span class="tag">(2)</span>
+</div>
+<p>
+级数差为 1 对应二度（级进），2 对应三度，3 以上对应四度及以上的跳进。
+</p>
+
+<h2 id="s3"><span class="num">3</span>从语料库归纳</h2>
+
+<p>
+评价函数的系数并非随意设定。它们对齐于为此采谱的
+<em class="term">125首公有领域名曲、1,768个音、1,643个音程</em>的统计。
+公有领域的判定标准为「作曲者卒于1955年以前，或为传承曲」
+（收录曲中最晚的卒年为1952年，传承曲26首）。调式构成为大调93首、小调32首。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表1　125首语料曲目的音程分布（级数差的绝对值）</caption>
+  <thead><tr><th>级数差</th><th>音程</th><th class="num">出现数</th><th class="num">比例</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>同音</td><td class="num">140</td><td class="num">8.5%</td></tr>
+    <tr><td>1</td><td>二度</td><td class="num">1135</td><td class="num">69.1%</td></tr>
+    <tr><td>2</td><td>三度</td><td class="num">301</td><td class="num">18.3%</td></tr>
+    <tr><td>3</td><td>四度</td><td class="num">42</td><td class="num">2.6%</td></tr>
+    <tr><td>4</td><td>五度</td><td class="num">19</td><td class="num">1.2%</td></tr>
+    <tr><td>5以上</td><td>六度及以上</td><td class="num">6</td><td class="num">0.4%</td></tr>
+  </tbody>
+</table>
+</div>
+<figure>
+<svg viewBox="0 0 620 210" role="img" aria-label="125首语料曲目的音程分布柱状图">
+  <line class="dia-line" x1="52" y1="168" x2="596" y2="168"/>
+  <g class="dia-fill">
+    <rect x="72"  y="146" width="58" height="22" opacity="0.5"/>
+    <rect x="160" y="14"  width="58" height="154"/>
+    <rect x="248" y="127" width="58" height="41" opacity="0.75"/>
+    <rect x="336" y="163" width="58" height="5"  opacity="0.6"/>
+    <rect x="424" y="166" width="58" height="2"  opacity="0.6"/>
+    <rect x="512" y="167" width="58" height="1"  opacity="0.6"/>
+  </g>
+  <g class="dia-muted" text-anchor="middle">
+    <text x="101" y="184">同音</text><text x="189" y="184">二度</text><text x="277" y="184">三度</text>
+    <text x="365" y="184">四度</text><text x="453" y="184">五度</text><text x="541" y="184">六度～</text>
+    <text x="101" y="141">8.5%</text><text x="189" y="9">69.1%</text><text x="277" y="122">18.3%</text>
+    <text x="365" y="158">2.6%</text><text x="453" y="161">1.2%</text><text x="541" y="162">0.4%</text>
+  </g>
+  <text class="dia-muted" x="8" y="24">比例</text>
+  <line class="dia-line" x1="52" y1="14" x2="52" y2="168"/>
+</svg>
+<figcaption>
+
+  图2　125首语料曲目、1,643个音程的分布。二度（级进）约占七成，
+  四度以上的跳进合计仅 4.2%。评价函数中的区间（式6）即源于这一形状。
+
+</figcaption>
+</figure>
+<p>
+由这一分布定义两个量：级进比率，以及跳进之后被填补的比率。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>r</mi><mi>step</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mfrac>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>=</mo><mn>1</mn><mo>}</mo><mo>|</mo></mrow>
+      <mrow><mo>|</mo><mi class="gk">Δ</mi><mo>(</mo><mi>f</mi><mo>)</mo><mo>|</mo></mrow>
+    </mfrac>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <msub><mi>r</mi><mi>fill</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mfrac>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>&#x2265;</mo><mn>2</mn><mo>&#x2227;</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>|</mo><mo>=</mo><mn>1</mn><mo>}</mo><mo>|</mo></mrow>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>&#x2265;</mo><mn>2</mn><mo>}</mo><mo>|</mo></mrow>
+    </mfrac>
+  </mrow>
+</math>
+<span class="tag">(3)</span>
+</div>
+<p>
+实测值为 <span class="sym">r<sub>step</sub> = 0.691</span>、
+<span class="sym">r<sub>fill</sub> = 0.624</span>。后者表明，
+源自声乐的原则「跳进之后以级进填回」在名曲中以超过六成的高比率被遵守。
+一味跳进的旋律线是唱不出来的。
+</p>
+
+<h3><span class="num">3.1</span>旋律型的抽取</h3>
+
+<p>
+从语料库的级数序列中，以相对形的 <span class="sym">n</span>-gram 抽取
+<em class="term">旋律型</em>。长度为 <span class="sym">&#8467;</span> 的子序列，
+以首位归零后的 <span class="sym">(0, d<sub>i+1</sub>-d<sub>i</sub>, &#8230;)</span>
+视为同一，出现频次作为权重。由此得到
+<em class="term">旋律型490种、终止型26种、飞扬型58种、节奏细胞147种</em>。
+</p>
+
+<p>
+其中尤为重要的是「飞扬型」，典型为 <span class="sym">(0, 3, 2, 1)</span>——
+即上行四度后级进下行。它在125首中出现189次，
+在许多乐曲中造就了高潮的那一瞬间。
+</p>
+
+<div class="listen">
+  <span class="listen-label">抽取出的旋律型本身，以相对级数直接播放（这是片段的原料）</span>
+  <button type="button" data-demo="formula-descend" aria-pressed="false">级进下行 (0,&#8722;1,&#8722;2,&#8722;3)</button>
+  <button type="button" data-demo="formula-turn" aria-pressed="false">回音 (0,1,0,&#8722;1,0)</button>
+  <button type="button" data-demo="soar" aria-pressed="false">飞扬 (0,3,2,1)</button>
+  <button type="button" data-demo="sigh" aria-pressed="false">叹息 (0,4,3,2,1)</button>
+</div>
+
+<h2 id="s4"><span class="num">4</span>候选的生成与评价函数</h2>
+
+<h3><span class="num">4.1</span>候选的生成</h3>
+
+<p>
+候选片段的生成方式是：把旋律型连接成级数序列，再为其分配节奏细胞。
+连接时以前一型的终点作为下一型的起点共用。随机数只使用固定种子的
+<span class="sym">mulberry32</span>（32位状态的乘法与异或移位 PRNG），
+不使用 <span class="sym">Math.random</span>；字符串种子以 FNV-1a 折叠为32位。
+因此生成完全可复现。候选数为 <span class="sym">N = 300,000</span>。
+</p>
+
+<h3><span class="num">4.2</span>评价函数</h3>
+
+<p>
+片段 <span class="sym">f</span> 的美感分数定义如下。以基准值 50 出发，逐项相加。
+<span class="sym">P</span> 为非负的扣分项，<span class="sym">D</span> 与
+<span class="sym">R</span> 带符号（落在区间内加分，落在区间外扣分），
+<span class="sym">B</span> 与 <span class="sym">&#946;</span> 为非负的加分项。
+</p>
+
+<p>
+其中 <span class="sym">T(f)</span> 为片段所带的情感标签集合。
+<span class="sym">P<sub>span</sub></span> 是音域超过十二度部分的扣分
+（<span class="sym">6&#183;(span &#8722; 12)<sup>+</sup></span>）；
+<span class="sym">D<sub>dens</sub></span> 是音数密度（音数&#247;8）落在
+0.9～1.8 区间时 +10，低于 0.7 或高于 2.2 时按偏离量扣分。以下列出主要各项。
+</p>
+
+<p>对跳进的扣分，其中级数差 <span class="sym">a = |&#916;<sub>i</sub>|</span>：</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>S</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>50</mn>
+    <mo>-</mo>
+    <msub><mi>P</mi><mi>leap</mi></msub>
+    <mo>-</mo>
+    <msub><mi>P</mi><mi>span</mi></msub>
+    <mo>+</mo>
+    <msub><mi>D</mi><mi>dens</mi></msub>
+    <mo>+</mo>
+    <msub><mi>R</mi><mi>rhythm</mi></msub>
+    <mo>+</mo>
+    <msub><mi>B</mi><mi>dist</mi></msub>
+    <mo>+</mo>
+    <mstyle displaystyle="true">
+      <munder><mo>&#x2211;</mo><mrow><mi>t</mi><mo>&#x2208;</mo><mi>T</mi><mo>(</mo><mi>f</mi><mo>)</mo></mrow></munder>
+    </mstyle>
+    <msub><mi class="gk">β</mi><mi>t</mi></msub>
+  </mrow>
+</math>
+<span class="tag">(4)</span>
+</div>
+<p>
+其中 <span class="sym">(x)<sup>+</sup> = max(x, 0)</span>。
+三度（<span class="sym">a = 2</span>）不扣分，是因为如表1所示，
+三度是名曲中最常见的跳进。扣分自四度起，连续跳进、
+尤其是同方向的连续跳进另有追加扣分。当
+<span class="sym">r<sub>leap</sub></span> 超过语料实测值的两倍（10%）时，
+超出部分按比例大幅扣分。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <msub><mi>P</mi><mi>leap</mi></msub>
+        <mo>=</mo>
+        <mstyle displaystyle="true"><munder><mo>&#x2211;</mo><mi>i</mi></munder></mstyle>
+        <mrow>
+          <mo>[</mo>
+          <mn>3</mn><mo>&#x2062;</mo><msup><mrow><mo>(</mo><msub><mi>a</mi><mi>i</mi></msub><mo>-</mo><mn>3</mn><mo>)</mo></mrow><mo>+</mo></msup>
+          <mo>+</mo>
+          <mn>2</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>a</mi><mi>i</mi></msub><mo>=</mo><mn>0</mn><mo>]</mo>
+          <mo>+</mo>
+          <mn>10</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>a</mi><mrow><mi>i</mi><mo>-</mo><mn>1</mn></mrow></msub><mo>&#x2265;</mo><mn>4</mn><mo>&#x2227;</mo><msub><mi>a</mi><mi>i</mi></msub><mo>&#x2265;</mo><mn>4</mn><mo>]</mo>
+          <mo>]</mo>
+        </mrow>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>+</mo>
+        <mn>60</mn><mo>&#x22C5;</mo><msup><mrow><mo>(</mo><msub><mi>r</mi><mi>leap</mi></msub><mo>-</mo><mn>0.1</mn><mo>)</mo></mrow><mo>+</mo></msup>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(5)</span>
+</div><p>分布的加分，依据是否落在语料库的区间之内。</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <msub><mi>B</mi><mi>dist</mi></msub>
+        <mo>=</mo>
+        <mn>12</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>step</mi></msub><mo>&#x2208;</mo><mo>[</mo><mn>0.6</mn><mo>,</mo><mn>0.8</mn><mo>]</mo><mo>]</mo>
+        <mo>+</mo>
+        <mn>8</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>third</mi></msub><mo>&#x2208;</mo><mo>[</mo><mn>0.1</mn><mo>,</mo><mn>0.3</mn><mo>]</mo><mo>]</mo>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>+</mo>
+        <mn>10</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>fill</mi></msub><mo>&#x2265;</mo><mn>0.6</mn><mo>]</mo>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(6)</span>
+</div>
+<div class="table-wrap">
+<table>
+  <caption>表2　情感标签与加分 &#946;<sub>t</sub>（节选）</caption>
+  <thead><tr><th>标签</th><th>定义</th><th class="num">&#946;</th><th class="num">目录内</th></tr></thead>
+  <tbody>
+    <tr><td>inner-sequence</td><td>后一小节是前一小节的平移</td><td class="num">18</td><td class="num">389</td></tr>
+    <tr><td>soar</td><td>上行四度以上抵达顶点后级进下行</td><td class="num">16</td><td class="num">380</td></tr>
+    <tr><td>penta-major / minor</td><td>收在五声音阶之内</td><td class="num">16</td><td class="num">543 / 278</td></tr>
+    <tr><td>sigh</td><td>上行五度以上后紧接两个音以上的级进下行</td><td class="num">14</td><td class="num">239</td></tr>
+    <tr><td>inner-repeat</td><td>后一小节是前一小节的完全反复</td><td class="num">14</td><td class="num">240</td></tr>
+    <tr><td>stable-end</td><td>落在主和弦构成音 {1,3,5} 上</td><td class="num">10</td><td class="num">894</td></tr>
+    <tr><td>single-peak</td><td>片段内的最高音只出现一次</td><td class="num">8</td><td class="num">737</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="listen">
+  <span class="listen-label">目录中分数最高与最低的片段，以同一调、同一和弦播放</span>
+  <button type="button" data-demo="score-high" aria-pressed="false">最高分</button>
+  <button type="button" data-demo="score-low" aria-pressed="false">最低分</button>
+</div>
+
+<p>
+节奏项 <span class="sym">R<sub>rhythm</sub></span> 依时值的种类数给出
+<span class="sym">{1 &#8594; &#8722;22, 2 &#8594; &#8722;8, 3 &#8594; +6,
+&#8805;4 &#8594; +12}</span>。只有一种时值的片段，无论音程多么优美，
+听来都像童谣，成不了乐曲的一节。因此单项扣分在整个函数中最重。
+</p>
+
+<h2 id="s5"><span class="num">5</span>以分层抽取构建目录</h2>
+
+<p>
+按分数取前999个会失败。评价函数是单一尺度，其上位因此清一色是「优等生」，
+听得久了必然生厌。更致命的是<em class="term">覆盖的缺失</em>：
+若某个和弦进行的某个槽位上一个可用片段都没有，抽到该进行的乐曲便会崩坏。
+</p>
+
+<p>
+于是把选拔形式化为带约束的子集选择。从候选集合
+<span class="sym">C</span>（<span class="sym">|C| = 300,000</span>）中选出
+<span class="sym">|X| = 999</span> 个。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <munder><mo movablelimits="false">max</mo><mrow><mi>X</mi><mo>&#x2286;</mo><mi>C</mi></mrow></munder>
+    <mspace width="0.4em"/>
+    <mstyle displaystyle="true"><munder><mo>&#x2211;</mo><mrow><mi>f</mi><mo>&#x2208;</mo><mi>X</mi></mrow></munder></mstyle>
+    <mi>S</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mspace width="1.6em"/>
+    <mtext>s.t.</mtext>
+    <mspace width="0.6em"/>
+    <mrow>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>G</mi><mi>j</mi></msub><mo>|</mo>
+      <mo>&#x2265;</mo><msub><mi>g</mi><mi>j</mi></msub>
+      <mo>,</mo>
+      <mspace width="0.6em"/>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>K</mi><mi>l</mi></msub><mo>|</mo>
+      <mo>&#x2264;</mo><msub><mi>k</mi><mi>l</mi></msub>
+      <mo>,</mo>
+      <mspace width="0.6em"/>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>B</mi><mi>q</mi></msub><mo>|</mo>
+      <mo>&#x2265;</mo><mn>9</mn>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(7)</span>
+</div>
+<p>
+<span class="sym">B<sub>q</sub></span> 为<em class="term">分桶</em>：
+把候选按轮廓6种 &#215; 紧张度5级 &#215; 终止类2种 = 60 层划分
+（其中10层依定义必然为空）。<span class="sym">G<sub>j</sub></span> 是
+<em class="term">下限目标</em>，<span class="sym">K<sub>l</sub></span> 是
+<em class="term">上限</em>。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表3　下限目标 G<sub>j</sub> 举例（共90余项，此处节选）</caption>
+  <thead><tr><th>目标</th><th class="num">下限</th><th>意图</th></tr></thead>
+  <tbody>
+    <tr><td>step-ratio &#8712; [0.6, 0.8]</td><td class="num">560</td><td>落入名曲的音程分布区间</td></tr>
+    <tr><td>leap-then-step &#8805; 0.6</td><td class="num">560</td><td>跳进之后要填回</td></tr>
+    <tr><td>penta-major</td><td class="num">400</td><td>可被哼唱</td></tr>
+    <tr><td>inner-sequence</td><td class="num">300</td><td>能成立为动机</td></tr>
+    <tr><td>soar</td><td class="num">200</td><td>高潮的素材</td></tr>
+    <tr><td>soar &#8743; peak &#8805; 12 &#8743; 顶点唯一</td><td class="num">120</td><td>能抵达顶点的飞扬</td></tr>
+    <tr><td>适配各进行槽位</td><td class="num">30</td><td>覆盖（priority 0）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+该问题含有多重覆盖，因而是 NP 困难的。实现采用贪心法，并在顺序上下了一处功夫：
+<em class="term">先填覆盖类目标，再填数量类目标。</em>
+覆盖类（节奏型、和弦槽位）是彼此不重叠的细小名额，
+数量类（级进比率区间、音数）则几乎任何片段都能满足。
+若先填数量类，999个名额会被分数靠前的相似片段耗尽，覆盖便填不满；
+反过来，为覆盖而选入的片段会顺带满足数量类目标。
+每一轮中优先选取<em class="term">能同时满足最多未达成目标</em>的候选。
+</p>
+
+<p>
+上限 <span class="sym">K<sub>l</sub></span> 弱于下限：仅当下限被上限阻挡时才忽略上限
+（目录有所偏斜，总好过乐曲崩坏）。最终目录的片段音数中位数为 8，范围 6～12。
+</p>
+
+<h2 id="s6"><span class="num">6</span>和弦适配的预计算</h2>
+
+<p>
+实时判定片段能否配上某个和弦，代价很高。999片段 &#215; 和弦语汇60种 &#215; 2小节
+的适配判定实测需 329 毫秒，是整曲组装（6.5 毫秒）的50倍。
+因此逐片段预先算好其对和弦语汇全部元素的适配。
+</p>
+
+<p>
+将和弦记号 <span class="sym">c</span> 的构成音音级集合记为
+<span class="sym">PC(c)</span>，则小节 <span class="sym">B</span>
+（片段的前半或后半）能配上和弦 <span class="sym">c</span> 的条件定义为
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <mtext>fits</mtext><mo>(</mo><mi>B</mi><mo>,</mo><mi>c</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mrow><mo>(</mo><mo>&#x2203;</mo><mi>n</mi><mo>&#x2208;</mo><mi>B</mi><mo>:</mo><mtext>pc</mtext><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2208;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo><mo>)</mo></mrow>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>&#x2227;</mo><mspace width="0.4em"/>
+        <mrow><mo>(</mo><mo>&#x2200;</mo><mi>n</mi><mo>&#x2208;</mo><mi>B</mi><mo>:</mo>
+          <mtext>exp</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+          <mo>&#x2227;</mo>
+          <mtext>pc</mtext><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2209;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo>
+          <mo>&#x21D2;</mo>
+          <mtext>res</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>)</mo></mrow>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(8)</span>
+</div>
+<p>其中</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <mtext>exp</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mo>(</mo><mi class="gk">&#x03B2;</mi><mo>(</mo><mi>n</mi><mo>)</mo><mspace width="0.3em"/><mtext>mod</mtext><mspace width="0.3em"/><mn>2</mn><mo>=</mo><mn>0</mn><mo>)</mo>
+        <mo>&#x2228;</mo>
+        <mo>(</mo><mi class="gk">&#x03B4;</mi><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2265;</mo><mn>1.5</mn><mo>)</mo>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mtext>res</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mo>|</mo><msub><mi>d</mi><mrow><mtext>next</mtext></mrow></msub><mo>-</mo><mi>d</mi><mo>|</mo><mo>&#x2264;</mo><mn>1</mn>
+        <mo>&#x2227;</mo>
+        <mtext>pc</mtext><mo>(</mo><msub><mi>n</mi><mtext>next</mtext></msub><mo>)</mo><mo>&#x2208;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(9)</span>
+</div>
+<p>
+也就是说：<em class="term">位于强拍或时值较长的音</em>
+（<span class="sym">exp</span>，「浮在表面的音」）允许是和弦外音，
+但此时要求它<em class="term">以级进解决到和弦内音</em>。
+这把对位法中对倚音、留音的处理直接化为可计算的谓词。
+弱拍上时值短的和弦外音（经过音、辅助音）则不加任何限制。
+</p>
+
+<p>
+对每个片段 <span class="sym">f</span>，把和弦语汇
+<span class="sym">V<sub>m</sub></span>（大调33种、小调27种）的下标集合
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msubsup><mi>F</mi><mrow><mi>m</mi></mrow><mrow><mo>(</mo><mi>j</mi><mo>)</mo></mrow></msubsup>
+    <mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow><mo>{</mo>
+      <mi>i</mi>
+      <mo>:</mo>
+      <mtext>fits</mtext><mo>(</mo><msub><mi>B</mi><mi>j</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo><mo>,</mo><msub><mi>V</mi><mi>m</mi></msub><mo>[</mo><mi>i</mi><mo>]</mo><mo>)</mo>
+    <mo>}</mo></mrow>
+    <mo>,</mo>
+    <mspace width="0.8em"/>
+    <mi>j</mi><mo>&#x2208;</mo><mo>{</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>}</mo>
+  </mrow>
+</math>
+<span class="tag">(10)</span>
+</div>
+<p>
+保存为 JSON。实时侧只需一次集合归属判定，即可取出「能配上这两个和弦的片段」。
+留音成立的和弦下标集合亦同样保存。
+</p>
+
+<div class="note">
+由于保存的是<em class="term">下标</em>，和弦语汇中既有元素的顺序绝不可改动。
+中途插入会使全部片段的适配信息指向另一个和弦。新增必须追加在末尾。
+</div>
+
+<h2 id="s7"><span class="num">7</span>乐曲的组装</h2>
+
+<h3><span class="num">7.1</span>曲式</h3>
+
+<p>
+一首乐曲由 <span class="sym">A、A&#8242;、B、A&#8243;</span> 四个段落构成。
+各段分为 <span class="sym">L</span> 个槽位，一个槽位对应一个片段（两小节）。
+标准的32小节时 <span class="sym">L = 4</span>。
+<span class="sym">A、A&#8242;、A&#8243;</span> 使用同一和弦进行的变形，
+只有 <span class="sym">B</span> 抽取另一个进行。
+</p>
+<figure>
+<svg viewBox="0 0 620 178" role="img" aria-label="32小节的曲式与各槽位角色示意图">
+  <g class="dia-muted" text-anchor="middle">
+    <text x="85" y="20">A（呈示）</text><text x="235" y="20">A&#8242;（升温）</text>
+    <text x="385" y="20">B（趋向顶点）</text><text x="535" y="20">A&#8243;（着陆）</text>
+  </g>
+  <g>
+    <rect class="dia-box" x="12" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="162" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="312" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="462" y="28" width="146" height="34" rx="5"/>
+  </g>
+  <g class="dia-muted" text-anchor="middle">
+    <text x="85" y="49">进行 P&#8321;</text><text x="235" y="49">P&#8321; 的变形</text>
+    <text x="385" y="49">进行 P&#8322;</text><text x="535" y="49">P&#8321; 的变形＋终止</text>
+  </g>
+  <g class="dia-muted" text-anchor="middle" font-size="9">
+    <text x="48" y="82">a</text><text x="85" y="82">a′</text><text x="122" y="82">b</text><text x="158" y="82">a″</text>
+    <text x="198" y="82">a</text><text x="235" y="82">a′</text><text x="272" y="82">b</text><text x="308" y="82">a″</text>
+    <text x="348" y="82">a</text><text x="385" y="82">a′</text><text x="422" y="82">b</text><text x="458" y="82">a″</text>
+    <text x="498" y="82">a</text><text x="535" y="82">a′</text><text x="572" y="82">b</text><text x="608" y="82">a″</text>
+  </g>
+  <g class="dia-box">
+    <rect x="30" y="88" width="36" height="20" rx="3"/><rect x="67" y="88" width="36" height="20" rx="3"/>
+    <rect x="104" y="88" width="36" height="20" rx="3"/><rect x="141" y="88" width="36" height="20" rx="3"/>
+    <rect x="180" y="88" width="36" height="20" rx="3"/><rect x="217" y="88" width="36" height="20" rx="3"/>
+    <rect x="254" y="88" width="36" height="20" rx="3"/><rect x="291" y="88" width="36" height="20" rx="3"/>
+    <rect x="330" y="88" width="36" height="20" rx="3"/><rect x="367" y="88" width="36" height="20" rx="3"/>
+    <rect x="404" y="88" width="36" height="20" rx="3"/><rect x="441" y="88" width="36" height="20" rx="3"/>
+    <rect x="480" y="88" width="36" height="20" rx="3"/><rect x="517" y="88" width="36" height="20" rx="3"/>
+    <rect x="554" y="88" width="36" height="20" rx="3"/><rect x="591" y="88" width="19" height="20" rx="3"/>
+  </g>
+  <rect x="404" y="88" width="36" height="20" rx="3" fill="var(--accent)" opacity="0.85"/>
+  <text class="dia-muted" x="422" y="102" text-anchor="middle" fill="#0b0d10" font-size="9">顶点</text>
+  <text class="dia-muted" x="12" y="126">1槽位 = 1片段 = 2小节。a&#8242; 与 a&#8243; 是 a 的模进，只有 b 形成对比。</text>
+  <path class="dia-accent" d="M48 116v-4M48 112h37M85 112v4" opacity="0.8"/>
+  <text class="dia-muted" x="52" y="146">T&#8342;（平移）</text>
+  <text class="dia-muted" x="330" y="146">把顶点置于 k* = L &#8722; 2，为最后一个槽位留下着陆</text>
+</svg>
+<figcaption>
+
+  图3　32小节的曲式。4段落 &#215; 4槽位 = 16片段。
+  A 系以同一进行的变形贯穿，因此只有 B 是「去了别处」。
+
+</figcaption>
+</figure>
+<p>
+段落内部为各槽位分配<em class="term">乐段角色</em>
+<span class="sym">(a, a&#8242;, b, a&#8243;)</span>。
+<span class="sym">a</span> 自由选取，<span class="sym">a&#8242;</span> 与
+<span class="sym">a&#8243;</span> 是 <span class="sym">a</span> 的模进，
+<span class="sym">b</span> 亦为自由选取，但要求与 <span class="sym">a</span> 形成对比。
+</p>
+
+<h3><span class="num">7.2</span>模进</h3>
+
+<p>平移算子定义如下。</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>T</mi><mi>k</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow><mo>{</mo><mo>(</mo><mi>d</mi><mo>+</mo><mi>k</mi><mo>,</mo><mi class="gk">β</mi><mo>,</mo><mi class="gk">δ</mi><mo>,</mo><mi>v</mi><mo>)</mo><mo>:</mo><mo>(</mo><mi>d</mi><mo>,</mo><mi class="gk">β</mi><mo>,</mo><mi class="gk">δ</mi><mo>,</mo><mi>v</mi><mo>)</mo><mo>&#x2208;</mo><mi>f</mi><mo>}</mo></mrow>
+    <mo>,</mo>
+    <mspace width="1em"/>
+    <mtext>定义域</mtext>
+    <mo>:</mo>
+    <mspace width="0.4em"/>
+    <mo>&#x2200;</mo><mi>d</mi><mo>:</mo><mn>1</mn><mo>&#x2264;</mo><mi>d</mi><mo>+</mo><mi>k</mi><mo>&#x2264;</mo><mn>15</mn>
+  </mrow>
+</math>
+<span class="tag">(11)</span>
+</div>
+<p>
+节奏与力度保持不变，只有级数移动。这正是「同一首歌仍在继续」这一感觉的实体。
+平移量 <span class="sym">k</span> 从按段落与角色分列的优先顺序表中选取。
+该表带有<em class="term">方向</em>。
+</p>
+
+<div class="listen">
+  <span class="listen-label">先只播放 a，再播放 a 接 T&#8330;&#8322;(a)。节奏不变，音高上行二度</span>
+  <button type="button" data-demo="sequence-a" aria-pressed="false">只有 a</button>
+  <button type="button" data-demo="sequence-both" aria-pressed="false">a &#8594; a&#8242;（+2）</button>
+</div>
+
+<div class="table-wrap">
+<table>
+  <caption>表4　平移量 k 的优先顺序（越靠前越优先）</caption>
+  <thead><tr><th>段落</th><th>a&#8242;</th><th>a&#8243;</th><th>意图</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>1, 2, &#8722;1, 3, &#8722;2, 0</td><td>1, 2, 3, &#8722;1, &#8722;2, 0</td><td>静静呈示，略微抬升</td></tr>
+    <tr><td>A&#8242;</td><td>1, 2, 3, &#8722;1, 0</td><td>2, 3, 1, &#8722;1, 0</td><td>明确上行</td></tr>
+    <tr><td>B</td><td>2, 3, 1, 4, 0</td><td>3, 4, 2, 1, 0</td><td>攀向顶点</td></tr>
+    <tr><td>A&#8243;</td><td>&#8722;1, &#8722;2, 1, &#8722;3, 0</td><td>&#8722;2, &#8722;3, &#8722;1, &#8722;4, 0</td><td>下行收束</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+<span class="sym">k = 0</span> 在任何一行都置于末尾。0 并非平移，而是
+<em class="term">完全反复</em>。若像早期版本那样把它放在首位，
+就会量产出「和声在动而旋律一个音也不变」的小节——
+完全一致的两小节片段中有 28% 源于此。
+</p>
+
+<p>
+所采用的量并非「第一个能配上的」，而是下述字典序下的最小元。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mo>(</mo>
+    <mi>lift</mi><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mrow><mo>&#x230A;</mo><mi>ord</mi><mo>/</mo><mn>3</mn><mo>&#x230B;</mo></mrow><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mi>cad</mi><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mi>ord</mi>
+    <mo>)</mo>
+  </mrow>
+</math>
+<span class="tag">(12)</span>
+</div>
+<p>
+其中 <span class="sym">lift</span> 在攀升槽位未达到要求高度时为 1，
+<span class="sym">ord</span> 是在表中的位次，
+<span class="sym">cad</span> 是终止音的可取程度排名。
+关键在第二个分量：它把 <span class="sym">ord</span> 每三个归为一
+<em class="term">档</em>，档内由终止决定，跨档则方向取胜。
+只优先方向，<span class="sym">a&#8242;</span> 的「先给出回答」率实测从 82.8% 降到 53.4%；
+只优先终止，A&#8594;A&#8242; 的上行则消失。二者择一，必然失去另一者。
+</p>
+
+<h3><span class="num">7.3</span>起伏曲线与音高窗口</h3>
+
+<p>
+对槽位 <span class="sym">(&#963;, k)</span>（段落号与位置）给出要求的紧张度与音高窗口。
+紧张度的原始值为
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi class="gk">ρ</mi><mo>(</mo><mi class="gk">σ</mi><mo>,</mo><mi>k</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>3</mn><mo>+</mo><mn>2</mn><mi>k</mi><mo>/</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup></mtd><mtd><mtext>σ = 2, k &lt; k*</mtext></mtd></mtr>
+        <mtr><mtd><mn>5</mn></mtd><mtd><mtext>σ = 2, k = k*</mtext></mtd></mtr>
+        <mtr><mtd><mn>3</mn></mtd><mtd><mtext>σ = 2, k &gt; k*</mtext></mtd></mtr>
+        <mtr><mtd><msub><mi>u</mi><mi class="gk">σ</mi></msub><mo>+</mo><mo>(</mo><msub><mi>w</mi><mi class="gk">σ</mi></msub><mo>-</mo><msub><mi>u</mi><mi class="gk">σ</mi></msub><mo>)</mo><mo>&#x22C5;</mo><mi>k</mi><mo>/</mo><mo>(</mo><mi>L</mi><mo>-</mo><mn>1</mn><mo>)</mo></mtd><mtd><mtext>其他</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(13)</span>
+</div>
+<p>
+<span class="sym">k*</span> 是高潮所在的槽位：<span class="sym">L &#8805; 3</span> 时为
+<span class="sym">L &#8722; 2</span>，否则为 <span class="sym">L &#8722; 1</span>。
+之所以放在最后一个的前一个，是为了在顶点之后留下着陆。
+<span class="sym">(u, w)</span> 为 <span class="sym">A: (1,2)</span>、
+<span class="sym">A&#8242;: (2,3)</span>、<span class="sym">A&#8243;: (3,1)</span>。
+</p>
+
+<p>
+音高窗口如下，其中 <span class="sym">peak(f)</span> 为片段的最高级数。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>p</mi><mi>max</mi></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>14</mn></mtd><mtd><mtext>高潮</mtext></mtd></mtr>
+        <mtr><mtd><mn>10</mn></mtd><mtd><mtext>A&#8243; 及越过顶点之后</mtext></mtd></mtr>
+        <mtr><mtd><mn>11</mn></mtd><mtd><mtext>其他</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+    <mo>,</mo>
+    <mspace width="1.2em"/>
+    <msub><mi>p</mi><mi>min</mi></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>12</mn></mtd><mtd><mtext>高潮</mtext></mtd></mtr>
+        <mtr><mtd><mn>1</mn></mtd><mtd><mtext>其他</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(14)</span>
+</div><figure>
+<svg viewBox="0 0 620 210" role="img" aria-label="各槽位的音高窗口与高潮位置示意图">
+  <line class="dia-line" x1="46" y1="176" x2="600" y2="176"/>
+  <line class="dia-line" x1="46" y1="16" x2="46" y2="176"/>
+  <text class="dia-muted" x="6" y="20">级数</text>
+  <g class="dia-muted" text-anchor="end">
+    <text x="40" y="30">15</text><text x="40" y="66">12</text><text x="40" y="86">11</text><text x="40" y="106">10</text><text x="40" y="172">1</text>
+  </g>
+  <line class="dia-line" x1="46" y1="66" x2="600" y2="66" stroke-dasharray="3 4"/>
+  <line class="dia-line" x1="46" y1="86" x2="600" y2="86" stroke-dasharray="3 4"/>
+
+  <g fill="var(--line-strong)" opacity="0.45">
+    <rect x="60"  y="86" width="86" height="88"/><rect x="198" y="86" width="86" height="88"/>
+    <rect x="336" y="86" width="60" height="88"/><rect x="474" y="106" width="86" height="68"/>
+  </g>
+  <rect x="404" y="30" width="52" height="36" fill="var(--accent)" opacity="0.85"/>
+  <text x="430" y="52" text-anchor="middle" font-size="10" fill="#0b0d10"
+        font-family="system-ui, sans-serif">顶点</text>
+
+  <path class="dia-accent" d="M74 150 L108 146 L142 140 L212 138 L246 130 L280 124 L350 118 L384 104 L404 66"/>
+  <path class="dia-accent" d="M456 66 L490 128 L524 136 L558 146" opacity="0.75"/>
+
+  <g class="dia-muted" text-anchor="middle">
+    <text x="103" y="194">A</text><text x="241" y="194">A′</text><text x="396" y="194">B</text><text x="517" y="194">A″</text>
+  </g>
+  <text class="dia-muted" x="60" y="78">非高潮的上限 = 11</text>
+  <text class="dia-muted" x="468" y="60">下限 = 12</text>
+</svg>
+<figcaption>
+
+  图4　音高窗口。灰色带是各段落所允许的音域，折线是旋律实际高度的推移。
+  由于非高潮的上限（11）与高潮的下限（12）互不相交，
+  全曲的最高音只可能出现在顶点槽位。越过顶点之后以及 A&#8243; 中，
+  上限再降一级（至10）以完成着陆。
+
+</figcaption>
+</figure>
+<p>
+由于 <span class="sym">&#963;<sub>m</sub></span> 严格单调递增，
+而非高潮的上限 11 与高潮的下限 12 互不相交，
+<em class="term">全曲的最高音只出现在高潮槽位</em>在结构上即得到保证。
+此外高潮还要求片段内的最高音只出现一次，因此最高音在全曲中恰好只响一次。
+打动人的并非高度本身，而是「在那里才第一次抵达」的一次性。
+</p>
+
+<h3><span class="num">7.4</span>攀向高潮</h3>
+
+<p>
+只给出上限还不够：若顶点之前一直很低，顶点就会以跳进抵达。
+因此为攀升中的槽位施加下限的<em class="term">偏好</em>。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>rise</mi><mo>(</mo><mn>2</mn><mo>,</mo><mi>k</mi><mo>)</mo>
+    <mo>=</mo>
+    <mi>max</mi><mo>(</mo><mn>2</mn><mo>,</mo>
+    <mspace width="0.2em"/>
+    <mn>10</mn><mo>-</mo><mo>(</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup><mo>-</mo><mn>1</mn><mo>-</mo><mi>k</mi><mo>)</mo>
+    <mo>)</mo>
+    <mo>,</mo>
+    <mspace width="1em"/>
+    <mn>0</mn><mo>&lt;</mo><mi>k</mi><mo>&lt;</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup>
+  </mrow>
+</math>
+<span class="tag">(15)</span>
+</div>
+<p>
+这是偏好而非硬约束；若没有候选满足，系统会默默放弃（见下文）。
+仅此一处改动，就把顶点前一小节的最高音从主音上方 12.5 个半音提高到 13.8 个，
+并把最后一步的落差从 9.1 个半音缩小到 6.3 个。
+</p>
+
+<h3><span class="num">7.5</span>选取的过滤链</h3>
+
+<p>
+放入槽位的片段，先由<em class="term">硬性条件</em>（和弦适配与音高窗口）
+构成候选集合 <span class="sym">C<sub>0</sub></span>，
+再依次施加<em class="term">偏好</em>加以收窄。偏好是单调的、不致空集的过滤器。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>C</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><msub><mi class="gk">φ</mi><mi>i</mi></msub><mo>(</mo><msub><mi>C</mi><mi>i</mi></msub><mo>)</mo></mtd><mtd><msub><mi class="gk">φ</mi><mi>i</mi></msub><mo>(</mo><msub><mi>C</mi><mi>i</mi></msub><mo>)</mo><mo>&#x2260;</mo><mi>&#x2205;</mi></mtd></mtr>
+        <mtr><mtd><msub><mi>C</mi><mi>i</mi></msub></mtd><mtd><mtext>其他</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(16)</span>
+</div>
+<p>
+由于这条「无匹配则不收窄」的规则，无论叠加多少偏好，候选都不会变空，
+实测落入应急片段的概率为 0。施加顺序并非按效果强弱，
+而是按<em class="term">希望在候选还宽时施加的先后</em>。
+</p>
+
+<ol class="spaced">
+  <li>轮廓的对比（<span class="sym">b</span> 与 <span class="sym">a</span>
+      在轮廓与击点序列上都不同）</li>
+  <li>飞扬（仅高潮）</li>
+  <li>攀升（式15）</li>
+  <li>终止音的偏好，按角色（<span class="sym">a</span> 保持开放，
+      <span class="sym">a&#8243;</span> 落在主音）</li>
+  <li>气息（乐句末收束，句中不收束）</li>
+  <li>留音（阴翳和弦之上，以及顶点之前）</li>
+  <li>五声音阶（可被哼唱）</li>
+</ol>
+
+<p>
+把终止置于五声音阶与留音之前，是因为若放在后面，
+被收窄后的小集合中已不再留有所需的终止音，过滤会悄然落空。
+出于同样的理由，在阴翳和弦之上，留音先于五声音阶施加。
+</p>
+
+<h2 id="s8"><span class="num">8</span>转调</h2>
+
+<p>
+只有最后一段 <span class="sym">A&#8243;</span> 以新的主音写成。
+和弦记号是相对主音的表记，因此一个也不改写；移动的只有
+<span class="sym">&#964;</span>，进行、乐段结构与模进都原样抬升。
+上行幅度为 <span class="sym">s &#8712; {1, 2}</span> 个半音。
+</p>
+
+<p>
+若以掷硬币的方式各半抽取，就会出现调号相距极远的组合。
+从降D大调（五个降号）上行1个半音落到D大调（两个升号），
+在五度圈上移动七格，是最远的跳法；同一调若上行2个半音则落到降E大调（三个降号），
+距离仅为二。将五度圈上的位置记为 <span class="sym">&#966;(&#964;, m)</span>，
+则距离与权重定义为
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>d</mi><mo>(</mo><mi>s</mi><mo>)</mo>
+    <mo>=</mo>
+    <mo>|</mo><mi class="gk">φ</mi><mo>(</mo><mi class="gk">τ</mi><mo>+</mo><mi>s</mi><mo>,</mo><mi>m</mi><mo>)</mo><mo>-</mo><mi class="gk">φ</mi><mo>(</mo><mi class="gk">τ</mi><mo>,</mo><mi>m</mi><mo>)</mo><mo>|</mo>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <mi>P</mi><mo>(</mo><mi>s</mi><mo>)</mo>
+    <mo>&#x221D;</mo>
+    <msup><mrow><mo>(</mo><mn>1</mn><mo>+</mo><mi>d</mi><mo>(</mo><mi>s</mi><mo>)</mo><mo>)</mo></mrow><mrow><mo>-</mo><mn>3</mn></mrow></msup>
+  </mrow>
+</math>
+<span class="tag">(17)</span>
+</div>
+<p>
+当两者都很远（<span class="sym">d &#8805; 5</span>）时不再抽签，直接取较近者。
+指数 3 由实测选定：3,000 次抽取的平均距离与最坏距离（7）的出现率如下。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表6　上行幅度的权重与调号的移动距离（3,000次抽取）</caption>
+  <thead><tr><th>权重</th><th class="num">平均距离</th><th class="num">距离7</th><th class="num">距离10以上</th></tr></thead>
+  <tbody>
+    <tr><td>各半抽取</td><td class="num">4.43</td><td class="num">19.5%</td><td class="num">6.1%</td></tr>
+    <tr><td>(1+d)<sup>&#8722;2</sup></td><td class="num">2.93</td><td class="num">4.9%</td><td class="num">0.0%</td></tr>
+    <tr><td>(1+d)<sup>&#8722;3</sup>（采用）</td><td class="num">2.64</td><td class="num">2.0%</td><td class="num">0.0%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+指数再往上提，+1个半音便几乎不再出现，
+而「上行半音」这一叙事曲的定式本身也就随之消失了。
+</p>
+
+<p>
+作为衔接，把 <span class="sym">B</span> 的最后一小节替换为
+<em class="term">新调的属和弦</em>。骤然上行半音听来突兀，
+插入一小节属和弦，耳朵便能先接受新调，再落到其主和弦上。
+但当该小节会落入高潮槽位时（16小节的乐曲）则不放置：
+槽位以两小节为一整体，若后半才换调，顶点的音与另一个音可能达到同一高度。
+式14所保证的一次性，优先于衔接的平滑。
+</p>
+
+<h2 id="s9"><span class="num">9</span>声部的配置</h2>
+
+<p>
+片段以级数书写，因此映射为实际音高需要主音。伴奏、低音与铺底则各自独立地由和声生成。
+朴素的实现以<em class="term">绝对音域</em>配置伴奏，而这并未考虑旋律正在何处歌唱：
+实测中旋律有 33.8% 的音被伴奏或铺底越过，最高达13个半音。
+伴奏一旦横穿到旋律之上，主从关系便颠倒，旋律就被埋没。
+</p>
+<figure>
+<svg viewBox="0 0 620 190" role="img" aria-label="伴奏越过旋律与收于上限之下的对比图">
+  <text class="dia-muted" x="8" y="16">旧：仅以绝对音域配置</text>
+  <text class="dia-muted" x="326" y="16">新：以旋律最低音为上限</text>
+
+  <g>
+    <line class="dia-line" x1="12" y1="26" x2="300" y2="26"/>
+    <path class="dia-accent" d="M24 62 L60 50 L96 58 L132 44 L168 56 L204 48 L240 60 L276 52"/>
+    <g fill="var(--line-strong)" opacity="0.85">
+      <rect x="24" y="34" width="24" height="6" rx="2"/><rect x="60" y="70" width="24" height="6" rx="2"/>
+      <rect x="96" y="40" width="24" height="6" rx="2"/><rect x="132" y="74" width="24" height="6" rx="2"/>
+      <rect x="168" y="36" width="24" height="6" rx="2"/><rect x="204" y="72" width="24" height="6" rx="2"/>
+      <rect x="240" y="42" width="24" height="6" rx="2"/><rect x="276" y="70" width="24" height="6" rx="2"/>
+    </g>
+    <text class="dia-muted" x="12" y="104">伴奏横穿旋律的上下（实测 33.8%）</text>
+  </g>
+
+  <g>
+    <line class="dia-line" x1="330" y1="26" x2="612" y2="26"/>
+    <path class="dia-accent" d="M338 62 L374 50 L410 58 L446 44 L482 56 L518 48 L554 60 L590 52"/>
+    <line class="dia-line" x1="330" y1="70" x2="612" y2="70" stroke-dasharray="4 4"/>
+    <text class="dia-muted" x="334" y="84">上限 C(b) = 旋律最低音 &#8722; 2</text>
+    <g fill="var(--line-strong)" opacity="0.85">
+      <rect x="338" y="90" width="24" height="6" rx="2"/><rect x="374" y="104" width="24" height="6" rx="2"/>
+      <rect x="410" y="94" width="24" height="6" rx="2"/><rect x="446" y="108" width="24" height="6" rx="2"/>
+      <rect x="482" y="92" width="24" height="6" rx="2"/><rect x="518" y="106" width="24" height="6" rx="2"/>
+      <rect x="554" y="96" width="24" height="6" rx="2"/><rect x="590" y="104" width="24" height="6" rx="2"/>
+    </g>
+    <text class="dia-muted" x="330" y="132">伴奏必定在旋律之下（实测 0.0%）</text>
+  </g>
+
+  <text class="dia-muted" x="12" y="160">折线＝旋律／横条＝伴奏的分解和弦。纵向位置即音高。</text>
+  <text class="dia-muted" x="12" y="178">允许的只有八度移动与省略上方声部，音名绝不改变。</text>
+</svg>
+<figcaption>
+
+  图5　声部的配置。左侧仅以绝对音域配置伴奏，伴奏遮住了旋律。
+  右侧则逐小节设定上限，从而保住「旋律为主、伴奏为辅」的关系。
+
+</figcaption>
+</figure>
+<div class="listen">
+  <span class="listen-label">同样的八小节，只更换伴奏的配置方式（请留意旋律是否听得清）</span>
+  <button type="button" data-demo="voicing-crossed" aria-pressed="false">旧：伴奏在旋律之上</button>
+  <button type="button" data-demo="voicing-good" aria-pressed="false">新：伴奏在旋律之下</button>
+</div>
+
+<p>
+小节 <span class="sym">b</span> 的上限由旋律的最低音确定。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>C</mi><mo>(</mo><mi>b</mi><mo>)</mo>
+    <mo>=</mo>
+    <munder><mo movablelimits="false">min</mo><mrow><mi>n</mi><mo>&#x2208;</mo><mi>M</mi><mo>(</mo><mi>b</mi><mo>)</mo></mrow></munder>
+    <mspace width="0.3em"/>
+    <mi class="gk">π</mi><mo>(</mo><mi>n</mi><mo>)</mo>
+    <mo>-</mo>
+    <mi class="gk">Δ</mi>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <mi class="gk">Δ</mi><mo>=</mo><mn>2</mn>
+  </mrow>
+</math>
+<span class="tag">(18)</span>
+</div>
+<p>
+再把和弦 <span class="sym">V = (v<sub>1</sub> &lt; &#8230; &lt; v<sub>r</sub>)</span>
+收到上限之下。<em class="term">允许的操作只有八度移动与省略上方声部两种，音名绝不改变。</em>
+若以半音强行压低，该和弦就变成了另一个和弦。
+八度移动量 <span class="sym">j &#8712; &#8484;</span> 由下述代价函数选定。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>J</mi><mo>(</mo><mi>j</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>1000</mn><mo>&#x22C5;</mo><msup><mrow><mo>(</mo><msub><mi>v</mi><mn>1</mn></msub><mo>+</mo><mn>12</mn><mi>j</mi><mo>+</mo><mi>w</mi><mo>-</mo><mi>C</mi><mo>)</mo></mrow><mo>+</mo></msup>
+    <mo>+</mo>
+    <mn>10</mn><mo>&#x22C5;</mo><mi>out</mi><mo>(</mo><mi>j</mi><mo>)</mo>
+    <mo>+</mo>
+    <mo>|</mo><msub><mi>v</mi><mn>1</mn></msub><mo>+</mo><mn>12</mn><mi>j</mi><mo>-</mo><msub><mi>v</mi><mi>prev</mi></msub><mo>|</mo>
+  </mrow>
+</math>
+<span class="tag">(19)</span>
+</div>
+<p>
+其中 <span class="sym">w = v<sub>r</sub> &#8722; v<sub>1</sub></span> 是和弦的展开幅度，
+<span class="sym">out(j)</span> 是偏离常用音域的量，末项则是与前一小节的声部进行。
+系数 1000 使遵守上限成为最优先，其次是常用音域，最后才是平滑度。
+若仍收不下，则省略上方声部（至少保留两个音）。
+</p>
+
+<p>
+此外，对延续四拍的铺底还要检查半音摩擦：
+凡与该小节中<em class="term">浮在表面的</em>旋律音（式9的
+<span class="sym">exp</span>）成半音关系的构成音，一律去掉。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msup><mi>V</mi><mo>&#x2032;</mo></msup>
+    <mo>=</mo>
+    <mrow><mo>{</mo>
+      <mi>v</mi><mo>&#x2208;</mo><mi>V</mi>
+      <mo>:</mo>
+      <mo>&#x00AC;</mo><mo>&#x2203;</mo><mi>n</mi><mo>&#x2208;</mo><msup><mi>M</mi><mi>exp</mi></msup><mo>(</mo><mi>b</mi><mo>)</mo>
+      <mspace width="0.3em"/>
+      <mo>[</mo><mo>(</mo><mi>v</mi><mo>-</mo><mi class="gk">π</mi><mo>(</mo><mi>n</mi><mo>)</mo><mo>)</mo><mspace width="0.2em"/><mi>mod</mi><mspace width="0.2em"/><mn>12</mn><mo>&#x2208;</mo><mo>{</mo><mn>1</mn><mo>,</mo><mn>11</mn><mo>}</mo><mo>]</mo>
+    <mo>}</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(20)</span>
+</div>
+<p>
+分解和弦的半音摩擦转瞬即逝，持续音则不会消失。
+例如 <span class="sym">IM7</span> 的第七音位于主音下方半音，
+当旋律歌唱主音时，它便一直未获解决地拍打着。
+</p>
+
+<div class="note">
+要紧的是，这项检查<em class="term">不可</em>施加于强拍上的所有半音冲突。
+在引入式20之前的内訳中，强拍冲突559处里有448处（80%）是和弦外音，
+其中99%都以级进解决到了下一个音。那正是留音与倚音——
+本系统刻意要造就的阴翳。该消除的只是余下的111处，
+即旋律本身是和弦内音却依然浑浊的情形。改动之后事故降至11处，
+余下的冲突中98%是带解决的留音。（表5中冲突比例只从 20.1% 降到 9.8%，
+原因正在于此：留音并没有被减少。）
+</div>
+
+<h2 id="s10"><span class="num">10</span>演奏设计</h2>
+
+<p>
+拍点与力度若照原样奏出便是机械的。力度设计不是调味而是骨架，
+因此无论设置如何都恒常施加。力度由三层的乘积给出。
+</p>
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>v</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+    <mo>=</mo>
+    <mi>clamp</mi><mrow><mo>(</mo>
+      <msub><mi>v</mi><mn>0</mn></msub>
+      <mo>&#x22C5;</mo>
+      <mo>(</mo><mn>1</mn><mo>+</mo><mi class="gk">ε</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>L</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>W</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>K</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+    <mo>)</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(21)</span>
+</div><figure>
+<svg viewBox="0 0 620 204" role="img" aria-label="力度三层及其乘积示意图">
+  <g class="dia-muted">
+    <text x="8" y="20">L（段落）</text>
+    <text x="8" y="72">W（乐句内）</text>
+    <text x="8" y="124">K（高潮）</text>
+    <text x="8" y="182">乘积＝实际力度</text>
+  </g>
+  <line class="dia-line" x1="120" y1="30" x2="612" y2="30" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 34 L243 34 L243 28 L366 28 L366 18 L489 18 L489 32 L612 44"/>
+  <line class="dia-line" x1="120" y1="82" x2="612" y2="82" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 88 L151 76 L182 88 L212 76 L243 88 L274 76 L305 88 L335 76 L366 88 L397 76 L428 88 L458 76 L489 88 L520 76 L551 88 L581 76 L612 88"/>
+  <line class="dia-line" x1="120" y1="134" x2="612" y2="134" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 134 L376 134 L416 124 L440 114 L452 148 L472 138 L612 134"/>
+  <path class="dia-accent" d="M120 180 L200 177 L280 173 L360 169 L416 162 L440 154 L455 190 L500 182 L560 186 L612 191" opacity="0.9"/>
+  <text class="dia-muted" x="440" y="110" text-anchor="middle">顶点 1.20</text>
+  <text class="dia-muted" x="466" y="150">紧接其后 0.75</text>
+</svg>
+<figcaption>
+
+  图6　力度的三层：段落的基准电平、每一乐句的涨落、
+  以及高潮的隆起与紧随其后的松弛。最下方是实际奏出的力度，
+  最深的谷正落在顶点之后。这一落差造就了「副歌之后的松弛」。
+
+</figcaption>
+</figure>
+<ul class="spaced">
+  <li><span class="sym">L</span>：段落的基准电平。
+      <span class="sym">A: 0.85</span>、<span class="sym">A&#8242;: 0.95</span>、
+      <span class="sym">B: 1.10</span>、
+      <span class="sym">A&#8243;: 0.80 &#8594; 0.55</span>（线性下降）。</li>
+  <li><span class="sym">W</span>：乐句（8拍）内的涨落，以乐句最高音为峰：
+      <span class="sym">1 &#8722; 0.18&#183;|p &#8722; q| / max(q, 1&#8722;q, 0.25)</span>。</li>
+  <li><span class="sym">K</span>：高潮曲线。顶点前8拍由 0.88 升至 1.20，
+      顶点后4拍降至 0.75。这一落差造就「副歌之后的松弛」。</li>
+  <li><span class="sym">&#949;</span>：源自种子的力度抖动（&#177;10%）。</li>
+</ul>
+
+<div class="listen">
+  <span class="listen-label">同样的十二小节，分别以施加力度设计与将其抹平的方式播放</span>
+  <button type="button" data-demo="dynamics-on" aria-pressed="false">有设计</button>
+  <button type="button" data-demo="dynamics-flat" aria-pressed="false">抹平之后</button>
+</div>
+
+<p>
+在时间方向上施加保持音（仅顶点音，延后 30 毫秒并把时值乘以 1.15）、
+乐句末的换气（15 毫秒）、高潮之前的迟疑（两拍内最多 0.1 拍）、
+以及终段两小节的渐慢（最多 0.5 拍）。这些都由源自种子的 PRNG 确定性地生成，
+因此同一曲目代码连演奏的抖动都能完全复现。
+</p>
+
+<p>
+这些设计同样以记号写入乐谱。力度记号、渐强渐弱、连线、保持音、踏板与
+<em>rit.</em> 都由同一组 <span class="sym">L, W, K</span> 导出，
+声音与乐谱因此不会各自演变。
+</p>
+
+<h2 id="s11"><span class="num">11</span>实测</h2>
+
+<p>
+生成系统的性质以实测而非听感来管理。以下为默认设置下的实测值，
+样本数因指标而异（越过与冲突为60首，顶点附近与重复为80～200首，
+音量为8首 &#215; 各60秒）。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表5　设计变更前后的实测值</caption>
+  <thead><tr><th>指标</th><th class="num">变更前</th><th class="num">变更后</th></tr></thead>
+  <tbody>
+    <tr><td>伴奏或铺底越过旋律的音的比例</td><td class="num">33.8%</td><td class="num">0.0%</td></tr>
+    <tr><td>强拍的半音冲突（含留音）</td><td class="num">20.1%</td><td class="num">9.8%</td></tr>
+    <tr><td>&#8195;其中属于事故（旋律为和弦内音）</td><td class="num">111 处</td><td class="num">11 处</td></tr>
+    <tr><td>顶点前一小节的最高音（相对主音）</td><td class="num">+12.5 半音</td><td class="num">+13.8 半音</td></tr>
+    <tr><td>与顶点之差（最后一步）</td><td class="num">9.1 半音</td><td class="num">6.3 半音</td></tr>
+    <tr><td>完全一致的两小节片段</td><td class="num">6.7 对/首</td><td class="num">5.2 对/首</td></tr>
+    <tr><td>应急片段的出现</td><td class="num">0</td><td class="num">0</td></tr>
+    <tr><td>最高音恰好只响一次的乐曲</td><td class="num">200/200</td><td class="num">200/200</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+音响方面同样以实测决定。改动之前，默认音量下峰值为 &#8722;7.1 dBFS、
+RMS 为 &#8722;26.1 dB，可用的音量余下了一大截。在座式音箱上这不过是「安静的曲子」，
+但用手机内置扬声器就成了「听不见」。于是把限制器阈值由 &#8722;8 提高到 &#8722;3，
+增益乘以 3.0，并对输出施加一律的上限（0.8），同时把音量的默认值由 70 提高到 85。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表7　输出音量与起伏（8首 &#215; 各60秒。起伏＝最大2秒 RMS 与最小2秒 RMS 之差）</caption>
+  <thead><tr><th>条件</th><th class="num">峰值</th><th class="num">RMS</th><th class="num">起伏</th></tr></thead>
+  <tbody>
+    <tr><td>改动前・默认音量 70</td><td class="num">&#8722;7.1 dBFS</td><td class="num">&#8722;26.1 dB</td><td class="num">12.9 dB</td></tr>
+    <tr><td>改动前・音量 85</td><td class="num">&#8722;5.2 dBFS</td><td class="num">&#8722;24.6 dB</td><td class="num">12.2 dB</td></tr>
+    <tr><td>改动后・默认音量 85</td><td class="num">&#8722;2.6 dBFS</td><td class="num">&#8722;19.7 dB</td><td class="num">12.2 dB</td></tr>
+    <tr><td>改动后・音量最大 100</td><td class="num">&#8722;1.2 dBFS</td><td class="num">&#8722;18.3 dB</td><td class="num">12.1 dB</td></tr>
+    <tr><td>增益 3.0・阈值 &#8722;8・音量 85</td><td class="num">&#8722;4.0 dBFS</td><td class="num">&#8722;18.4 dB</td><td class="num">9.9 dB</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+以各自的默认音量相比较，RMS 提高了 6.4 dB；即便把音量旋钮开到最大，
+最坏峰值也仅为 &#8722;0.9 dBFS，不会失真。<em class="term">起伏并没有变宽。</em>
+在同一音量（85）下比较，改动前后同为 12.2 dB；
+若把默认值的提高计入，则从 12.9 降到 12.2 dB，反而略有收窄。
+可以主张的只到这一步：把音量提高了 6.4 dB，而起伏几乎没有损失。
+</p>
+
+<p>
+让这个「几乎没有损失」得以成立的，是压缩点的位置。
+只把增益乘以 3.0 而把阈值留在 &#8722;8，起伏会被压到 9.9 dB（表7最后一行），
+因为限制器连音乐性的峰值一起削去了。把阈值提高到 &#8722;3，
+它就只承接突发的尖峰。输出的上限之所以用一律的衰减而非压缩来实现，理由也在于此。
+</p>
+
+<h2 id="s12"><span class="num">12</span>局限</h2>
+
+<ol class="spaced">
+  <li><em class="term">节奏的多样性受曲式的算术所限。</em>
+      32小节中只出现七到八种节奏型。这是
+      <span class="sym">a&#8242;</span> 与 <span class="sym">a&#8243;</span>
+      作为 <span class="sym">a</span> 的模进而保留节奏所导致的直接结果
+      （每四个槽位两种，共四个乐段组）。若打破它，
+      「同一首歌仍在继续」的感觉也会随之消失。这不是应当消除的缺陷。</li>
+  <li><em class="term">动机的再现是字面意义上的反复。</em>
+      完全一致的片段中有 58% 源自跨段落的动机再现。
+      这与歌曲的第一段、第二段与最后一段是同一种结构；
+      是否应当加以变奏，属于风格的选择而非对错的问题。</li>
+  <li><em class="term">通向顶点的最后一步依然是跳进。</em>
+      这源自对「飞扬型」的明确要求——上行四度以上抵达后级进下行——
+      该形态在语料库中被观测到189次。跨小节的攀升已有改善，
+      但最后的跳进本身是作为设计而保留的。</li>
+  <li><em class="term">和声语汇闭合于功能和声之内。</em>
+      借用和弦与副属和弦包含在内，但不涉及调式和声与非功能性进行。
+      由于片段的适配是以级数预先算好的，扩充语汇需要重新生成整个目录。</li>
+</ol>
+
+<h2 id="appendix"><span class="num">附录</span>语料库收录曲目</h2>
+
+<p>
+评价函数的系数与旋律型全部由此归纳而来。公有领域的判定标准为
+「作曲者卒于1955年以前，或为传承曲」，收录曲中最晚的卒年为1952年
+（Béla Bartók 卒于1945年，故收录；John Ireland 卒于1962年，故未采用）。
+作曲者56人、99首，加上传承曲26首，共计125首。调式为大调93首、小调32首。
+</p>
+
+<p>
+采谱的只是各曲主旋律中令人记忆深刻的一节（8～27拍，中位数13拍），
+和声与伴奏都未采录。本系统所学习的
+<em class="term">仅是音程的排列与节奏的型</em>，
+和声语汇则是独立于此、依功能和声另行定义的。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表8　地域构成</caption>
+  <thead><tr><th>地域</th><th class="num">曲数</th><th>地域</th><th class="num">曲数</th></tr></thead>
+  <tbody>
+    <tr><td>英美</td><td class="num">30</td><td>意大利</td><td class="num">13</td></tr>
+    <tr><td>德奥</td><td class="num">20</td><td>斯拉夫</td><td class="num">11</td></tr>
+    <tr><td>日本</td><td class="num">17</td><td>拉丁美洲</td><td class="num">10</td></tr>
+    <tr><td>法国</td><td class="num">16</td><td>韩国</td><td class="num">4</td></tr>
+    <tr><td colspan="2"></td><td>其他</td><td class="num">4</td></tr>
+  </tbody>
+</table>
+</div>
+
+<ul class="roster">
+
+    <li><span class="who">Johann Pachelbel <span class="died">(卒于 1706)</span></span><br><span class="what">Canon in D</span></li>
+    <li><span class="who">Johann Sebastian Bach <span class="died">(卒于 1750)</span></span><br><span class="what">Air on the G String (BWV 1068) ／ Jesu, Joy of Man's Desiring (BWV 147)</span></li>
+    <li><span class="who">Christian Petzold <span class="died">(卒于 1762)</span></span><br><span class="what">Minuet in G (BWV Anh.114)</span></li>
+    <li><span class="who">Wolfgang Amadeus Mozart <span class="died">(卒于 1791)</span></span><br><span class="what">Ave Verum Corpus (K.618) ／ Piano Sonata K.545, 1st mvt ／ Lacrimosa (Requiem K.626)</span></li>
+    <li><span class="who">Jean-Paul-Égide Martini <span class="died">(卒于 1816)</span></span><br><span class="what">Plaisir d'amour</span></li>
+    <li><span class="who">Ludwig van Beethoven <span class="died">(卒于 1827)</span></span><br><span class="what">Für Elise (WoO 59) ／ Piano Sonata Op.27-2 "Moonlight", 1st mvt ／ Piano Sonata Op.13 "Pathétique", 2nd mvt ／ Ode to Joy (Symphony No.9, 4th mvt)</span></li>
+    <li><span class="who">Franz Schubert <span class="died">(卒于 1828)</span></span><br><span class="what">Ave Maria (D.839) ／ Ständchen "Serenade" (D.957-4) ／ Der Lindenbaum (D.911-5) ／ Heidenröslein (D.257) ／ An die Musik (D.547)</span></li>
+    <li><span class="who">Thomas Haynes Bayly <span class="died">(卒于 1839)</span></span><br><span class="what">Long, Long Ago</span></li>
+    <li><span class="who">Felix Mendelssohn <span class="died">(卒于 1847)</span></span><br><span class="what">Auf Flügeln des Gesanges (Op.34-2)</span></li>
+    <li><span class="who">Frédéric Chopin <span class="died">(卒于 1849)</span></span><br><span class="what">Nocturne Op.9 No.2 ／ Prelude Op.28 No.4 ／ Prelude Op.28 No.7 ／ Étude Op.10 No.3 "Tristesse" ／ Nocturne Op.55 No.1</span></li>
+    <li><span class="who">Henry Rowley Bishop <span class="died">(卒于 1855)</span></span><br><span class="what">Home! Sweet Home!</span></li>
+    <li><span class="who">Robert Schumann <span class="died">(卒于 1856)</span></span><br><span class="what">Träumerei (Kinderszenen Op.15-7) ／ Widmung (Op.25-1)</span></li>
+    <li><span class="who">Stephen Foster <span class="died">(卒于 1864)</span></span><br><span class="what">Beautiful Dreamer ／ Jeanie with the Light Brown Hair ／ Hard Times Come Again No More ／ My Old Kentucky Home</span></li>
+    <li><span class="who">Sebastián Iradier <span class="died">(卒于 1865)</span></span><br><span class="what">La Paloma</span></li>
+    <li><span class="who">George R. Poulton <span class="died">(卒于 1867)</span></span><br><span class="what">Aura Lee</span></li>
+    <li><span class="who">Georges Bizet <span class="died">(卒于 1875)</span></span><br><span class="what">L'amour est un oiseau rebelle (Carmen)</span></li>
+    <li><span class="who">Narciso Serradell Sevilla <span class="died">(卒于 1877)</span></span><br><span class="what">La Golondrina</span></li>
+    <li><span class="who">Teodoro Cottrau <span class="died">(卒于 1879)</span></span><br><span class="what">Santa Lucia</span></li>
+    <li><span class="who">Jacques Offenbach <span class="died">(卒于 1880)</span></span><br><span class="what">Barcarolle (Les contes d'Hoffmann)</span></li>
+    <li><span class="who">Franz Liszt <span class="died">(卒于 1886)</span></span><br><span class="what">Liebestraum No.3 (S.541-3)</span></li>
+    <li><span class="who">César Franck <span class="died">(卒于 1890)</span></span><br><span class="what">Panis Angelicus</span></li>
+    <li><span class="who">Pyotr Ilyich Tchaikovsky <span class="died">(卒于 1893)</span></span><br><span class="what">Barcarolle "June" (The Seasons Op.37a) ／ Swan Theme (Swan Lake Op.20) ／ None but the Lonely Heart (Op.6-6)</span></li>
+    <li><span class="who">Juventino Rosas <span class="died">(卒于 1894)</span></span><br><span class="what">Sobre las Olas</span></li>
+    <li><span class="who">Johannes Brahms <span class="died">(卒于 1897)</span></span><br><span class="what">Wiegenlied (Op.49-4)</span></li>
+    <li><span class="who">Alicia Ann Scott <span class="died">(卒于 1900)</span></span><br><span class="what">Annie Laurie</span></li>
+    <li><span class="who">Giuseppe Verdi <span class="died">(卒于 1901)</span></span><br><span class="what">La donna è mobile (Rigoletto) ／ Libiamo ne' lieti calici (La traviata)</span></li>
+    <li><span class="who">Rentarō Taki <span class="died">(卒于 1903)</span></span><br><span class="what">Kōjō no Tsuki (荒城の月) ／ Hana (花) ／ Hakone Hachiri (箱根八里)</span></li>
+    <li><span class="who">Antonín Dvořák <span class="died">(卒于 1904)</span></span><br><span class="what">Largo (Symphony No.9 "From the New World", 2nd mvt) ／ Songs My Mother Taught Me (Op.55-4)</span></li>
+    <li><span class="who">Edvard Grieg <span class="died">(卒于 1907)</span></span><br><span class="what">Solveig's Song (Peer Gynt Op.55) ／ Morning Mood (Peer Gynt Op.46) ／ Jeg elsker Dig (Op.5-3)</span></li>
+    <li><span class="who">James A. Bland <span class="died">(卒于 1911)</span></span><br><span class="what">Carry Me Back to Old Virginny</span></li>
+    <li><span class="who">Jules Massenet <span class="died">(卒于 1912)</span></span><br><span class="what">Méditation (Thaïs)</span></li>
+    <li><span class="who">Francesco Paolo Tosti <span class="died">(卒于 1916)</span></span><br><span class="what">Ideale ／ 'A vucchella</span></li>
+    <li><span class="who">Eduardo di Capua <span class="died">(卒于 1917)</span></span><br><span class="what">Maria, Marì!</span></li>
+    <li><span class="who">Claude Debussy <span class="died">(卒于 1918)</span></span><br><span class="what">Clair de lune (Suite bergamasque) ／ Rêverie (L.68) ／ Arabesque No.1 (L.66)</span></li>
+    <li><span class="who">Ángel Villoldo <span class="died">(卒于 1919)</span></span><br><span class="what">El Choclo</span></li>
+    <li><span class="who">Camille Saint-Saëns <span class="died">(卒于 1921)</span></span><br><span class="what">Le Cygne (Le Carnaval des animaux)</span></li>
+    <li><span class="who">Luigi Denza <span class="died">(卒于 1922)</span></span><br><span class="what">Funiculì, Funiculà</span></li>
+    <li><span class="who">Gabriel Fauré <span class="died">(卒于 1924)</span></span><br><span class="what">Sicilienne (Op.78) ／ Après un rêve (Op.7-1) ／ Pavane (Op.50)</span></li>
+    <li><span class="who">Giacomo Puccini <span class="died">(卒于 1924)</span></span><br><span class="what">O mio babbino caro (Gianni Schicchi) ／ Nessun dorma (Turandot)</span></li>
+    <li><span class="who">Erik Satie <span class="died">(卒于 1925)</span></span><br><span class="what">Gymnopédie No.1 ／ Gnossienne No.1 ／ Je te veux</span></li>
+    <li><span class="who">Sakunosuke Koyama <span class="died">(卒于 1927)</span></span><br><span class="what">Natsu wa Kinu (夏は来ぬ)</span></li>
+    <li><span class="who">Akira Nakada <span class="died">(卒于 1931)</span></span><br><span class="what">Sōshunfu (早春賦)</span></li>
+    <li><span class="who">Edward Elgar <span class="died">(卒于 1934)</span></span><br><span class="what">Salut d'Amour (Op.12) ／ Nimrod (Enigma Variations Op.36)</span></li>
+    <li><span class="who">Carlos Gardel <span class="died">(卒于 1935)</span></span><br><span class="what">Por una Cabeza ／ El día que me quieras ／ Volver</span></li>
+    <li><span class="who">Maurice Ravel <span class="died">(卒于 1937)</span></span><br><span class="what">Pavane pour une infante défunte</span></li>
+    <li><span class="who">Ernesto De Curtis <span class="died">(卒于 1937)</span></span><br><span class="what">Torna a Surriento ／ Non ti scordar di me</span></li>
+    <li><span class="who">Vincenzo Di Chiara <span class="died">(卒于 1937)</span></span><br><span class="what">La Spagnola</span></li>
+    <li><span class="who">José María Lacalle García <span class="died">(卒于 1937)</span></span><br><span class="what">Amapola</span></li>
+    <li><span class="who">Teiichi Okano <span class="died">(卒于 1941)</span></span><br><span class="what">Furusato (ふるさと) ／ Oborozukiyo (朧月夜) ／ Haru no Ogawa (春の小川) ／ Momiji (紅葉)</span></li>
+    <li><span class="who">Sergei Rachmaninoff <span class="died">(卒于 1943)</span></span><br><span class="what">Vocalise (Op.34-14)</span></li>
+    <li><span class="who">Tamezō Narita <span class="died">(卒于 1945)</span></span><br><span class="what">Hamabe no Uta (浜辺の歌)</span></li>
+    <li><span class="who">Nagayo Motoori <span class="died">(卒于 1945)</span></span><br><span class="what">Nanatsu no Ko (七つの子) ／ Akai Kutsu (赤い靴)</span></li>
+    <li><span class="who">Salvatore Cardillo <span class="died">(卒于 1947)</span></span><br><span class="what">Core 'ngrato (Catarì)</span></li>
+    <li><span class="who">Gerardo Matos Rodríguez <span class="died">(卒于 1948)</span></span><br><span class="what">La Cumparsita</span></li>
+    <li><span class="who">Manuel M. Ponce <span class="died">(卒于 1948)</span></span><br><span class="what">Estrellita</span></li>
+    <li><span class="who">Ryūtarō Hirota <span class="died">(卒于 1952)</span></span><br><span class="what">Kutsu ga Naru (靴が鳴る) ／ Hamachidori (浜千鳥)</span></li>
+    <li><span class="who">传承曲 <span class="died">(英美)</span></span><br><span class="what">Londonderry Air (Danny Boy) ／ Greensleeves ／ Amazing Grace (New Britain) ／ Auld Lang Syne ／ Scarborough Fair ／ Shenandoah ／ Loch Lomond ／ Deep River ／ Swing Low, Sweet Chariot ／ Sometimes I Feel Like a Motherless Child ／ Nobody Knows the Trouble I've Seen ／ The Water Is Wide (O Waly Waly) ／ All Through the Night (Ar Hyd y Nos) ／ The Ash Grove (Llwyn Onn) ／ The Last Rose of Summer ／ My Bonnie Lies Over the Ocean ／ Red River Valley ／ Down in the Valley ／ Comin' Thro' the Rye</span></li>
+    <li><span class="who">传承曲 <span class="died">(韩国)</span></span><br><span class="what">아리랑 (Arirang) ／ 밀양아리랑 (Miryang Arirang) ／ 도라지타령 (Doraji Taryeong) ／ 새야 새야 (Saeya Saeya)</span></li>
+    <li><span class="who">传承曲 <span class="died">(日本)</span></span><br><span class="what">Sakura Sakura (さくらさくら) ／ Etenraku Imayō (越天楽今様) ／ Edo Komoriuta (江戸子守唄)</span></li>
+</ul>
+
+<div class="foot">
+  <p>
+    实现：<a href="https://github.com/jounlai/melody-generator">github.com/jounlai/melody-generator</a>
+    &#8195;片段目录999件、和弦进行99件、语料库125首1,768个音。
+    生成是确定性的，六个字符的种子唯一确定乐曲、演奏与乐谱。
+  </p>
+  <p>Created by Jounlai Cho (cho@heuron.com) ／ <a href="https://heuron.com">Heuron 株式会社</a>
+     &#8195;开发使用了 Anthropic 的 Claude（Claude Code）。</p>
+  <p><a class="backlink" href="./index.html?lang=zh">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>
+    返回无限疗愈钢琴</a></p>
+</div>
+
+
+</div>
+<script type="module" src="./algorithm.js"></script>
+</body>
+</html>

@@ -11,13 +11,15 @@ npm start        # http://localhost:8080/
 
 初回のクリックまで音は鳴らない（ブラウザの自動再生制限）。
 
+画面は日本語・英語・中国語。既定はブラウザの言語で、`?lang=en` `?lang=zh` でも指定できる。
+
 ## 動かす
 
 | 入口 | 用途 |
 |---|---|
 | `index.html` | 開発用。`src/*.js` をモジュールとして読む。サーバ経由で開く |
 | `melody-generator.html` | 配布用。1ファイルで完結し、ダブルクリックで開く（1.3 MB） |
-| `algorithm.html` | 生成アルゴリズムの解説。試聴つき |
+| `algorithm.html` | 生成アルゴリズムの解説。試聴つき。英語版 `algorithm.en.html`、中国語版 `algorithm.zh.html` |
 
 `melody-generator.html` は **生成物**。手で編集せず、`src/` を直してから
 `npm run bundle` で作り直すこと。
@@ -63,6 +65,7 @@ src/
   instrument.js  楽器8種の定義（声部ごとの音色と GM 音色番号）
   settings.js    調整可能パラメータの唯一の定義。曲コードの符号化
   session.js     iOS の消音スイッチ対策と、ロック画面の再生操作
+  i18n.js        日本語・英語・中国語の文言と、調名の言語別表記
   ui.js          設定パネルの自動生成（PARAM_DEFS を走査するだけ）
   main.js        起動と配線。DOM と AudioContext に触るのはここだけ
   rng.js         mulberry32。シードから決まる乱数
