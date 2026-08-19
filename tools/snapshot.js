@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 旋律の midi 列のスナップショットを作る。
+// 旋律の midi 列のスナップショットを作る。版1（＝共有済みの曲コードが指す版）で。
 //
 // 編曲層(arrange.js)は「いつ鳴らすか」だけを変え、「どの音を鳴らすか」には
 // 触らない。その保証を機械で守るための基準線がこのファイル。
@@ -37,7 +37,9 @@ export function buildSnapshot(data) {
   const out = {};
   for (const seed of SNAPSHOT_SEEDS) {
     for (const songBars of SNAPSHOT_BARS) {
-      const song = composeSong(seed, data, { ...defaultSettings(), songBars });
+      // 版1で作る。このスナップショットが守るのは「共有済みの曲コードから
+      // 出る曲が変わらないこと」で、桁の無い曲コードは版1として解かれるため。
+      const song = composeSong(seed, data, { ...defaultSettings(), songBars, generatorVersion: '1' });
       out[`${seed}|${songBars}`] = melodyKey(song);
     }
   }

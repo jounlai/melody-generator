@@ -594,6 +594,41 @@ const FLOWING_TIERS = [
   (m) => endingHold(m) < BREATH_HOLD,
 ];
 
+// ---------------------------------------------------------------------------
+// 絞り込みの下限（版2から）
+//
+// narrowCandidates は好みの条件を8段まで重ねる。各段が「該当があれば何件でも
+// そちらを採る」ため、連鎖すると候補が消し飛ぶ。版1の実測:
+//
+//   場面              和音と音域を通る   実際に選ばれうる
+//   A の頭                 84件      →      12種類
+//   A の途中              102件      →       7種類
+//   フレーズ末             52件      →       5種類
+//   サビの登り             41件      →       7種類
+//   短調の陰り             35件      →       1種類   ← 何度生成しても同じ断片
+//
+// 結果、999個のカタログのうち200曲で使われるのは357個で、642個は一度も鳴らない。
+// 上位50個が全スロットの56%を占めていた。「材料が999個ある」は嘘ではないが、
+// 「999個から選んでいる」は嘘だった。
+//
+// そこで各段に下限を置き、割り込むなら絞らないことにする。優先順は変えないので、
+// 前のほう（対比・登り・終止）は今までどおり効き、諦めるのは後ろの段
+// （ペンタトニック・掛留）から。
+//
+// 下限は 1/8/16/24/32/48/64/96 を振って実測で決めた（150曲）。48 から先は
+// 多様性がほぼ頭打ちで、48 の時点で:
+//   使われる断片 329→407 / 最頻の断片 5.88%→2.79%
+//   ペンタトニック率 84.9%→88.8% / フレーズ末が閉じる率 85.3%→90.2%
+// 多様性と引き換えに歌らしさを落とす、という取引にはなっていない。
+//
+// 版1は下限1、すなわち「該当があれば必ず採る」で、従来と1ビットも変わらない。
+// 共有済みの曲コードは版1として解かれるので、同じ曲がそのまま鳴る。
+const NARROW_FLOOR = { 1: 1, 2: 48 };
+
+export function narrowFloorFor(version) {
+  return NARROW_FLOOR[String(version)] ?? NARROW_FLOOR[1];
+}
+
 // 楽節の a（アンカー）のスロットだけは、候補がこれを下回るなら息の流れで絞らない。
 //
 // a はそのまま a' と a'' へ移調されて、楽節3スロットぶんを支配する。ここで候補を
@@ -664,9 +699,15 @@ export function fragmentCandidates(melodies, ctx) {
  */
 function narrowCandidates(candidates, ctx) {
   let out = candidates;
+  // 絞り込みの下限。割り込むなら絞らない。既に下限を下回っているときは、
+  // 「何も減らさない条件」だけが通る＝そこで絞り込みは止まる。
+  // floor が 1 なら「該当があれば必ず採る」＝版1の従来どおりの動き。
+  const floor = Number(ctx.narrowFloor) > 0 ? Number(ctx.narrowFloor) : 1;
+  const enoughFor = (n, base) => n > 0 && n >= Math.min(floor, base.length);
+  const take = (sub) => (enoughFor(sub.length, out) ? sub : out);
+
   if (ctx.avoidContour) {
-    const contrast = out.filter((m) => m.contour !== ctx.avoidContour);
-    if (contrast.length > 0) out = contrast;
+    out = take(out.filter((m) => m.contour !== ctx.avoidContour));
   }
   // 楽節の b は、音形だけでなく打点の並びも a と変える。
   //
@@ -674,11 +715,12 @@ function narrowCandidates(candidates, ctx) {
   // 同じ小節が並んでいた。文章に例えると、全部の文が同じ抑揚で読まれている。
   // 対比を作る役目の b で音高だけ変えても、耳は「同じ形の言い直し」と聴く。
   if (ctx.avoidOnsets) {
-    const contrast = out.filter((m) => onsetKey(m) !== ctx.avoidOnsets);
-    if (contrast.length > 0) out = contrast;
+    out = take(out.filter((m) => onsetKey(m) !== ctx.avoidOnsets));
   }
   // 曲の出だしだけは、拍0から鳴り出す断片を採る。
   // 弱起の断片で始まると、聴き手はどこが1拍目か掴めないまま曲に入ることになる。
+  // 曲の出だしと頂点の形だけは下限を掛けない。1曲に1スロットしか無く、
+  // そこで妥協すると「どこが1拍目か」「そこで初めて届いた」が消える。
   if (ctx.preferDownbeat) {
     const onBeat = out.filter((m) => (m.notes?.[0]?.beat ?? 0) === 0);
     if (onBeat.length > 0) out = onBeat;
@@ -694,19 +736,18 @@ function narrowCandidates(candidates, ctx) {
   // 高い断片が残っておらず素通りしてしまう。
   // 「該当が無ければ絞らない」ので、候補が枯れても曲は壊れない。
   if (ctx.rise) {
-    const climbing = out.filter((m) => m.peakDeg >= ctx.rise);
-    if (climbing.length > 0) out = climbing;
+    out = take(out.filter((m) => m.peakDeg >= ctx.rise));
   }
   if (Array.isArray(ctx.endDegrees)) {
     for (const tier of ctx.endDegrees) {
       const closed = out.filter((m) => tier.includes(scaleDegreeOf(m.endDeg)));
-      if (closed.length > 0) { out = closed; break; }
+      if (enoughFor(closed.length, out)) { out = closed; break; }
     }
   }
   // 楽節計画の要。フレーズ末は閉じ、フレーズ途中は閉じずに次の小節へ流し込む。
   // 「該当が無ければ絞らない」に加えて、楽節の a では「痩せすぎるなら絞らない」。
   const keep = ctx.isAnchor ? ANCHOR_MIN_CANDIDATES : 1;
-  const enough = (n) => n > 0 && n >= keep;
+  const enough = (n) => n > 0 && n >= Math.max(keep, Math.min(floor, out.length));
   if (ctx.phraseEnd === true) {
     for (const tier of CLOSING_TIERS) {
       const closing = out.filter(tier);
@@ -725,9 +766,12 @@ function narrowCandidates(candidates, ctx) {
   // あとに回すと、ペンタトニックで絞ったあとの小さな集合に掛留が残っておらず、
   // 「該当なし」で素通りしてしまう（実測でここが効かず、掛留率がほぼ動かなかった）。
   if (ctx.preferSus && ctx.susOverPenta) {
-    const sus = out.filter((m) => hasSus(m, ctx));
-    if (sus.length > 0) out = sus;
+    out = take(out.filter((m) => hasSus(m, ctx)));
   }
+  // ペンタトニックは下限を掛けない。「断片が口ずさめるかどうかは、ほぼ
+  // ペンタトニックかどうかで決まる」——ここを多様性と引き換えにすると、
+  // 曲は増えるが歌えなくなる。実測でも下限を掛けるとペンタ率が
+  // 84.9% → 62% まで落ちた。多様性は他の段で稼ぐ。
   if (ctx.preferPenta) {
     const penta = out.filter((m) => hasPentatonic(m, ctx.mode));
     if (penta.length > 0) out = penta;
@@ -737,12 +781,10 @@ function narrowCandidates(candidates, ctx) {
   // 「少しずつ上げてクライマックスへ」が最初のスロットで詰む。低く始めて余地を残す。
   // 口ずさめること（ペンタトニック）のほうが上なので、その中から低いものを採る。
   if (ctx.headroom) {
-    const low = out.filter((m) => m.peakDeg <= ctx.headroom);
-    if (low.length > 0) out = low;
+    out = take(out.filter((m) => m.peakDeg <= ctx.headroom));
   }
   if (ctx.preferSus) {
-    const sus = out.filter((m) => hasSus(m, ctx));
-    if (sus.length > 0) out = sus;
+    out = take(out.filter((m) => hasSus(m, ctx)));
   }
   return out;
 }
@@ -1350,6 +1392,9 @@ export function composeSong(seed, data, settings) {
   const cs = climaxSlot(slotCount);
   const roles = phraseRoles(slotCount);
   const strength = clamp(cfg.curveStrength / 100, 0, 1);
+  // 生成器の版。曲コードに桁の無い（＝共有済みの）コードは版1として解かれ、
+  // 絞り込みの下限が1になるので、従来と完全に同じ曲が出る。
+  const narrowFloor = narrowFloorFor(cfg.generatorVersion);
 
   // ここから下の乱数の消費順は変えない：
   // mode → tempo → tonic → 転調するか → 上げ幅 → P1 → P2 → 各スロット。
@@ -1448,6 +1493,7 @@ export function composeSong(seed, data, settings) {
 
       const ctx = {
         mode,
+        narrowFloor,
         chordA,
         chordB,
         chordAIdx: chordIndex(mode, chordA),
