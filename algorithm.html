@@ -1,0 +1,1356 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="無限ヒーリングピアノのメロディー生成アルゴリズム。コーパスからの帰納、断片の層化抽出、楽節構造による組み立て、声部配置と演奏設計の形式的記述。">
+<title>メロディー生成アルゴリズム — 無限ヒーリングピアノ</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --surface: #14181c;
+    --surface-2: #1a1f25;
+    --line: #262c33;
+    --line-strong: #39424b;
+    --text: #e7e6e3;
+    --muted: #98a0a8;
+    --accent: #a9c8d8;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    /* 読むためのページなので本文は明朝。画面側のUIとは役割が違う */
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP",
+      "Times New Roman", serif;
+    font-size: 16px;
+    line-height: 1.95;
+    letter-spacing: 0.02em;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .paper {
+    max-width: 44rem;           /* 本文の1行を 40〜50 字に収める */
+    margin: 0 auto;
+    padding: clamp(28px, 6vw, 72px) clamp(18px, 5vw, 32px) 96px;
+  }
+
+  /* ---- 見出し ---- */
+
+  .title {
+    margin: 0 0 8px;
+    font-size: clamp(1.5rem, 5vw, 2.1rem);
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+  }
+
+  .subtitle {
+    margin: 0 0 4px;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  .byline {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .lede {
+    margin: 28px 0 0;
+    padding: 18px 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 0.95rem;
+    line-height: 1.9;
+  }
+
+  h2 {
+    margin: 3.2em 0 0.9em;
+    padding-bottom: 0.4em;
+    border-bottom: 1px solid var(--line);
+    font-size: 1.2rem;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+
+  h3 {
+    margin: 2.4em 0 0.7em;
+    font-size: 1.02rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  h2 .num, h3 .num {
+    margin-right: 0.6em;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  p { margin: 0 0 1.2em; }
+
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:hover { color: #fff; }
+
+  code, .sym {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    color: var(--accent);
+  }
+
+  em.term { font-style: normal; color: #fff; font-weight: 600; }
+
+  /* ---- 数式 ---- */
+
+  /* 数式フォントを持たない環境では、MathML の <mi> がそのままだと
+     ギリシャ文字が豆腐（□）になる。本文の明朝まで確実に落とす。 */
+  /*
+   * Chromium は1文字の <mi> を Unicode の「数学用イタリック」面（U+1D400〜）へ
+   * 写す（text-transform: math-auto）。その面を持つフォントは実質的に
+   * 数式フォントだけなので、数式フォントの入っていない環境では
+   * ギリシャ文字が豆腐（□）になる。ラテン文字は代替が効くが
+   * ギリシャ文字は落ちるので、ギリシャ文字だけ写像を止め、
+   * 通常の符号位置のまま斜体を合成させる。
+   */
+  math mi.gk {
+    text-transform: none;
+    font-style: italic;
+  }
+
+  math {
+    font-size: 1.02em;
+    font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math",
+      "DejaVu Serif", "Liberation Serif", "Times New Roman",
+      "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  }
+
+  math[display="block"] {
+    display: block;
+    margin: 1.6em 0;
+    /* 幅の広い式だけがこの中で横に流れる。ページ全体は横に伸びない */
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+  }
+
+  /*
+   * 横に流れる箱の端に影を出す。狭い画面では式も表も枠に収まらないが、
+   * 何の合図も無いと「切れている」ようにしか見えず、動かせることに気づけない。
+   * background-attachment: local の重ね方で、端まで流したときだけ影が消える。
+   */
+  math[display="block"],
+  .table-wrap {
+    background-image:
+      linear-gradient(to right, var(--bg), rgb(11 13 16 / 0%)),
+      linear-gradient(to left, var(--bg), rgb(11 13 16 / 0%)),
+      linear-gradient(to right, rgb(169 200 216 / 22%), rgb(169 200 216 / 0%)),
+      linear-gradient(to left, rgb(169 200 216 / 22%), rgb(169 200 216 / 0%));
+    background-position: left center, right center, left center, right center;
+    background-repeat: no-repeat;
+    background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+
+  .eq {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 1.6em 0;
+  }
+
+  .eq > math[display="block"] { flex: 1 1 auto; margin: 0; min-width: 0; }
+
+  .eq > .tag {
+    flex: none;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+  }
+
+  /* ---- 表 ---- */
+
+  .table-wrap {
+    margin: 1.6em 0;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 0.82rem;
+    line-height: 1.7;
+  }
+
+  th, td {
+    padding: 9px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--muted);
+    font-weight: 500;
+    background: var(--surface);
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  caption {
+    padding: 10px 14px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+
+  /* ---- 補足 ---- */
+
+  .note {
+    margin: 1.6em 0;
+    padding: 14px 18px;
+    border-left: 1px solid var(--line-strong);
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.85;
+  }
+
+  ol.spaced, ul.spaced { margin: 0 0 1.2em; padding-left: 1.4em; }
+  ol.spaced > li, ul.spaced > li { margin-bottom: 0.55em; }
+
+  .toc {
+    margin: 32px 0 0;
+    padding: 18px 22px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 0.85rem;
+  }
+
+  .toc ol { margin: 0; padding-left: 1.3em; }
+  .toc li { margin: 0.3em 0; }
+  .toc a { color: var(--text); text-decoration: none; }
+  .toc a:hover { color: var(--accent); text-decoration: underline; }
+
+  .backlink {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    color: var(--muted);
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 0.85rem;
+    text-decoration: none;
+  }
+
+  .backlink:hover { color: var(--text); }
+  .backlink svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+  .foot {
+    margin-top: 4em;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 0.78rem;
+    line-height: 1.9;
+  }
+
+  .foot a { color: var(--muted); }
+
+  @media (max-width: 560px) {
+    body { line-height: 1.85; }
+    .paper { padding-top: 20px; }
+    .title { line-height: 1.45; }
+    /* 式は少し小さくする。横に流す量そのものが減る */
+    math { font-size: 0.92em; }
+    .eq { gap: 8px; }
+    .eq > .tag { font-size: 0.72rem; }
+    th, td { padding: 8px 11px; }
+    table { font-size: 0.76rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="paper">
+
+<a class="backlink" href="./index.html">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>
+  無限ヒーリングピアノへ戻る
+</a>
+
+<h1 class="title">断片カタログと楽節構造による<br>ヒーリング・ピアノ旋律の自動生成</h1>
+<p class="subtitle">実装 <a href="https://github.com/jounlai/melody-generator">melody-generator</a> の形式的記述</p>
+<p class="byline">Created by Jounlai Cho (cho@heuron.com) ／ ヒューロン株式会社</p>
+
+<p class="lede">
+本稿は、実時間で無限に生成されるヒーリング・ピアノ曲の生成系について、
+その設計を形式的に記述する。中核となる主張は次の一点である。
+<em class="term">旋律の美しさは音符ごとの逐次的な決定からは生まれず、
+「あらかじめ美しいと保証された断片の有限集合」と「断片を配置する時間的構造」の
+二層に分離したときに初めて制御可能になる。</em>
+前者は公有の名旋律125曲から帰納した統計に照らして 300,000 個の候補から
+999 個を層化抽出することで構成し、後者は楽節構造・起伏曲線・声部配置の
+制約充足として定式化する。生成は決定論的であり、6文字のシードが曲を一意に定める。
+</p>
+
+<nav class="toc" aria-label="目次">
+  <ol>
+    <li><a href="#s1">問題設定と設計方針</a></li>
+    <li><a href="#s2">記法</a></li>
+    <li><a href="#s3">コーパスからの帰納</a></li>
+    <li><a href="#s4">断片の生成と評価関数</a></li>
+    <li><a href="#s5">層化抽出によるカタログ構成</a></li>
+    <li><a href="#s6">和音適合の事前計算</a></li>
+    <li><a href="#s7">楽曲の組み立て</a></li>
+    <li><a href="#s8">転調</a></li>
+    <li><a href="#s9">声部の配置</a></li>
+    <li><a href="#s10">演奏設計</a></li>
+    <li><a href="#s11">評価</a></li>
+    <li><a href="#s12">限界</a></li>
+  </ol>
+</nav>
+
+<h2 id="s1"><span class="num">1</span>問題設定と設計方針</h2>
+
+<p>
+目標は「途切れることなく生成され続け、かつ一曲ごとに情動的な起伏を持つ
+ピアノ独奏曲」である。この目標は、生成系に対して相反する二つの要求を課す。
+一つは<em class="term">実時間性</em>で、次の曲は前の曲が鳴り終わるまでに
+組み上がっていなければならない。もう一つは<em class="term">大域的構造</em>で、
+提示・展開・頂点・回帰という数十秒スケールの設計が無ければ、
+どれほど個々の音程が美しくても曲として聴こえない。
+</p>
+
+<p>
+音符単位の逐次生成（マルコフ連鎖、あるいは自己回帰モデル）は前者を満たすが
+後者を苦手とする。局所的な遷移確率は「次の音」を決められても、
+「16小節後に最高音へ到達するために、いま何を提示しておくべきか」を表現しない。
+本系では次の分離を採る。
+</p>
+
+<ol class="spaced">
+  <li><em class="term">断片層</em>。2小節（8拍）の旋律断片を有限個あらかじめ生成し、
+      美しさの評価関数で選抜してカタログ化する。断片が満たすべき性質
+      （音程分布、跳躍後の埋め戻し、リズムの多様性）はここで一度だけ検査する。</li>
+  <li><em class="term">構造層</em>。実時間では断片を選んで並べるだけにする。
+      並べ方は楽節構造・起伏曲線・接続の滑らかさという制約で決まり、
+      個々の音符には触れない。</li>
+</ol>
+
+<p>
+この分離により、実時間側の計算は「制約を満たす断片の集合から一つ引く」に還元される。
+断片は 999 個、和音適合は事前計算済みなので、一曲の組み立ては数ミリ秒で完了する。
+</p>
+
+<h2 id="s2"><span class="num">2</span>記法</h2>
+
+<h3><span class="num">2.1</span>音高空間</h3>
+
+<p>
+旋律は絶対音高ではなく<em class="term">通しスケール度数</em>で表す。
+度数 <span class="sym">d ∈ ℤ</span> は主音を <span class="sym">1</span> とし、
+<span class="sym">8</span> で1オクターブ上、<span class="sym">15</span> で2オクターブ上になる。
+旋法 <span class="sym">m ∈ {major, minor}</span> の音階を
+<span class="sym">s<sub>m</sub> = (s<sub>m</sub>[0], …, s<sub>m</sub>[6])</span> とすると、
+度数から半音への写像は
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi class="gk">σ</mi><mi>m</mi></msub><mo>(</mo><mi>d</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>12</mn>
+    <mo>&#x2062;</mo>
+    <mrow><mo>&#x230A;</mo><mfrac><mrow><mi>d</mi><mo>-</mo><mn>1</mn></mrow><mn>7</mn></mfrac><mo>&#x230B;</mo></mrow>
+    <mo>+</mo>
+    <msub><mi>s</mi><mi>m</mi></msub>
+    <mrow><mo>[</mo><mo>(</mo><mi>d</mi><mo>-</mo><mn>1</mn><mo>)</mo><mspace width="0.2em"/><mi>mod</mi><mspace width="0.2em"/><mn>7</mn><mo>]</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(1)</span>
+</div>
+
+<p>
+であり、主音の MIDI ノート番号を <span class="sym">τ</span> とすると実音は
+<span class="sym">π(d) = τ + σ<sub>m</sub>(d)</span> で与えられる。
+<span class="sym">s<sub>major</sub> = (0,2,4,5,7,9,11)</span>、
+<span class="sym">s<sub>minor</sub> = (0,2,3,5,7,8,10)</span>。
+</p>
+
+<p>
+この表現を採る理由は二つある。第一に、断片が調と旋法から独立になるため、
+同じ断片を長調でも短調でも、どの調でも再利用できる。第二に、後述の
+<em class="term">ゼクエンツ</em>（平行移動）が度数の加算という単純な演算になる。
+半音単位で平行移動すると音階外の音が生じるが、度数単位ならば必ず音階内に留まる。
+</p>
+
+<h3><span class="num">2.2</span>断片</h3>
+
+<p>
+断片 <span class="sym">f</span> は音符の有限列である。音符
+<span class="sym">n = (d, β, δ, v)</span> は度数・開始拍・音価・ベロシティを持ち、
+<span class="sym">β ∈ [0, 8)</span>、すなわち2小節に収まる。
+断片の音程列を
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi class="gk">Δ</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mo>(</mo>
+    <msub><mi>d</mi><mn>2</mn></msub><mo>-</mo><msub><mi>d</mi><mn>1</mn></msub>
+    <mo>,</mo>
+    <mo>…</mo>
+    <mo>,</mo>
+    <msub><mi>d</mi><mi>k</mi></msub><mo>-</mo><msub><mi>d</mi><mrow><mi>k</mi><mo>-</mo><mn>1</mn></mrow></msub>
+    <mo>)</mo>
+  </mrow>
+</math>
+<span class="tag">(2)</span>
+</div>
+
+<p>
+と書く。度数差 1 が2度（順次進行）、2 が3度、3 以上が4度以上の跳躍に対応する。
+</p>
+
+<h2 id="s3"><span class="num">3</span>コーパスからの帰納</h2>
+
+<p>
+評価関数の係数は恣意的に決めていない。公有（作曲者の没後年に基づく）の
+名旋律 <em class="term">125曲・1768音・1643音程</em> を採譜し、その統計に合わせている。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表1　コーパス125曲の音程分布（度数差の絶対値）</caption>
+  <thead><tr><th>度数差</th><th>音程</th><th class="num">出現数</th><th class="num">比率</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>同音</td><td class="num">140</td><td class="num">8.5%</td></tr>
+    <tr><td>1</td><td>2度</td><td class="num">1135</td><td class="num">69.1%</td></tr>
+    <tr><td>2</td><td>3度</td><td class="num">301</td><td class="num">18.3%</td></tr>
+    <tr><td>3</td><td>4度</td><td class="num">42</td><td class="num">2.6%</td></tr>
+    <tr><td>4</td><td>5度</td><td class="num">19</td><td class="num">1.2%</td></tr>
+    <tr><td>5以上</td><td>6度以上</td><td class="num">6</td><td class="num">0.4%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+この分布から二つの量を定義する。順次進行率と、跳躍後の埋め戻し率である。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>r</mi><mi>step</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mfrac>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>=</mo><mn>1</mn><mo>}</mo><mo>|</mo></mrow>
+      <mrow><mo>|</mo><mi class="gk">Δ</mi><mo>(</mo><mi>f</mi><mo>)</mo><mo>|</mo></mrow>
+    </mfrac>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <msub><mi>r</mi><mi>fill</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mfrac>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>&#x2265;</mo><mn>2</mn><mo>&#x2227;</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>|</mo><mo>=</mo><mn>1</mn><mo>}</mo><mo>|</mo></mrow>
+      <mrow><mo>|</mo><mo>{</mo><mi>i</mi><mo>:</mo><mo>|</mo><msub><mi class="gk">Δ</mi><mi>i</mi></msub><mo>|</mo><mo>&#x2265;</mo><mn>2</mn><mo>}</mo><mo>|</mo></mrow>
+    </mfrac>
+  </mrow>
+</math>
+<span class="tag">(3)</span>
+</div>
+
+<p>
+コーパスの実測値は <span class="sym">r<sub>step</sub> = 0.691</span>、
+<span class="sym">r<sub>fill</sub> = 0.624</span> である。後者は
+「跳んだら順次で埋め戻す」という声楽由来の原則が、名旋律において
+6割超という高い率で守られていることを示す。跳躍しっぱなしの線は歌えない。
+</p>
+
+<h3><span class="num">3.1</span>旋律型の抽出</h3>
+
+<p>
+コーパスの度数列から、相対形の <span class="sym">n</span>-gram を
+<em class="term">旋律型</em>として抽出する。長さ <span class="sym">ℓ</span> の
+部分列 <span class="sym">(d<sub>i</sub>, …, d<sub>i+ℓ-1</sub>)</span> を
+先頭を 0 に正規化した <span class="sym">(0, d<sub>i+1</sub>-d<sub>i</sub>, …)</span>
+で同一視し、出現頻度を重みとする。得られたのは
+<em class="term">旋律型490種・終止形26種・舞い上がり型58種・リズム細胞147種</em>である。
+</p>
+
+<p>
+特に重要なのが「舞い上がり型」で、<span class="sym">(0, 3, 2, 1)</span> ——
+すなわち4度上行してから順次下降する形 —— を典型とする。
+コーパス125曲中189回出現し、多くの曲でクライマックスの瞬間を作っている。
+</p>
+
+<h2 id="s4"><span class="num">4</span>断片の生成と評価関数</h2>
+
+<h3><span class="num">4.1</span>候補の生成</h3>
+
+<p>
+候補断片は、旋律型を連結して度数列を作り、リズム細胞を割り当てることで生成する。
+連結は前の型の終点を次の型の始点として共有する。乱数は固定シードの
+線形合同法系 PRNG のみを使い、<span class="sym">Math.random</span> は用いない。
+したがって生成は完全に再現可能である。候補数は <span class="sym">N = 300,000</span>。
+</p>
+
+<h3><span class="num">4.2</span>評価関数</h3>
+
+<p>
+断片 <span class="sym">f</span> の美しさスコアを次で定義する。
+基準値 50 から出発し、減点項と加点項を加える。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>S</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>50</mn>
+    <mo>-</mo>
+    <msub><mi>P</mi><mi>leap</mi></msub>
+    <mo>-</mo>
+    <msub><mi>P</mi><mi>span</mi></msub>
+    <mo>-</mo>
+    <msub><mi>P</mi><mi>dens</mi></msub>
+    <mo>+</mo>
+    <msub><mi>B</mi><mi>dist</mi></msub>
+    <mo>+</mo>
+    <msub><mi>B</mi><mi>rhythm</mi></msub>
+    <mo>+</mo>
+    <mstyle displaystyle="true">
+      <munder><mo>&#x2211;</mo><mrow><mi>t</mi><mo>&#x2208;</mo><mi>T</mi><mo>(</mo><mi>f</mi><mo>)</mo></mrow></munder>
+    </mstyle>
+    <msub><mi class="gk">β</mi><mi>t</mi></msub>
+  </mrow>
+</math>
+<span class="tag">(4)</span>
+</div>
+
+<p>
+ここで <span class="sym">T(f)</span> は断片が持つ情動タグの集合である。
+主な項を示す。
+</p>
+
+<p>跳躍への減点。度数差 <span class="sym">a = |Δ<sub>i</sub>|</span> について</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <msub><mi>P</mi><mi>leap</mi></msub>
+        <mo>=</mo>
+        <mstyle displaystyle="true"><munder><mo>&#x2211;</mo><mi>i</mi></munder></mstyle>
+        <mrow>
+          <mo>[</mo>
+          <mn>3</mn><mo>&#x2062;</mo><msup><mrow><mo>(</mo><msub><mi>a</mi><mi>i</mi></msub><mo>-</mo><mn>3</mn><mo>)</mo></mrow><mo>+</mo></msup>
+          <mo>+</mo>
+          <mn>2</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>a</mi><mi>i</mi></msub><mo>=</mo><mn>0</mn><mo>]</mo>
+          <mo>+</mo>
+          <mn>10</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>a</mi><mrow><mi>i</mi><mo>-</mo><mn>1</mn></mrow></msub><mo>&#x2265;</mo><mn>4</mn><mo>&#x2227;</mo><msub><mi>a</mi><mi>i</mi></msub><mo>&#x2265;</mo><mn>4</mn><mo>]</mo>
+          <mo>]</mo>
+        </mrow>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>+</mo>
+        <mn>60</mn><mo>&#x22C5;</mo><msup><mrow><mo>(</mo><msub><mi>r</mi><mi>leap</mi></msub><mo>-</mo><mn>0.1</mn><mo>)</mo></mrow><mo>+</mo></msup>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(5)</span>
+</div>
+
+<p>
+<span class="sym">(x)<sup>+</sup> = max(x, 0)</span>。
+3度（<span class="sym">a = 2</span>）に減点が無いのは、表1の通り3度が名旋律で
+最頻の跳躍だからである。減点は4度以上から始まり、連続跳躍と同方向の連続跳躍には
+追加の減点を課す。<span class="sym">r<sub>leap</sub></span> が
+コーパス実測値の2倍（10%）を超えると、超過分に比例して大きく減点する。
+</p>
+
+<p>分布への加点は、コーパスの帯に入っているかどうかで与える。</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <msub><mi>B</mi><mi>dist</mi></msub>
+        <mo>=</mo>
+        <mn>12</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>step</mi></msub><mo>&#x2208;</mo><mo>[</mo><mn>0.6</mn><mo>,</mo><mn>0.8</mn><mo>]</mo><mo>]</mo>
+        <mo>+</mo>
+        <mn>8</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>third</mi></msub><mo>&#x2208;</mo><mo>[</mo><mn>0.1</mn><mo>,</mo><mn>0.3</mn><mo>]</mo><mo>]</mo>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>+</mo>
+        <mn>10</mn><mo>&#x22C5;</mo><mn>1</mn><mo>[</mo><msub><mi>r</mi><mi>fill</mi></msub><mo>&#x2265;</mo><mn>0.6</mn><mo>]</mo>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(6)</span>
+</div>
+
+<div class="table-wrap">
+<table>
+  <caption>表2　情動タグと加点 β<sub>t</sub>（抜粋）</caption>
+  <thead><tr><th>タグ</th><th>定義</th><th class="num">β</th><th class="num">カタログ内</th></tr></thead>
+  <tbody>
+    <tr><td>inner-sequence</td><td>後半1小節が前半の平行移動</td><td class="num">18</td><td class="num">389</td></tr>
+    <tr><td>soar</td><td>4度以上上行して頂点に達し順次下降</td><td class="num">16</td><td class="num">380</td></tr>
+    <tr><td>penta-major / minor</td><td>五音音階に収まる</td><td class="num">16</td><td class="num">543 / 278</td></tr>
+    <tr><td>sigh</td><td>5度以上上行の直後に順次下降が2音以上</td><td class="num">14</td><td class="num">239</td></tr>
+    <tr><td>inner-repeat</td><td>後半1小節が前半の完全反復</td><td class="num">14</td><td class="num">240</td></tr>
+    <tr><td>stable-end</td><td>主和音の構成音 {1,3,5} への着地</td><td class="num">10</td><td class="num">894</td></tr>
+    <tr><td>single-peak</td><td>断片内の最高音が一度だけ</td><td class="num">8</td><td class="num">737</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+リズム項 <span class="sym">B<sub>rhythm</sub></span> は音価の種類数に対して
+<span class="sym">{1 → −22, 2 → −8, 3 → +6, ≥4 → +12}</span> を与える。
+音価が1種類しかない断片は、音程がどれほど美しくても童謡に聴こえ、
+曲の一節にはならない。ゆえに単独で最大の減点を課す。
+</p>
+
+<h2 id="s5"><span class="num">5</span>層化抽出によるカタログ構成</h2>
+
+<p>
+スコア上位から 999 個を採ると失敗する。評価関数は一つの尺度なので、
+上位はどれも似た「優等生」になり、無限に聴けば必ず飽きる。
+さらに致命的なのは<em class="term">被覆の欠落</em>で、ある和音進行のスロットに
+乗る断片が一つも無ければ、その進行を引いた曲は破綻する。
+</p>
+
+<p>
+そこで選抜を制約付き部分集合選択として定式化する。候補集合
+<span class="sym">C</span>（<span class="sym">|C| = 300,000</span>）から
+<span class="sym">|X| = 999</span> を選ぶ。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <munder><mo movablelimits="false">max</mo><mrow><mi>X</mi><mo>&#x2286;</mo><mi>C</mi></mrow></munder>
+    <mspace width="0.4em"/>
+    <mstyle displaystyle="true"><munder><mo>&#x2211;</mo><mrow><mi>f</mi><mo>&#x2208;</mo><mi>X</mi></mrow></munder></mstyle>
+    <mi>S</mi><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mspace width="1.6em"/>
+    <mtext>s.t.</mtext>
+    <mspace width="0.6em"/>
+    <mrow>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>G</mi><mi>j</mi></msub><mo>|</mo>
+      <mo>&#x2265;</mo><msub><mi>g</mi><mi>j</mi></msub>
+      <mo>,</mo>
+      <mspace width="0.6em"/>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>K</mi><mi>l</mi></msub><mo>|</mo>
+      <mo>&#x2264;</mo><msub><mi>k</mi><mi>l</mi></msub>
+      <mo>,</mo>
+      <mspace width="0.6em"/>
+      <mo>|</mo><mi>X</mi><mo>&#x2229;</mo><msub><mi>B</mi><mi>q</mi></msub><mo>|</mo>
+      <mo>&#x2265;</mo><mn>9</mn>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(7)</span>
+</div>
+
+<p>
+<span class="sym">B<sub>q</sub></span> は<em class="term">バケット</em>で、
+輪郭6種 × 緊張度5段階 × 終止クラス2種 = 60 の層に候補を分割したもの
+（うち10層は定義上必ず空になる）。<span class="sym">G<sub>j</sub></span> は
+<em class="term">下限目標</em>、<span class="sym">K<sub>l</sub></span> は
+<em class="term">上限</em>である。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表3　下限目標 G<sub>j</sub> の例（全 90 件超のうち抜粋）</caption>
+  <thead><tr><th>目標</th><th class="num">下限</th><th>意図</th></tr></thead>
+  <tbody>
+    <tr><td>step-ratio ∈ [0.6, 0.8]</td><td class="num">560</td><td>名旋律の音程分布に入る帯</td></tr>
+    <tr><td>leap-then-step ≥ 0.6</td><td class="num">560</td><td>跳んだら埋め戻す</td></tr>
+    <tr><td>penta-major</td><td class="num">400</td><td>口ずさめること</td></tr>
+    <tr><td>inner-sequence</td><td class="num">300</td><td>動機として成立</td></tr>
+    <tr><td>soar</td><td class="num">200</td><td>クライマックスの素材</td></tr>
+    <tr><td>soar ∧ peak ≥ 12 ∧ 頂点一回</td><td class="num">120</td><td>頂点に届く舞い上がり</td></tr>
+    <tr><td>各進行スロットへの適合</td><td class="num">30</td><td>被覆（priority 0）</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+この問題は多重被覆問題を含むため NP 困難である。実装は貪欲法を採り、
+順序に一つの工夫を置く。<em class="term">被覆系の目標を量的目標より先に埋める。</em>
+被覆系（リズム型・和音スロット）は互いに重ならない細かい枠であり、
+量的目標（順次進行の帯・音数）はどの断片でも満たしうる。量から先に埋めると
+スコア上位の似た断片で 999 枠が尽き、被覆が埋まらない。逆順なら、
+被覆のために採った断片が量的目標も同時に満たす。各ラウンドでは
+<em class="term">未達目標を最も多く同時に満たす候補</em>を優先する。
+</p>
+
+<p>
+上限 <span class="sym">K<sub>l</sub></span> は下限より弱い。下限が上限に
+阻まれた場合のみ上限を無視する（曲が破綻するより偏るほうがましである）。
+結果として得られたカタログは、音数の中央値 8、範囲 6〜12 音である。
+</p>
+
+<h2 id="s6"><span class="num">6</span>和音適合の事前計算</h2>
+
+<p>
+実時間で「この断片はこの和音に乗るか」を判定していては間に合わない。
+そこで断片ごとに、和音語彙の全要素に対する適合を事前計算しておく。
+</p>
+
+<p>
+和音記号 <span class="sym">c</span> の構成音のピッチクラス集合を
+<span class="sym">PC(c)</span> とする。小節 <span class="sym">B</span>（断片の前半または後半）が
+和音 <span class="sym">c</span> に乗る条件を次で定義する。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <mtext>fits</mtext><mo>(</mo><mi>B</mi><mo>,</mo><mi>c</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mrow><mo>(</mo><mo>&#x2203;</mo><mi>n</mi><mo>&#x2208;</mo><mi>B</mi><mo>:</mo><mtext>pc</mtext><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2208;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo><mo>)</mo></mrow>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mspace width="1.6em"/><mo>&#x2227;</mo><mspace width="0.4em"/>
+        <mrow><mo>(</mo><mo>&#x2200;</mo><mi>n</mi><mo>&#x2208;</mo><mi>B</mi><mo>:</mo>
+          <mtext>exp</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+          <mo>&#x2227;</mo>
+          <mtext>pc</mtext><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2209;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo>
+          <mo>&#x21D2;</mo>
+          <mtext>res</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>)</mo></mrow>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(8)</span>
+</div>
+
+<p>ここで</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mtable columnalign="left">
+      <mtr><mtd>
+        <mtext>exp</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mo>(</mo><mi class="gk">&#x03B2;</mi><mo>(</mo><mi>n</mi><mo>)</mo><mspace width="0.3em"/><mtext>mod</mtext><mspace width="0.3em"/><mn>2</mn><mo>=</mo><mn>0</mn><mo>)</mo>
+        <mo>&#x2228;</mo>
+        <mo>(</mo><mi class="gk">&#x03B4;</mi><mo>(</mo><mi>n</mi><mo>)</mo><mo>&#x2265;</mo><mn>1.5</mn><mo>)</mo>
+      </mtd></mtr>
+      <mtr><mtd>
+        <mtext>res</mtext><mo>(</mo><mi>n</mi><mo>)</mo>
+        <mo>&#x21D4;</mo>
+        <mo>|</mo><msub><mi>d</mi><mrow><mtext>next</mtext></mrow></msub><mo>-</mo><mi>d</mi><mo>|</mo><mo>&#x2264;</mo><mn>1</mn>
+        <mo>&#x2227;</mo>
+        <mtext>pc</mtext><mo>(</mo><msub><mi>n</mi><mtext>next</mtext></msub><mo>)</mo><mo>&#x2208;</mo><mi>PC</mi><mo>(</mo><mi>c</mi><mo>)</mo>
+      </mtd></mtr>
+    </mtable>
+  </mrow>
+</math>
+<span class="tag">(9)</span>
+</div>
+
+<p>
+すなわち、<em class="term">強拍にあるか長く伸びる音</em>（<span class="sym">exp</span>、
+「表に出ている音」）が非和声音であることは許すが、その場合は
+<em class="term">次の音へ順次進行で和声音へ解決する</em>ことを要求する。
+これは対位法における掛留・倚音の扱いをそのまま計算可能な述語にしたものである。
+弱拍の短い非和声音（経過音・刺繍音）には何も課さない。
+</p>
+
+<p>
+断片 <span class="sym">f</span> について、和音語彙
+<span class="sym">V<sub>m</sub></span>（長調33種・短調27種）の添字集合
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msubsup><mi>F</mi><mrow><mi>m</mi></mrow><mrow><mo>(</mo><mi>j</mi><mo>)</mo></mrow></msubsup>
+    <mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow><mo>{</mo>
+      <mi>i</mi>
+      <mo>:</mo>
+      <mtext>fits</mtext><mo>(</mo><msub><mi>B</mi><mi>j</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo><mo>,</mo><msub><mi>V</mi><mi>m</mi></msub><mo>[</mo><mi>i</mi><mo>]</mo><mo>)</mo>
+    <mo>}</mo></mrow>
+    <mo>,</mo>
+    <mspace width="0.8em"/>
+    <mi>j</mi><mo>&#x2208;</mo><mo>{</mo><mn>1</mn><mo>,</mo><mn>2</mn><mo>}</mo>
+  </mrow>
+</math>
+<span class="tag">(10)</span>
+</div>
+
+<p>
+を JSON に保存する。実時間側は「進行のこの2和音に乗る断片」を
+集合の所属判定だけで引ける。同様に、掛留が成立する和音の添字集合も併せて持つ。
+</p>
+
+<div class="note">
+添字で保存しているため、和音語彙の既存要素の順序は不変でなければならない。
+途中に挿入すると、全断片の適合情報が別の和音を指す。追加は必ず末尾に行う。
+</div>
+
+<h2 id="s7"><span class="num">7</span>楽曲の組み立て</h2>
+
+<h3><span class="num">7.1</span>形式</h3>
+
+<p>
+一曲は4つのセクション <span class="sym">A, A′, B, A″</span> からなる。
+各セクションは <span class="sym">L</span> 個のスロットに分かれ、
+1スロットが1断片（2小節）に対応する。標準の32小節では
+<span class="sym">L = 4</span>。<span class="sym">A, A′, A″</span> は同一の和音進行の
+変形を用い、<span class="sym">B</span> だけが別の進行を引く。
+</p>
+
+<p>
+セクション内部ではスロットに<em class="term">楽節役割</em>
+<span class="sym">(a, a′, b, a″)</span> を割り当てる。
+<span class="sym">a</span> は自由選択、<span class="sym">a′</span> と
+<span class="sym">a″</span> は <span class="sym">a</span> のゼクエンツ、
+<span class="sym">b</span> は <span class="sym">a</span> と対比する自由選択である。
+</p>
+
+<h3><span class="num">7.2</span>ゼクエンツ</h3>
+
+<p>
+平行移動作用素を次で定義する。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>T</mi><mi>k</mi></msub><mo>(</mo><mi>f</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow><mo>{</mo><mo>(</mo><mi>d</mi><mo>+</mo><mi>k</mi><mo>,</mo><mi class="gk">β</mi><mo>,</mo><mi class="gk">δ</mi><mo>,</mo><mi>v</mi><mo>)</mo><mo>:</mo><mo>(</mo><mi>d</mi><mo>,</mo><mi class="gk">β</mi><mo>,</mo><mi class="gk">δ</mi><mo>,</mo><mi>v</mi><mo>)</mo><mo>&#x2208;</mo><mi>f</mi><mo>}</mo></mrow>
+    <mo>,</mo>
+    <mspace width="1em"/>
+    <mtext>定義域</mtext>
+    <mo>:</mo>
+    <mspace width="0.4em"/>
+    <mo>&#x2200;</mo><mi>d</mi><mo>:</mo><mn>1</mn><mo>&#x2264;</mo><mi>d</mi><mo>+</mo><mi>k</mi><mo>&#x2264;</mo><mn>15</mn>
+  </mrow>
+</math>
+<span class="tag">(11)</span>
+</div>
+
+<p>
+リズムとベロシティは保存され、度数だけが動く。これが「同じ歌が続いている」
+という感覚の実体である。移動量 <span class="sym">k</span> は
+セクションと役割ごとの優先順表から選ぶ。表は<em class="term">方向</em>を持つ。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表4　移動量 k の優先順（先頭ほど優先）</caption>
+  <thead><tr><th>セクション</th><th>a′</th><th>a″</th><th>意図</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>1, 2, −1, 3, −2, 0</td><td>1, 2, 3, −1, −2, 0</td><td>静かに提示し少し上げる</td></tr>
+    <tr><td>A′</td><td>1, 2, 3, −1, 0</td><td>2, 3, 1, −1, 0</td><td>明確に上昇</td></tr>
+    <tr><td>B</td><td>2, 3, 1, 4, 0</td><td>3, 4, 2, 1, 0</td><td>頂点へ駆け上がる</td></tr>
+    <tr><td>A″</td><td>−1, −2, 1, −3, 0</td><td>−2, −3, −1, −4, 0</td><td>下降して収める</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+<span class="sym">k = 0</span> はどの表でも末尾に置く。0 は平行移動ではなく
+<em class="term">完全反復</em>であり、ゼクエンツではない。これを先頭に置くと、
+和音が動いても旋律が1音も変わらない小節が量産される（実測では、
+先頭に置いた実装で完全一致する2小節断片の28%がこれに由来していた）。
+</p>
+
+<p>
+採用は乗る中の最初の1つではなく、次の辞書式順序の最小元とする。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mo>(</mo>
+    <mi>lift</mi><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mrow><mo>&#x230A;</mo><mi>ord</mi><mo>/</mo><mn>3</mn><mo>&#x230B;</mo></mrow><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mi>cad</mi><mo>,</mo>
+    <mspace width="0.3em"/>
+    <mi>ord</mi>
+    <mo>)</mo>
+  </mrow>
+</math>
+<span class="tag">(12)</span>
+</div>
+
+<p>
+<span class="sym">lift</span> は登り坂で要求高度に届かないとき 1、<span class="sym">ord</span> は
+表中の位置、<span class="sym">cad</span> は終止音の好ましさの順位である。
+第2成分で <span class="sym">ord</span> を3ずつの<em class="term">段</em>に丸めているのが要点で、
+段の中では終止が、段をまたぐと方向が優先される。方向だけを優先すると
+「a′ がひとまず答える」率が実測 82.8% → 53.4% に落ち、終止だけを優先すると
+A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一方が失われる。
+</p>
+
+<h3><span class="num">7.3</span>起伏曲線と音高の窓</h3>
+
+<p>
+スロット <span class="sym">(σ, k)</span>（セクション番号と位置）に対して
+要求緊張度と音高の窓を与える。緊張度の素の値は
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi class="gk">ρ</mi><mo>(</mo><mi class="gk">σ</mi><mo>,</mo><mi>k</mi><mo>)</mo>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>3</mn><mo>+</mo><mn>2</mn><mi>k</mi><mo>/</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup></mtd><mtd><mtext>σ = 2, k &lt; k*</mtext></mtd></mtr>
+        <mtr><mtd><mn>5</mn></mtd><mtd><mtext>σ = 2, k = k*</mtext></mtd></mtr>
+        <mtr><mtd><mn>3</mn></mtd><mtd><mtext>σ = 2, k &gt; k*</mtext></mtd></mtr>
+        <mtr><mtd><msub><mi>u</mi><mi class="gk">σ</mi></msub><mo>+</mo><mo>(</mo><msub><mi>w</mi><mi class="gk">σ</mi></msub><mo>-</mo><msub><mi>u</mi><mi class="gk">σ</mi></msub><mo>)</mo><mo>&#x22C5;</mo><mi>k</mi><mo>/</mo><mo>(</mo><mi>L</mi><mo>-</mo><mn>1</mn><mo>)</mo></mtd><mtd><mtext>それ以外</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(13)</span>
+</div>
+
+<p>
+<span class="sym">k* = L − 2</span> がクライマックスのスロットである。
+最後のスロットではなく一つ手前に置くのは、頂点のあとに着地を残すためである。
+<span class="sym">(u, w)</span> は <span class="sym">A: (1,2)</span>、
+<span class="sym">A′: (2,3)</span>、<span class="sym">A″: (3,1)</span>。
+</p>
+
+<p>
+音高の窓は次で与える。<span class="sym">peak(f)</span> を断片の最高度数として、
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>p</mi><mi>max</mi></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>14</mn></mtd><mtd><mtext>クライマックス</mtext></mtd></mtr>
+        <mtr><mtd><mn>10</mn></mtd><mtd><mtext>A″ および頂点通過後</mtext></mtd></mtr>
+        <mtr><mtd><mn>11</mn></mtd><mtd><mtext>それ以外</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+    <mo>,</mo>
+    <mspace width="1.2em"/>
+    <msub><mi>p</mi><mi>min</mi></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><mn>12</mn></mtd><mtd><mtext>クライマックス</mtext></mtd></mtr>
+        <mtr><mtd><mn>1</mn></mtd><mtd><mtext>それ以外</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(14)</span>
+</div>
+
+<p>
+<span class="sym">σ<sub>m</sub></span> は狭義単調増加なので、
+非クライマックスの上限 11 とクライマックスの下限 12 が交わらないことから、
+<em class="term">曲全体の最高音がクライマックスのスロットにのみ現れることが構造的に保証される</em>。
+さらにクライマックスでは断片内の最高音が一度だけ（<span class="sym">peakCount = 1</span>）
+であることを要求するので、最高音は曲中でちょうど一度だけ鳴る。
+涙腺に効くのは高さそのものではなく、そこで初めて届いたという一回性のほうである。
+</p>
+
+<h3><span class="num">7.4</span>クライマックスへの登り</h3>
+
+<p>
+上限だけを与えても、頂点の直前が低いままなら頂点は跳躍で到達される。
+そこで登り坂のスロットに下限の<em class="term">好み</em>を課す。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>rise</mi><mo>(</mo><mn>2</mn><mo>,</mo><mi>k</mi><mo>)</mo>
+    <mo>=</mo>
+    <mi>max</mi><mo>(</mo><mn>2</mn><mo>,</mo>
+    <mspace width="0.2em"/>
+    <mn>10</mn><mo>-</mo><mo>(</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup><mo>-</mo><mn>1</mn><mo>-</mo><mi>k</mi><mo>)</mo>
+    <mo>)</mo>
+    <mo>,</mo>
+    <mspace width="1em"/>
+    <mn>0</mn><mo>&lt;</mo><mi>k</mi><mo>&lt;</mo><msup><mi>k</mi><mo>&#x2217;</mo></msup>
+  </mrow>
+</math>
+<span class="tag">(15)</span>
+</div>
+
+<p>
+これは必須制約ではなく選好であり、満たす候補が空なら黙って諦める（後述）。
+この一手で、頂点直前の小節の最高音が主音+12.5半音から+13.8半音へ上がり、
+頂点との差は9.1半音から6.3半音へ縮んだ。
+</p>
+
+<h3><span class="num">7.5</span>選択のフィルタ列</h3>
+
+<p>
+スロットに置く断片は、まず<em class="term">必須条件</em>（和音適合と音高の窓）で
+候補集合 <span class="sym">C<sub>0</sub></span> を作り、次に
+<em class="term">選好</em>を順に適用して絞る。選好は単調な非空化フィルタである。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msub><mi>C</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub>
+    <mo>=</mo>
+    <mrow>
+      <mo>{</mo>
+      <mtable columnalign="left left">
+        <mtr><mtd><msub><mi class="gk">φ</mi><mi>i</mi></msub><mo>(</mo><msub><mi>C</mi><mi>i</mi></msub><mo>)</mo></mtd><mtd><msub><mi class="gk">φ</mi><mi>i</mi></msub><mo>(</mo><msub><mi>C</mi><mi>i</mi></msub><mo>)</mo><mo>&#x2260;</mo><mi>&#x2205;</mi></mtd></mtr>
+        <mtr><mtd><msub><mi>C</mi><mi>i</mi></msub></mtd><mtd><mtext>それ以外</mtext></mtd></mtr>
+      </mtable>
+    </mrow>
+  </mrow>
+</math>
+<span class="tag">(16)</span>
+</div>
+
+<p>
+「該当が無ければ絞らない」というこの規則により、選好をいくつ重ねても
+候補が空になることはなく、フォールバック断片へ落ちる確率は実測で 0 である。
+適用順は効果の大きい順ではなく、<em class="term">候補が広いうちに掛けたい順</em>である。
+</p>
+
+<ol class="spaced">
+  <li>輪郭の対比（<span class="sym">b</span> は <span class="sym">a</span> と異なる輪郭・異なる打点列）</li>
+  <li>舞い上がり（クライマックスのみ）</li>
+  <li>登り（式15）</li>
+  <li>終止音の好み（役割ごと。<span class="sym">a</span> は開いたまま、<span class="sym">a″</span> は主音）</li>
+  <li>息の流れ（フレーズ末は閉じ、途中は閉じない）</li>
+  <li>掛留（陰りの和音の上と頂点の直前）</li>
+  <li>五音音階（口ずさめること）</li>
+</ol>
+
+<p>
+終止を五音音階や掛留より先に置くのは、あとに回すと絞られた小さな集合に
+目当ての終止音が残っておらず素通りするからである。同じ理由で、
+陰りの和音の上では掛留を五音音階より先に掛ける。
+</p>
+
+<h2 id="s8"><span class="num">8</span>転調</h2>
+
+<p>
+最終セクション <span class="sym">A″</span> のみを新しい主音で描く。
+和音記号は主音からの相対表記なので一つも書き換えない。動くのは
+<span class="sym">τ</span> だけであり、進行も楽節構造もゼクエンツも
+そのまま持ち上がる。上げ幅は <span class="sym">s ∈ {1, 2}</span> 半音。
+</p>
+
+<p>
+上げ幅を機械的に半々で引くと、調号が遠く飛ぶ組み合わせが出る。
+変ニ長調（フラット5つ）から +1半音 は ニ長調（シャープ2つ）で、
+五度圏を7つ移動する最も遠い跳び方になる。同じ調でも +2半音 なら
+変ホ長調（フラット3つ）で距離2に収まる。そこで五度圏上の位置を
+<span class="sym">φ(τ, m)</span> として距離を定義し、
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>d</mi><mo>(</mo><mi>s</mi><mo>)</mo>
+    <mo>=</mo>
+    <mo>|</mo><mi class="gk">φ</mi><mo>(</mo><mi class="gk">τ</mi><mo>+</mo><mi>s</mi><mo>,</mo><mi>m</mi><mo>)</mo><mo>-</mo><mi class="gk">φ</mi><mo>(</mo><mi class="gk">τ</mi><mo>,</mo><mi>m</mi><mo>)</mo><mo>|</mo>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <mi>P</mi><mo>(</mo><mi>s</mi><mo>)</mo>
+    <mo>&#x221D;</mo>
+    <msup><mrow><mo>(</mo><mn>1</mn><mo>+</mo><mi>d</mi><mo>(</mo><mi>s</mi><mo>)</mo><mo>)</mo></mrow><mrow><mo>-</mo><mn>3</mn></mrow></msup>
+  </mrow>
+</math>
+<span class="tag">(17)</span>
+</div>
+
+<p>
+で抽選する。両方が遠い（<span class="sym">d ≥ 5</span>）ときは抽選せず近いほうに決める。
+指数 3 は実測で選んだ。600曲（うち転調249曲）での平均距離と最悪距離7の出現率は、
+半々で引くと 4.58 / 20.5%、指数2で 3.17 / 6.0%、指数3で 2.94 / 3.6% となる。
+</p>
+
+<div class="note">
++1半音の転調は原理的にどうやっても調号が5つ以上動く（1半音 = 五度圏で7つ、
+反対回りに5つ）。半音上げというバラードの定石を残す以上「全部が近い」にはできない。
+ここで潰しているのは「5で済むのに7も動く」場合だけである。
+</div>
+
+<p>
+接合部として <span class="sym">B</span> の最終小節を<em class="term">新しい調の属和音</em>に
+差し替える。いきなり半音上がると唐突なので、属和音を1小節挟むと耳が新しい調を
+受け入れてから主和音へ着地する。ただしその小節がクライマックスのスロットに入る長さ
+（16小節）では置かない。スロットは2小節ひとかたまりなので、後半だけ調が変われば
+頂点の音と別の音が同じ高さになりうる。式14が保証する一回性のほうが接合より優先される。
+</p>
+
+<h2 id="s9"><span class="num">9</span>声部の配置</h2>
+
+<p>
+断片は度数で書かれているので、実音への写像には主音が要る。伴奏・ベース・パッドは
+和音から独立に生成される。ここで素朴な実装は<em class="term">絶対的な音域</em>で
+伴奏を配置するが、それは旋律がどこを歌っているかを見ていない。
+実測では旋律の音の 33.8%（最大13半音）が伴奏かパッドに追い越されていた。
+伴奏が旋律の上を横切ると主従が入れ替わり、旋律は埋もれる。
+</p>
+
+<p>
+小節 <span class="sym">b</span> における天井を旋律の最低音から定める。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>C</mi><mo>(</mo><mi>b</mi><mo>)</mo>
+    <mo>=</mo>
+    <munder><mo movablelimits="false">min</mo><mrow><mi>n</mi><mo>&#x2208;</mo><mi>M</mi><mo>(</mo><mi>b</mi><mo>)</mo></mrow></munder>
+    <mspace width="0.3em"/>
+    <mi class="gk">π</mi><mo>(</mo><mi>n</mi><mo>)</mo>
+    <mo>-</mo>
+    <mi class="gk">Δ</mi>
+    <mo>,</mo>
+    <mspace width="1.4em"/>
+    <mi class="gk">Δ</mi><mo>=</mo><mn>2</mn>
+  </mrow>
+</math>
+<span class="tag">(18)</span>
+</div>
+
+<p>
+和音 <span class="sym">V = (v<sub>1</sub> &lt; … &lt; v<sub>r</sub>)</span> を天井の下へ収める。
+<em class="term">許される操作はオクターブ移動と上声の省略の二つだけで、音名は絶対に変えない。</em>
+半音単位で押し込むと、その和音は別の和音になってしまう。
+オクターブ移動量 <span class="sym">j ∈ ℤ</span> を次の費用関数で選ぶ。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>J</mi><mo>(</mo><mi>j</mi><mo>)</mo>
+    <mo>=</mo>
+    <mn>1000</mn><mo>&#x22C5;</mo><msup><mrow><mo>(</mo><msub><mi>v</mi><mn>1</mn></msub><mo>+</mo><mn>12</mn><mi>j</mi><mo>+</mo><mi>w</mi><mo>-</mo><mi>C</mi><mo>)</mo></mrow><mo>+</mo></msup>
+    <mo>+</mo>
+    <mn>10</mn><mo>&#x22C5;</mo><mi>out</mi><mo>(</mo><mi>j</mi><mo>)</mo>
+    <mo>+</mo>
+    <mo>|</mo><msub><mi>v</mi><mn>1</mn></msub><mo>+</mo><mn>12</mn><mi>j</mi><mo>-</mo><msub><mi>v</mi><mi>prev</mi></msub><mo>|</mo>
+  </mrow>
+</math>
+<span class="tag">(19)</span>
+</div>
+
+<p>
+<span class="sym">w = v<sub>r</sub> − v<sub>1</sub></span> は和音の広がり、
+<span class="sym">out(j)</span> は通常音域からの逸脱量、
+最終項は前小節との声部進行である。係数1000により天井の遵守が最優先となり、
+次に通常音域、最後に滑らかさが効く。それでも収まらない場合は
+上声を（最低2音を残して）省略する。
+</p>
+
+<p>
+さらに、4拍伸びるパッドについては半音衝突を検査する。小節内で
+<em class="term">表に出ている</em>旋律音（式9の <span class="sym">exp</span>）と
+半音関係にある構成音を落とす。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <msup><mi>V</mi><mo>&#x2032;</mo></msup>
+    <mo>=</mo>
+    <mrow><mo>{</mo>
+      <mi>v</mi><mo>&#x2208;</mo><mi>V</mi>
+      <mo>:</mo>
+      <mo>&#x00AC;</mo><mo>&#x2203;</mo><mi>n</mi><mo>&#x2208;</mo><msup><mi>M</mi><mi>exp</mi></msup><mo>(</mo><mi>b</mi><mo>)</mo>
+      <mspace width="0.3em"/>
+      <mo>[</mo><mo>(</mo><mi>v</mi><mo>-</mo><mi class="gk">π</mi><mo>(</mo><mi>n</mi><mo>)</mo><mo>)</mo><mspace width="0.2em"/><mi>mod</mi><mspace width="0.2em"/><mn>12</mn><mo>&#x2208;</mo><mo>{</mo><mn>1</mn><mo>,</mo><mn>11</mn><mo>}</mo><mo>]</mo>
+    <mo>}</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(20)</span>
+</div>
+
+<p>
+アルペジオなら半音の摩擦は一瞬で消えるが、持続音は消えない。
+たとえば <span class="sym">IM7</span> の第7音は主音の半音下にあり、
+旋律が主音を歌うあいだ鳴り続けると解決しないまま唸る。
+</p>
+
+<div class="note">
+重要なのは、この検査を<em class="term">強拍の半音衝突すべて</em>に掛けてはならないことである。
+実測では強拍衝突559件のうち448件（80%）が非和声音で、そのうち99%が
+次の音へ順次解決していた。これは掛留・倚音そのものであり、
+本系が狙って作っている陰りである。潰すべきは残りの、
+旋律が和声音であるのに濁っている111件だけであった。
+</div>
+
+<h2 id="s10"><span class="num">10</span>演奏設計</h2>
+
+<p>
+拍とベロシティの列は、そのまま鳴らせば機械的である。強弱の設計は
+味付けではなく骨格であり、設定に関わらず常に適用する。
+ベロシティは三層の積で与える。
+</p>
+
+<div class="eq">
+<math display="block">
+  <mrow>
+    <mi>v</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+    <mo>=</mo>
+    <mi>clamp</mi><mrow><mo>(</mo>
+      <msub><mi>v</mi><mn>0</mn></msub>
+      <mo>&#x22C5;</mo>
+      <mo>(</mo><mn>1</mn><mo>+</mo><mi class="gk">ε</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>L</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>W</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+      <mo>&#x22C5;</mo>
+      <mi>K</mi><mo>(</mo><mi class="gk">β</mi><mo>)</mo>
+    <mo>)</mo></mrow>
+  </mrow>
+</math>
+<span class="tag">(21)</span>
+</div>
+
+<ul class="spaced">
+  <li><span class="sym">L</span>：セクションの基準レベル。
+      <span class="sym">A: 0.85</span>、<span class="sym">A′: 0.95</span>、
+      <span class="sym">B: 1.10</span>、<span class="sym">A″: 0.80 → 0.55</span>（線形に下降）。</li>
+  <li><span class="sym">W</span>：フレーズ（8拍）内のスウェル。フレーズの最高音を山として
+      <span class="sym">1 − 0.18·|p − q| / max(q, 1−q, 0.25)</span>。</li>
+  <li><span class="sym">K</span>：クライマックス曲線。頂点の8拍前から 0.88 → 1.20 へ上げ、
+      頂点直後4拍で 0.75 へ落とす。この落差が「サビの後の脱力」を作る。</li>
+  <li><span class="sym">ε</span>：シード由来のベロシティ揺らぎ（±10%）。</li>
+</ul>
+
+<p>
+時間方向にはテヌート（頂点音のみ 30ms 遅らせて音価を1.15倍）、
+フレーズ末の呼吸（15ms）、クライマックス手前のためらい
+（2拍かけて最大0.1拍）、終盤2小節のリタルダンド（最大0.5拍）を掛ける。
+いずれもシード由来の PRNG から決定論的に生成されるため、
+同じ曲コードは演奏の揺らぎまで完全に再現する。
+</p>
+
+<p>
+これらの設計は楽譜にも記号として書き出す。強弱記号・松葉・スラー・
+テヌート・ペダル・rit. は、同じ <span class="sym">L, W, K</span> から
+導出されるので、音と楽譜が別々に育つことはない。
+</p>
+
+<h2 id="s11"><span class="num">11</span>評価</h2>
+
+<p>
+生成系の性質は聴取印象ではなく計測で管理する。既定設定・各60〜200曲での実測値を示す。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表5　設計変更前後の実測値</caption>
+  <thead><tr><th>指標</th><th class="num">変更前</th><th class="num">変更後</th></tr></thead>
+  <tbody>
+    <tr><td>伴奏・パッドが旋律を追い越す音の割合</td><td class="num">33.8%</td><td class="num">0.0%</td></tr>
+    <tr><td>強拍の半音衝突（掛留を含む）</td><td class="num">20.1%</td><td class="num">6.3%</td></tr>
+    <tr><td>　うち旋律が和声音である事故</td><td class="num">111 件</td><td class="num">9 件</td></tr>
+    <tr><td>頂点直前の小節の最高音（主音から）</td><td class="num">+12.5 半音</td><td class="num">+13.8 半音</td></tr>
+    <tr><td>頂点との差（最後の一歩）</td><td class="num">9.1 半音</td><td class="num">6.3 半音</td></tr>
+    <tr><td>完全一致する2小節断片</td><td class="num">6.7 組/曲</td><td class="num">5.2 組/曲</td></tr>
+    <tr><td>フォールバック断片の発生</td><td class="num">0</td><td class="num">0</td></tr>
+    <tr><td>最高音がちょうど一度だけ鳴る曲</td><td class="num">200/200</td><td class="num">200/200</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+音響側も同様に計測で決めている。出力のピークは −5.3 dBFS、RMS −24.8 dB と
+使える音量を余らせていた。リミッタのしきい値を −8 から −3 へ上げたうえで
+利得を 3.0 倍し、出力に一律の天井を掛けることで、既定音量での RMS を
+−26.5 dB から −19.4 dB へ引き上げた。このとき曲中の抑揚（最大2秒 RMS と
+最小2秒 RMS の差）は 11.6 dB から 12.8 dB へむしろ広がっている。
+しきい値 −8 のまま利得だけを上げると抑揚は 8.6 dB へ潰れた。
+<em class="term">音量と抑揚は交換関係にあるが、圧縮点を上げれば両立する。</em>
+</p>
+
+<h2 id="s12"><span class="num">12</span>限界</h2>
+
+<ol class="spaced">
+  <li><em class="term">リズムの多様性は形式の算術に縛られる。</em>
+      32小節でリズム型は7〜8種類しか現れない。これは
+      <span class="sym">a′, a″</span> が <span class="sym">a</span> のゼクエンツで
+      リズムを保存することの直接の帰結（4スロットにつき2種類 × 4楽節グループ）であり、
+      崩せば「同じ歌が続いている」感覚ごと失われる。除去すべき欠陥ではない。</li>
+  <li><em class="term">モチーフの再登場は文字通りの反復である。</em>
+      完全一致する断片の 58% はセクションをまたぐ再登場に由来する。
+      歌の1番・2番・最終番と同じ構造であり、変奏を加えるべきかは
+      様式の選択であって正誤の問題ではない。</li>
+  <li><em class="term">頂点への最後の一歩は依然として跳躍である。</em>
+      これは「4度以上跳び上がって着地し順次で降りる」という舞い上がり型の
+      明示的な要求によるもので、コーパスで189回観測された形でもある。
+      小節をまたぐ登りは改善したが、最後の跳躍そのものは設計として残している。</li>
+  <li><em class="term">和声語彙は機能和声に閉じている。</em>
+      借用和音とセカンダリードミナントまでは含むが、旋法的和声や
+      非機能的な進行は扱わない。断片の適合が度数で事前計算されているため、
+      語彙の拡張はカタログの再生成を伴う。</li>
+</ol>
+
+<div class="foot">
+  <p>
+    実装: <a href="https://github.com/jounlai/melody-generator">github.com/jounlai/melody-generator</a>
+    ／ 断片カタログ 999件・和音進行 99件・コーパス 125曲1768音。
+    生成は決定論的で、6文字のシードが曲・演奏・楽譜を一意に定める。
+  </p>
+  <p>Created by Jounlai Cho (cho@heuron.com) ／ <a href="https://heuron.com">ヒューロン株式会社</a>
+     ／ 開発には Anthropic の Claude (Claude Code) を使用。</p>
+  <p><a class="backlink" href="./index.html">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l-6 6 6 6"/></svg>
+    無限ヒーリングピアノへ戻る</a></p>
+</div>
+
+</div>
+</body>
+</html>
