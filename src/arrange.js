@@ -9,6 +9,8 @@
 //
 // 乱数は composeSong の rng とは別の列（seed + ':arr'）を使う。編曲を足し引きしても
 // 旋律と和声が動かないので、同じ曲コードから同じ曲が出続ける。
+import { pick } from './rng.js';
+
 const BEATS_PER_BAR = 4;
 
 export { BEATS_PER_BAR };
@@ -106,4 +108,120 @@ export function expandBass(steps, barBeat, bassNote, nextBassNote, pcs, vel, cei
     out.push({ midi, beat: barBeat + step.beat, dur, vel });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// 伴奏型
+//
+// vel は「その型で同時に鳴る音の多さ」に合わせて決める。初版は8分が8個という
+// 前提の 0.3 一本だったので、和音を8分で押す pulse8 にそのまま使うと
+// 同時発音数が3倍になって旋律が埋もれる。厚い型ほど1音を弱くする。
+// ---------------------------------------------------------------------------
+const ARP8 = Array.from({ length: 8 }, (_, i) => ({ beat: i * 0.5, voice: 'arp', dur: 0.75 }));
+const PULSE8 = Array.from({ length: 8 }, (_, i) => ({ beat: i * 0.5, voice: 'all', dur: 0.5 }));
+
+export const ACCOMP_PATTERNS = {
+  // いちばん薄い。Aメロの入りで、旋律だけを聴かせる
+  sustain: { vel: 0.22, steps: [{ beat: 0, voice: 'all', dur: 4 }] },
+  // broken の静かな版。低音を2拍伸ばし、その上に上声を落とす
+  brokenHalf: {
+    vel: 0.30,
+    steps: [
+      { beat: 0, voice: 'low', dur: 2 }, { beat: 1, voice: 'upper', dur: 1 },
+      { beat: 2, voice: 'low', dur: 2 }, { beat: 3, voice: 'upper', dur: 1 },
+    ],
+  },
+  // 低音→上声→低音→上声。歌謡曲バラードの左手そのもの
+  broken: {
+    vel: 0.32,
+    steps: [
+      { beat: 0, voice: 'low', dur: 1 }, { beat: 1, voice: 'upper', dur: 1 },
+      { beat: 2, voice: 'low', dur: 1 }, { beat: 3, voice: 'upper', dur: 1 },
+    ],
+  },
+  // 初版の型。左手を途切れさせずに流す
+  arp8: { vel: 0.30, steps: ARP8 },
+  // 8ビートの食い。拍を食って前へ押す
+  syncope: {
+    vel: 0.30,
+    steps: [
+      { beat: 0, voice: 'low', dur: 0.5 }, { beat: 0.5, voice: 'upper', dur: 1 },
+      { beat: 1.5, voice: 'upper', dur: 1 }, { beat: 2.5, voice: 'upper', dur: 0.5 },
+      { beat: 3, voice: 'low', dur: 0.5 }, { beat: 3.5, voice: 'upper', dur: 0.5 },
+    ],
+  },
+  // サビ。和音を8分で押す。いちばん厚い
+  pulse8: { vel: 0.22, steps: PULSE8 },
+};
+
+// セクションごとの伴奏型の候補。組は [前半, 後半]。
+// A メロは薄く、サビで一気に厚く、最後は収める——70〜80年代バラードの定石。
+// 折り返し（セクションの半分）で型が1段上がる。A'' だけは逆に下げて着地させる。
+export const ACCOMP_PLAN = [
+  [['sustain', 'brokenHalf'], ['sustain', 'broken']],                // A   提示
+  [['brokenHalf', 'broken'], ['broken', 'arp8']],                    // A'  高まり
+  [['arp8', 'pulse8'], ['broken', 'syncope'], ['arp8', 'syncope']],  // B   サビ
+  [['broken', 'brokenHalf'], ['arp8', 'brokenHalf']],                // A'' 着地
+];
+
+// ベースは Task 5 で型にする。ここではまだ全音符のまま。
+const BASS_VEL = 0.5;
+const PAD_VEL = 0.3;
+const FINAL_ACCOMP_VEL = 0.4;
+// 最終小節のパッドは小節をはみ出して余韻を作る。
+const FINAL_PAD_DUR = 6;
+
+/**
+ * 曲を編曲する。音高は barInfo が既に決めてあるので、ここは時間だけを決める。
+ *
+ * rng は composeSong のものとは別の列（seed + ':arr'）。編曲を足し引きしても
+ * 旋律と和声が動かない。
+ *
+ * @param {object} song bars を持つ曲
+ * @param {Array<object>} barInfo 小節ごとの voicing / padVoicing / bassNote / pcs
+ * @param {() => number} rng
+ */
+export function arrangeSong(song, barInfo, rng) {
+  const bars = Number(song.bars);
+  const barsPerSection = bars / 4;
+  const half = Math.max(1, Math.floor(barsPerSection / 2));
+
+  // 型の割り当て。乱数の消費はセクションごとに1回（4回）。
+  const accompAt = [];
+  const patterns = { accomp: [], bass: [] };
+  for (let s = 0; s < 4; s++) {
+    const [first, second] = pick(rng, ACCOMP_PLAN[s]);
+    const startBar = s * barsPerSection;
+    patterns.accomp.push({ startBar, pattern: first });
+    patterns.accomp.push({ startBar: startBar + half, pattern: second });
+    for (let i = 0; i < barsPerSection; i++) accompAt[startBar + i] = i < half ? first : second;
+  }
+
+  const accomp = [];
+  const bass = [];
+  const pad = [];
+  for (let bar = 0; bar < bars; bar++) {
+    const info = barInfo[bar];
+    if (!info) continue;
+    const barBeat = bar * BEATS_PER_BAR;
+    const isFinal = bar === bars - 1;
+    pad.push({
+      midis: info.padVoicing.slice(),
+      beat: barBeat,
+      dur: isFinal ? FINAL_PAD_DUR : BEATS_PER_BAR,
+      vel: PAD_VEL,
+    });
+    bass.push({ midi: info.bassNote, beat: barBeat, dur: BEATS_PER_BAR, vel: BASS_VEL });
+    if (isFinal) {
+      // 刻みをやめて和音を置く。刻み続けたまま終わると、耳は「まだ続く」と判断する。
+      accomp.push({
+        midi: info.voicing[0], midis: info.voicing.slice(),
+        beat: barBeat, dur: BEATS_PER_BAR, vel: FINAL_ACCOMP_VEL,
+      });
+      continue;
+    }
+    const p = ACCOMP_PATTERNS[accompAt[bar]];
+    for (const e of expandAccomp(p.steps, info.voicing, barBeat, p.vel)) accomp.push(e);
+  }
+  return { accomp, bass, pad, patterns };
 }

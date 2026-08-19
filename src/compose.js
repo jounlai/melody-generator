@@ -21,9 +21,11 @@ import {
   splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
-import { arpeggioIndex, BEATS_PER_BAR } from './arrange.js';
+import { arrangeSong } from './arrange.js';
 
-export { arpeggioIndex };
+// arpeggioIndex の定義は arrange.js にある。compose.js 自身はもう使わないが、
+// 楽譜や外から読む口はここに開けたままにしておく。
+export { arpeggioIndex } from './arrange.js';
 
 /**
  * @typedef {{ deg: number, beat: number, dur: number, vel: number }} FragNote
@@ -44,17 +46,8 @@ const SECTION_PLAN = [
   { source: 0, level: 2 }, // A''  転回形＋終止をサブドミナントマイナーへ
 ];
 
-// 伴奏のアルペジオ位置。8分音符で途切れさせない。
-// 4点だけだと左手が止まって聴こえ、曲全体が停滞する（実際のピアノの左手は流れ続ける）。
-const ACCOMP_OFFSETS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
-// 8分の長さ(0.5)より少し伸ばして、ペダルのように隣同士を重ねる。
-const ACCOMP_DUR = 0.75;
-// 音数が倍になるぶん、1音あたりは弱くする。
-const ACCOMP_VEL = 0.3;
 const ACCOMP_LOWEST = 48;
-const PAD_VEL = 0.3;
 const PAD_LOWEST = 55;
-const BASS_VEL = 0.5;
 const BASS_LOWEST = 36;
 
 // 声部進行（ボイスリーディング）で使う音域。
@@ -89,11 +82,6 @@ const LAYER_GAP = 2;
 // 伴奏の本来の上限をそのまま使う。
 const NO_MELODY_CEILING = ACCOMP_RANGE[1];
 
-// 終止の形。実際のピアノ曲は、終わりで左手の刻みを止めて和音を置く。
-// 刻み続けたまま終わると、耳は「まだ続く」と判断して曲が閉じない。
-// 最終小節だけ分散をやめて和音を保持し、パッドは小節をはみ出して余韻を作る。
-const FINAL_ACCOMP_VEL = 0.4;
-const FINAL_PAD_DUR = 6;
 // 曲の最後の音は、最終小節の終わりまで伸ばす（短くても3拍）。
 // 長く伸びた主音の上に主和音が鳴る、これが「終わった」という感覚を作る。
 const FINAL_NOTE_MIN_DUR = 3;
@@ -1739,39 +1727,10 @@ export function composeSong(seed, data, settings) {
     };
   }
 
-  // ---- 発音（この時点ではまだ現行と同じ8分アルペジオ） ----
-  const accomp = [];
-  const bass = [];
-  const pad = [];
-  for (let bar = 0; bar < bars; bar++) {
-    const info = barInfo[bar];
-    if (!info) continue;
-    const beat = bar * 4;
-    const isFinalBar = bar === bars - 1;
-    bass.push({ midi: info.bassNote, beat, dur: 4, vel: BASS_VEL });
-    pad.push({ midis: info.padVoicing, beat, dur: isFinalBar ? FINAL_PAD_DUR : 4, vel: PAD_VEL });
-    if (isFinalBar) {
-      // 刻みをやめて和音を置く。midi は単音しか読まない再生系のための代表音で、
-      // 実際に鳴らしたい全構成音は midis に入れる。
-      accomp.push({
-        midi: info.voicing[0], midis: info.voicing.slice(), beat, dur: 4, vel: FINAL_ACCOMP_VEL,
-      });
-      continue;
-    }
-    for (let i = 0; i < ACCOMP_OFFSETS.length; i++) {
-      const at = ACCOMP_OFFSETS[i];
-      accomp.push({
-        midi: info.voicing[arpeggioIndex(i, info.voicing.length)],
-        beat: beat + at,
-        // 最後の8分だけは小節線で切る。ACCOMP_DUR はペダルのように隣と重ねる
-        // ための長さだが、小節の終わりでそれをやると前の和音が次の小節へ
-        // 0.25拍はみ出す。和音が変わったところへ古い和音が残るので、
-        // 強拍の半音衝突の27%がここから出ていた。
-        dur: Math.min(ACCOMP_DUR, BEATS_PER_BAR - at),
-        vel: ACCOMP_VEL,
-      });
-    }
-  }
+  // ---- 段5: 編曲 ----
+  // 乱数は作曲とは別の列。編曲を変えても旋律と和声は動かない。
+  const arrRng = makeRng(seedFromString(`${String(seed)}:arr`));
+  const { accomp, bass, pad, patterns } = arrangeSong({ bars }, barInfo, arrRng);
 
   const chords = describeChords(barInfo);
 
@@ -1807,5 +1766,10 @@ export function composeSong(seed, data, settings) {
     accomp,
     bass,
     pad,
+    arrangement: {
+      accompPatterns: patterns.accomp,
+      bassPatterns: patterns.bass,
+      anticipated: [],   // Task 7 で埋める
+    },
   };
 }
