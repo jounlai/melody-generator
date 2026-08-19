@@ -1445,7 +1445,18 @@ export function composeSong(seed, data, settings) {
   const keyChangeBar = pivots ? pivotBar : modBar;
   const tonicAtBar = (bar) => (semitones !== 0 && bar >= keyChangeBar ? modTonic : tonicMidi);
 
-  const melodies = Array.isArray(data?.melodies) ? data.melodies : [];
+  // 断片カタログは版1と版2が1つのファイルに同居している。版1の断片は v を
+  // 持たず、版2は v: 2 を持つ。並びは版1が先で、そこは二度と動かさない。
+  //
+  // 版ごとに見る範囲を分けるのが、共有済みの曲コードを守る仕掛けの本体。
+  // 版1の曲は版1の断片だけを、版1と同じ並びのまま見るので、同じ曲が出る。
+  // 版2に版1の断片を混ぜないのは、混ぜると半分が1955年以前の語法のままになり、
+  // 語彙を入れ替えた意味が薄まるため。
+  const allMelodies = Array.isArray(data?.melodies) ? data.melodies : [];
+  const wanted = String(cfg.generatorVersion) === '2' ? 2 : undefined;
+  const versioned = allMelodies.filter((m) => m?.v === wanted);
+  // 版2の断片がまだ焼かれていないデータでも鳴らせるように、空なら全部を使う。
+  const melodies = versioned.length > 0 ? versioned : allMelodies;
   const sources = chooseProgressions(rng, data?.progressions, mode);
 
   const sections = [];

@@ -215,6 +215,18 @@ const FREE_V2_SOURCE = [
   cell([[0, 2], [2, 1.5], [3.5, 0.5], [4, 1], [5, 0.5], [5.5, 2.5]]), // 終止
   cell([[0.5, 0.5], [1, 1], [2, 1.5], [3.5, 0.5], [4, 2], [6, 1.5], [7.5, 0.5]]), // 弱起
   cell([[0, 1], [1, 1.5], [2.5, 0.5], [3, 1], [4, 2], [6, 2]]),
+
+  // --- 流し型（最後が 0.5〜1拍）。フレーズ途中で止まらず次へ渡す ---
+  // 組み立て側はフレーズ途中のスロットに「閉じない断片」を要求する。
+  // ここが薄いと、2小節ごとに律儀に区切れて楽節が聴こえなくなる。
+  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3.5, 1.5], [5, 1], [6, 1], [7, 1]]), // 食い
+  cell([[0, 2], [2, 1], [3.5, 1.5], [5, 1.5], [6.5, 0.5], [7, 1]]), // 食い
+  cell([[0.5, 1], [1.5, 1], [2.5, 1], [4, 1.5], [5.5, 0.5], [6, 1], [7, 1]]), // 弱起+休符
+  cell([[0, 1], [1, 0.5], [1.5, 1.5], [3.5, 1], [4.5, 1.5], [6, 1], [7, 1]]), // 食い
+  cell([[0, 1.5], [1.5, 0.5], [2, 2], [4, 1], [5, 1.5], [6.5, 0.5], [7, 1]]),
+  cell([[0, 0.5], [0.5, 1.5], [2, 1], [3.5, 1.5], [5, 1], [6, 1.5], [7.5, 0.5]]), // 食い
+  cell([[0, 1], [1, 1.5], [2.5, 0.5], [3, 1], [4, 1.5], [5.5, 0.5], [6, 1], [7, 1]]),
+  cell([[0.5, 0.5], [1, 1], [2, 1.5], [3.5, 1], [4.5, 1.5], [6, 1], [7, 1]]), // 弱起+食い
 ];
 
 // 前半と後半の音数が等しいかで振り分ける。手で分類すると必ずずれるので機械で。
@@ -236,8 +248,10 @@ export const RHYTHMS_V2 = [...MOTIF_RHYTHMS_V2, ...FREE_RHYTHMS_V2];
 // 後半が前半と同形の型を優先的に引く(6〜7割)。
 export const MOTIF_RATE = 0.65;
 
-export function pickRhythm(rng) {
-  return rng() < MOTIF_RATE ? pick(rng, MOTIF_RHYTHMS) : pick(rng, FREE_RHYTHMS);
+export function pickRhythm(rng, tables = null) {
+  const motif = tables?.motif ?? MOTIF_RHYTHMS;
+  const free = tables?.free ?? FREE_RHYTHMS;
+  return rng() < MOTIF_RATE ? pick(rng, motif) : pick(rng, free);
 }
 
 // ---------------------------------------------------------------------------
@@ -848,10 +862,10 @@ export function drawPath(rng) {
 }
 
 // --- 旋律型から2小節を組む ---
-function formulaCandidate(rng, kind, contour, wantSus) {
+function formulaCandidate(rng, kind, contour, wantSus, tables) {
   const mode = drawBar2Mode(rng);
   const paired = mode === 'sequence' || mode === 'repeat';
-  const rhythm = paired ? pick(rng, MOTIF_RHYTHMS) : pickRhythm(rng);
+  const rhythm = paired ? pick(rng, tables?.motif ?? MOTIF_RHYTHMS) : pickRhythm(rng, tables);
 
   const split = rhythm.findIndex((r) => r.b >= BAR);
   const n1 = split < 0 ? rhythm.length : split;
@@ -901,10 +915,10 @@ function formulaCandidate(rng, kind, contour, wantSus) {
 // 曲のクライマックスで使うので、6〜7割は高いところ(度数12以上)へ届かせる。
 export const SOAR_HIGH_RATE = 0.65;
 
-function soarCandidate(rng, kind, contour, wantSus) {
+function soarCandidate(rng, kind, contour, wantSus, tables) {
   // 完全反復は頂点が2回鳴るので使わない。終止形で閉じるか、別の型を続ける。
   const mode = rng() < 0.55 ? 'cadence' : 'other';
-  const rhythm = pickRhythm(rng);
+  const rhythm = pickRhythm(rng, tables);
   const split = rhythm.findIndex((r) => r.b >= BAR);
   const n1 = split < 0 ? rhythm.length : split;
   const n2 = rhythm.length - n1;
@@ -938,11 +952,11 @@ function soarCandidate(rng, kind, contour, wantSus) {
 }
 
 // --- 輪郭テンプレートから2小節を組む(多様性の担保) ---
-function contourCandidate(rng, kind, contour, wantSus) {
+function contourCandidate(rng, kind, contour, wantSus, tables) {
   const mode = drawPath(rng);
 
   if (mode === 'free') {
-    const rhythm = pickRhythm(rng);
+    const rhythm = pickRhythm(rng, tables);
     const degs = pentaize(buildDegrees(rng, contour, rhythm.length), kind);
     if (wantSus) {
       seedSuspension(degs, 0);
@@ -952,8 +966,10 @@ function contourCandidate(rng, kind, contour, wantSus) {
     return { rhythm, degs, used: [], path: `contour:${mode}` };
   }
 
-  const rhythm = pick(rng, MOTIF_RHYTHMS);
-  const half = rhythm.length / 2;
+  const rhythm = pick(rng, tables?.motif ?? MOTIF_RHYTHMS);
+  // 前半の音数は小節線で数える。版1の型は mirror で作ってあるので length/2 と
+  // 一致し、従来と同じ値になる。版2は等分でも mirror ではないので、こちらが正。
+  const half = rhythm.findIndex((r) => r.b >= BAR);
   const lo = randInt(rng, 2, 7);
   const span = randInt(rng, 2, 6);
   const raw = buildDegrees(rng, contour, half, { lo, span });
@@ -987,14 +1003,14 @@ function contourCandidate(rng, kind, contour, wantSus) {
   };
 }
 
-export function generateCandidate(rng) {
+export function generateCandidate(rng, tables = null) {
   const kind = drawPenta(rng);
   const route = drawRoute(rng);
   const contour = pick(rng, CONTOUR_NAMES);
   const wantSus = rng() < 0.35;
 
   const build = { soar: soarCandidate, formula: formulaCandidate, contour: contourCandidate }[route];
-  const built = build(rng, kind, contour, wantSus);
+  const built = build(rng, kind, contour, wantSus, tables);
   const useFormula = route !== 'contour';
 
   const degs = built.degs.map(clampDeg);
