@@ -21,6 +21,9 @@ import {
   splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
+import { arpeggioIndex, BEATS_PER_BAR } from './arrange.js';
+
+export { arpeggioIndex };
 
 /**
  * @typedef {{ deg: number, beat: number, dur: number, vel: number }} FragNote
@@ -48,7 +51,6 @@ const ACCOMP_OFFSETS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
 const ACCOMP_DUR = 0.75;
 // 音数が倍になるぶん、1音あたりは弱くする。
 const ACCOMP_VEL = 0.3;
-const BEATS_PER_BAR = 4;
 const ACCOMP_LOWEST = 48;
 const PAD_VEL = 0.3;
 const PAD_LOWEST = 55;
@@ -287,18 +289,6 @@ export function modulatedPeakCap(semitones, mode) {
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
-}
-
-/**
- * 分散和音の何番目の構成音を鳴らすか。上行して下行する三角波で巡回する。
- * 構成音3つなら 0,1,2,1,0,1,2,1、4つなら 0,1,2,3,2,1,0,1。
- * 単純な i % v の繰り返しは折り返しが無く、機械的に聴こえる。
- */
-export function arpeggioIndex(i, voices) {
-  if (voices <= 1) return 0;
-  const period = 2 * (voices - 1);
-  const t = ((i % period) + period) % period;
-  return t < voices ? t : period - t;
 }
 
 /**
