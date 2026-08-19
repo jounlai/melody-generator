@@ -276,7 +276,28 @@ function init() {
   }
 
   // ---- URL ハッシュ：作曲パラメータとシードを上書きする -------------------
+  //
+  // ハッシュは鳴っている曲を映して常に書き換わるので、そのまま読むと
+  // 再読み込みのたびに同じ曲から始まってしまう。「開くたびに違う曲」と
+  // 「共有した URL ではその曲」を両立させるため、来かたで扱いを分ける。
+  //
+  //   reload        自分のタブを読み直した → ハッシュは自分が書いたもの。
+  //                 曲は引かず、設定だけ引き継いで新しい曲から始める
+  //   それ以外       リンクを踏んだ・URL を貼った・戻る進む → その曲を鳴らす
+  //
   // サウンド系は曲の内容に関係しないので localStorage の値を保つ。
+  function isReload() {
+    try {
+      const nav = globalThis.performance?.getEntriesByType?.('navigation') ?? [];
+      if (nav.length > 0) return nav[0].type === 'reload';
+      // 古いブラウザ向け。1 = TYPE_RELOAD
+      return globalThis.performance?.navigation?.type === 1;
+    } catch (err) {
+      console.warn('遷移の種類を判別できませんでした', err);
+      return false;
+    }
+  }
+
   const hash = String(globalThis.location?.hash ?? '').replace(/^#/, '');
   if (hash) {
     const decoded = decodeSongCode(hash);
@@ -284,7 +305,7 @@ function init() {
       ...settings,
       ...pickComposeParams(decoded.settings),
     });
-    pendingSeed = decoded.seed;
+    pendingSeed = isReload() ? null : decoded.seed;
   }
 
   // ---- 音まわりの生成は最初のクリックまで遅らせる -------------------------
@@ -606,9 +627,17 @@ function init() {
     if (!song) return;
     buildScore(song);
     updateExportButtons();
-    // !!! URL のハッシュは自動では書き換えない !!!
-    // 書き換えると、次に開いたとき同じ曲から始まってしまう。
-    // 共有したいときだけ、そのときの曲から URL を組み立てる（下の copy-url）。
+    // アドレス欄に、いま鳴っている曲を映す。そのままコピーしても共有できる。
+    // 再読み込みでこの曲に戻らないようにする仕掛けは、下の pendingSeed のところ。
+    try {
+      const { history, location } = globalThis;
+      const code = encodeSongCode(song.seed, settings);
+      if (history?.replaceState) {
+        history.replaceState(null, '', `${location.pathname}${location.search}#${code}`);
+      }
+    } catch (err) {
+      console.warn('URL を更新できませんでした', err);
+    }
 
     const label = describeSong(song);
     if (els.nowPlaying) els.nowPlaying.textContent = label;
@@ -720,8 +749,7 @@ function init() {
 
   if (els.copyUrl) {
     els.copyUrl.addEventListener('click', async () => {
-      // 共有するときだけ URL を組み立てる。アドレス欄は書き換えない
-      // （書き換えると、次に開いたとき同じ曲から始まってしまう）。
+      // アドレス欄には、いま鳴っている曲がすでに映っている。それを渡す。
       const song = player?.getCurrentSong?.();
       if (!song) {
         setStatus('再生すると、共有できる URL になります', 2500);
