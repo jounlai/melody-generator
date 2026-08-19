@@ -103,7 +103,11 @@ export function expandBass(steps, barBeat, bassNote, nextBassNote, pcs, vel, cei
     else if (step.kind === 'next') {
       // 次の小節の根音の先取り（食い）。曲の最終小節では鳴らさない。
       if (nextBassNote === null || nextBassNote === undefined) continue;
-      midi = nextBassNote;
+      // 先取りも土台の一部。伴奏より上へ出ると、半拍とはいえ層が入れ替わる。
+      // 音名は変えずオクターブだけ下げる（この小節のベースの1オクターブ下が限界）。
+      let ant = nextBassNote;
+      while (ant > ceiling && ant - 12 >= bassNote - 12) ant -= 12;
+      midi = ant;
     }
     out.push({ midi, beat: barBeat + step.beat, dur, vel });
   }

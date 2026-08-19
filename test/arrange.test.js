@@ -53,6 +53,16 @@ test('expandBass: next は次の小節の根音を先取りする。次が無け
   assert.equal(noNext.length, 1, '次の小節が無いのに先取りしている');
 });
 
+test('expandBass: next が上限を越えるなら、音名を保ったままオクターブ下げて収める', () => {
+  // 次の小節の根音(50)がこの小節の上限(43)を越える。半拍とはいえ伴奏より上へ出ると
+  // 層（ベース < 伴奏）が入れ替わって濁るので、1オクターブ下げて収める。
+  const steps = [{ beat: 3.5, kind: 'next', dur: 0.5 }];
+  const out = expandBass(steps, 0, 36, 50, [0, 4, 7], 0.5, 43);
+  assert.equal(out[0].midi, 38, 'オクターブ下げて上限内に収まっていない');
+  assert.ok(out[0].midi <= 43, '上限を越えている');
+  assert.equal(((out[0].midi - 50) % 12 + 12) % 12, 0, 'オクターブ以外へ動いた（音名が変わった）');
+});
+
 test('expandBass: octave が音域の上限を越えるなら元の音のまま', () => {
   const out = expandBass([{ beat: 0, kind: 'octave', dur: 2 }], 0, 50, null, [0, 4, 7], 0.5, 55);
   assert.equal(out[0].midi, 50);
