@@ -357,7 +357,8 @@
 
 <p>
 この分離により、実時間側の計算は「制約を満たす断片の集合から一つ引く」に還元される。
-断片は 999 個、和音適合は事前計算済みなので、一曲の組み立ては数ミリ秒で完了する。
+断片は 999 個、和音適合は事前計算済みなので、一曲（32小節）の組み立ては
+実測で 6.5 ミリ秒、演奏イベントへの変換まで含めても同程度で完了する。
 </p>
 
 <h2 id="s2"><span class="num">2</span>記法</h2>
@@ -436,8 +437,10 @@
 <h2 id="s3"><span class="num">3</span>コーパスからの帰納</h2>
 
 <p>
-評価関数の係数は恣意的に決めていない。公有（作曲者の没後年に基づく）の
-名旋律 <em class="term">125曲・1768音・1643音程</em> を採譜し、その統計に合わせている。
+評価関数の係数は恣意的に決めていない。公有の名旋律
+<em class="term">125曲・1768音・1643音程</em> を採譜し、その統計に合わせている。
+公有の判定は「作曲者の没年が1955年以前、または伝承曲」とした
+（収録曲の最も新しい没年は1952年、伝承曲は26曲）。旋法の内訳は長調93曲・短調32曲。
 </p>
 
 <div class="table-wrap">
@@ -512,15 +515,19 @@
 <p>
 候補断片は、旋律型を連結して度数列を作り、リズム細胞を割り当てることで生成する。
 連結は前の型の終点を次の型の始点として共有する。乱数は固定シードの
-線形合同法系 PRNG のみを使い、<span class="sym">Math.random</span> は用いない。
-したがって生成は完全に再現可能である。候補数は <span class="sym">N = 300,000</span>。
+<span class="sym">mulberry32</span>（32ビット状態の乗算・排他的論理和シフト系 PRNG）のみを使い、
+<span class="sym">Math.random</span> は用いない。文字列のシードは FNV-1a で
+32ビットへ畳む。したがって生成は完全に再現可能である。
+候補数は <span class="sym">N = 300,000</span>。
 </p>
 
 <h3><span class="num">4.2</span>評価関数</h3>
 
 <p>
 断片 <span class="sym">f</span> の美しさスコアを次で定義する。
-基準値 50 から出発し、減点項と加点項を加える。
+基準値 50 から出発し、各項を加える。<span class="sym">P</span> は非負の減点項、
+<span class="sym">D</span> と <span class="sym">R</span> は符号付き（帯に入れば加点、外れれば減点）、
+<span class="sym">B</span> と <span class="sym">β</span> は非負の加点項である。
 </p>
 
 <div class="eq">
@@ -533,12 +540,12 @@
     <msub><mi>P</mi><mi>leap</mi></msub>
     <mo>-</mo>
     <msub><mi>P</mi><mi>span</mi></msub>
-    <mo>-</mo>
-    <msub><mi>P</mi><mi>dens</mi></msub>
+    <mo>+</mo>
+    <msub><mi>D</mi><mi>dens</mi></msub>
+    <mo>+</mo>
+    <msub><mi>R</mi><mi>rhythm</mi></msub>
     <mo>+</mo>
     <msub><mi>B</mi><mi>dist</mi></msub>
-    <mo>+</mo>
-    <msub><mi>B</mi><mi>rhythm</mi></msub>
     <mo>+</mo>
     <mstyle displaystyle="true">
       <munder><mo>&#x2211;</mo><mrow><mi>t</mi><mo>&#x2208;</mo><mi>T</mi><mo>(</mo><mi>f</mi><mo>)</mo></mrow></munder>
@@ -551,7 +558,10 @@
 
 <p>
 ここで <span class="sym">T(f)</span> は断片が持つ情動タグの集合である。
-主な項を示す。
+<span class="sym">P<sub>span</sub></span> は音域が12度を超えた分への減点
+（<span class="sym">6·(span − 12)<sup>+</sup></span>）、
+<span class="sym">D<sub>dens</sub></span> は音数密度（音数÷8）が 0.9〜1.8 の帯にあれば +10、
+0.7 を下回るか 2.2 を上回れば逸脱に比例した減点である。以下、主な項を示す。
 </p>
 
 <p>跳躍への減点。度数差 <span class="sym">a = |Δ<sub>i</sub>|</span> について</p>
@@ -632,7 +642,7 @@
 </div>
 
 <p>
-リズム項 <span class="sym">B<sub>rhythm</sub></span> は音価の種類数に対して
+リズム項 <span class="sym">R<sub>rhythm</sub></span> は音価の種類数に対して
 <span class="sym">{1 → −22, 2 → −8, 3 → +6, ≥4 → +12}</span> を与える。
 音価が1種類しかない断片は、音程がどれほど美しくても童謡に聴こえ、
 曲の一節にはならない。ゆえに単独で最大の減点を課す。
@@ -723,7 +733,8 @@
 <h2 id="s6"><span class="num">6</span>和音適合の事前計算</h2>
 
 <p>
-実時間で「この断片はこの和音に乗るか」を判定していては間に合わない。
+断片が和音に乗るかを実時間で判定すると高くつく。999断片×和音語彙60種×2小節の
+適合判定は実測で 329 ミリ秒かかり、これは組み立て全体（6.5 ミリ秒）の50倍にあたる。
 そこで断片ごとに、和音語彙の全要素に対する適合を事前計算しておく。
 </p>
 
@@ -952,7 +963,9 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 </div>
 
 <p>
-<span class="sym">k* = L − 2</span> がクライマックスのスロットである。
+<span class="sym">k*</span> がクライマックスのスロットで、
+<span class="sym">L ≥ 3</span> のとき <span class="sym">k* = L − 2</span>、
+それ以外は <span class="sym">L − 1</span> である。
 最後のスロットではなく一つ手前に置くのは、頂点のあとに着地を残すためである。
 <span class="sym">(u, w)</span> は <span class="sym">A: (1,2)</span>、
 <span class="sym">A′: (2,3)</span>、<span class="sym">A″: (3,1)</span>。
@@ -1112,8 +1125,23 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 
 <p>
 で抽選する。両方が遠い（<span class="sym">d ≥ 5</span>）ときは抽選せず近いほうに決める。
-指数 3 は実測で選んだ。600曲（うち転調249曲）での平均距離と最悪距離7の出現率は、
-半々で引くと 4.58 / 20.5%、指数2で 3.17 / 6.0%、指数3で 2.94 / 3.6% となる。
+指数 3 は実測で選んだ。3,000回の抽選での平均距離と最悪距離（7）の出現率は次のとおり。</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表6　上げ幅の重み付けと調号の移動距離（3,000回の抽選）</caption>
+  <thead><tr><th>重み</th><th class="num">平均距離</th><th class="num">距離7</th><th class="num">距離10以上</th></tr></thead>
+  <tbody>
+    <tr><td>半々で機械的に引く</td><td class="num">4.43</td><td class="num">19.5%</td><td class="num">6.1%</td></tr>
+    <tr><td>(1+d)<sup>−2</sup></td><td class="num">2.93</td><td class="num">4.9%</td><td class="num">0.0%</td></tr>
+    <tr><td>(1+d)<sup>−3</sup>（採用）</td><td class="num">2.64</td><td class="num">2.0%</td><td class="num">0.0%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+指数をさらに上げると +1半音 がほとんど出なくなり、半音上げというバラードの
+定石そのものが消える。
 </p>
 
 <div class="note">
@@ -1223,10 +1251,13 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 
 <div class="note">
 重要なのは、この検査を<em class="term">強拍の半音衝突すべて</em>に掛けてはならないことである。
-実測では強拍衝突559件のうち448件（80%）が非和声音で、そのうち99%が
-次の音へ順次解決していた。これは掛留・倚音そのものであり、
+式(20)を導入する前の内訳を見ると、強拍衝突559件のうち448件（80%）が非和声音で、
+そのうち99%が次の音へ順次解決していた。これは掛留・倚音そのものであり、
 本系が狙って作っている陰りである。潰すべきは残りの、
 旋律が和声音であるのに濁っている111件だけであった。
+導入後は事故が11件まで減り、残る衝突の98%は解決を伴う掛留である
+（衝突そのものの割合が表5で 20.1% → 9.8% にとどまるのはこのため。
+掛留は減らしていない）。
 </div>
 
 <h2 id="s10"><span class="num">10</span>演奏設計</h2>
@@ -1286,7 +1317,9 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 <h2 id="s11"><span class="num">11</span>評価</h2>
 
 <p>
-生成系の性質は聴取印象ではなく計測で管理する。既定設定・各60〜200曲での実測値を示す。
+生成系の性質は聴取印象ではなく計測で管理する。以下は既定設定での実測値で、
+標本数は指標ごとに異なる（追い越しと衝突は60曲、頂点まわりと重複は80〜200曲、
+音量は8曲・各60秒）。
 </p>
 
 <div class="table-wrap">
@@ -1295,8 +1328,8 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
   <thead><tr><th>指標</th><th class="num">変更前</th><th class="num">変更後</th></tr></thead>
   <tbody>
     <tr><td>伴奏・パッドが旋律を追い越す音の割合</td><td class="num">33.8%</td><td class="num">0.0%</td></tr>
-    <tr><td>強拍の半音衝突（掛留を含む）</td><td class="num">20.1%</td><td class="num">6.3%</td></tr>
-    <tr><td>　うち旋律が和声音である事故</td><td class="num">111 件</td><td class="num">9 件</td></tr>
+    <tr><td>強拍の半音衝突（掛留を含む）</td><td class="num">20.1%</td><td class="num">9.8%</td></tr>
+    <tr><td>　うち旋律が和声音である事故</td><td class="num">111 件</td><td class="num">11 件</td></tr>
     <tr><td>頂点直前の小節の最高音（主音から）</td><td class="num">+12.5 半音</td><td class="num">+13.8 半音</td></tr>
     <tr><td>頂点との差（最後の一歩）</td><td class="num">9.1 半音</td><td class="num">6.3 半音</td></tr>
     <tr><td>完全一致する2小節断片</td><td class="num">6.7 組/曲</td><td class="num">5.2 組/曲</td></tr>
@@ -1307,13 +1340,41 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 </div>
 
 <p>
-音響側も同様に計測で決めている。出力のピークは −5.3 dBFS、RMS −24.8 dB と
-使える音量を余らせていた。リミッタのしきい値を −8 から −3 へ上げたうえで
-利得を 3.0 倍し、出力に一律の天井を掛けることで、既定音量での RMS を
-−26.5 dB から −19.4 dB へ引き上げた。このとき曲中の抑揚（最大2秒 RMS と
-最小2秒 RMS の差）は 11.6 dB から 12.8 dB へむしろ広がっている。
-しきい値 −8 のまま利得だけを上げると抑揚は 8.6 dB へ潰れた。
-<em class="term">音量と抑揚は交換関係にあるが、圧縮点を上げれば両立する。</em>
+音響側も同様に計測で決めている。修正前は既定音量でピーク −7.1 dBFS、
+RMS −26.1 dB と、使える音量を大きく余らせていた。据え置きのスピーカーなら
+「静かな曲」で済むが、スマートフォンの内蔵スピーカーでは聴き取れない。
+リミッタのしきい値を −8 から −3 へ上げたうえで利得を 3.0 倍し、
+出力に一律の天井（0.8）を掛け、音量の既定値を 70 から 85 へ上げた。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表7　出力の音量と抑揚（8曲・各60秒。抑揚は最大2秒 RMS と最小2秒 RMS の差）</caption>
+  <thead><tr><th>条件</th><th class="num">ピーク</th><th class="num">RMS</th><th class="num">抑揚</th></tr></thead>
+  <tbody>
+    <tr><td>修正前・既定音量 70</td><td class="num">−7.1 dBFS</td><td class="num">−26.1 dB</td><td class="num">12.9 dB</td></tr>
+    <tr><td>修正前・音量 85</td><td class="num">−5.2 dBFS</td><td class="num">−24.6 dB</td><td class="num">12.2 dB</td></tr>
+    <tr><td>修正後・既定音量 85</td><td class="num">−2.6 dBFS</td><td class="num">−19.7 dB</td><td class="num">12.2 dB</td></tr>
+    <tr><td>修正後・音量最大 100</td><td class="num">−1.2 dBFS</td><td class="num">−18.3 dB</td><td class="num">12.1 dB</td></tr>
+    <tr><td>利得 3.0・しきい値 −8・音量 85</td><td class="num">−4.0 dBFS</td><td class="num">−18.4 dB</td><td class="num">9.9 dB</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+既定音量どうしの比較で RMS は 6.4 dB 上がり、音量つまみを最大にしても
+最悪ピークは −0.9 dBFS で歪まない。<em class="term">抑揚が広がったわけではない。</em>
+同じ音量（85）で比べれば修正の前後とも 12.2 dB で変わらず、既定値の
+引き上げぶんを含めると 12.9 → 12.2 dB とわずかに狭まっている。
+主張できるのは「音量を 6.4 dB 上げても抑揚をほぼ失わなかった」までである。
+</p>
+
+<p>
+その「ほぼ失わなかった」を作っているのが圧縮点の位置である。利得だけを
+3.0 倍してしきい値を −8 のままにすると、抑揚は 9.9 dB まで潰れる（表7の最下行）。
+リミッタが音楽的なピークまで削るためで、しきい値を −3 へ上げると
+突発的な山だけを受け止める動作に変わる。出力の天井を圧縮ではなく
+一律の減衰で作っているのも同じ理由による。
 </p>
 
 <h2 id="s12"><span class="num">12</span>限界</h2>
