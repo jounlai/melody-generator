@@ -864,6 +864,25 @@ test('withoutRub は旋律と半音でぶつかる持続音だけを落とす', 
   assert.deepEqual(withoutRub([59, 64, 67], [{ beat: 1, midi: 60, dur: 0.5 }], 0), [59, 64, 67]);
 });
 
+test('melodyCeiling: 前の小節から伸びてきて鳴っている音も天井に効く', () => {
+  // 拍3.5から2拍伸びる音は、1小節目(拍4〜8)でも鳴っている。
+  const melody = [{ midi: 60, beat: 3.5, dur: 2 }];
+  assert.equal(melodyCeiling(melody, 0), 58, '自分の小節で効いていない');
+  assert.equal(melodyCeiling(melody, 1), 58, 'またいで鳴っている音を取りこぼしている');
+  // 小節1の途中で鳴り終わる音は、小節2には効かない。
+  assert.equal(melodyCeiling(melody, 2), 72);
+});
+
+test('withoutRub: 食った音は短くても表扱いになる', () => {
+  // 拍3.5から1拍。強拍にも無く1.5拍にも満たないが、聴き手には次の小節の
+  // 頭の音として聴こえている。半音でぶつかるパッドは削る。
+  const melody = [{ midi: 60, beat: 3.5, dur: 1, anticipated: true }];
+  assert.deepEqual(withoutRub([59, 62, 65], melody, 0), [62, 65]);
+  // 食っていなければ従来どおり（表の条件に当たらないので削らない）。
+  const plain = [{ midi: 60, beat: 3.5, dur: 1 }];
+  assert.deepEqual(withoutRub([59, 62, 65], plain, 0), [59, 62, 65]);
+});
+
 test('実データ: 伴奏とパッドが旋律を追い越さない', () => {
   let notes = 0;
   let crossed = 0;

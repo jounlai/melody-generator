@@ -1220,10 +1220,13 @@ const EXPOSED_DUR = 1.5;
  */
 export function withoutRub(midis, melody, bar) {
   const from = bar * 4;
+  const to = from + 4;
   const exposed = [];
   for (const n of melody) {
-    if (n.beat < from || n.beat >= from + 4) continue;
-    if (n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) exposed.push(n.midi);
+    if (n.beat >= to || n.beat + n.dur <= from) continue;
+    // 食った音は無条件に表扱い。拍3.5にあって短くても、聴き手には
+    // 次の小節の頭の音として聴こえている。
+    if (n.anticipated || n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) exposed.push(n.midi);
   }
   if (exposed.length === 0) return midis;
   const rubs = (m) => exposed.some((x) => {
@@ -1240,9 +1243,13 @@ export function withoutRub(midis, melody, bar) {
  */
 export function melodyCeiling(melody, bar) {
   const from = bar * 4;
+  const to = from + 4;
   let low = Infinity;
   for (const n of melody) {
-    if (n.beat < from || n.beat >= from + 4) continue;
+    // 開始拍ではなく「鳴っている区間」で見る。食いとタイで小節をまたぐ音が
+    // 増えたので、開始拍だけを見ると前の小節から伸びてきた音を取りこぼし、
+    // 伴奏がその上を横切る。
+    if (n.beat >= to || n.beat + n.dur <= from) continue;
     if (n.midi < low) low = n.midi;
   }
   return low === Infinity ? NO_MELODY_CEILING : low - LAYER_GAP;
