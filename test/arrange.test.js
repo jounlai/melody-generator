@@ -97,6 +97,15 @@ test('伴奏型: どの型も1小節(4拍)からはみ出さず、音を1つ以�
   }
 });
 
+// 「厚さ」は step の数ではなく、その小節で実際に鳴る音の数で測る。
+// upper と all は1ステップで和音が出るので、step の数と音の数は一致しない。
+// 実例: syncope は step 6個だが5個が和音なので10音、arp8 は step 8個すべて
+// 単音なので8音。step で測ると syncope のほうが薄いことになってしまう。
+function accompNoteCount(pattern) {
+  return expandAccomp(pattern.steps, [48, 52, 55], 0, pattern.vel)
+    .reduce((n, e) => n + (e.midis ? e.midis.length : 1), 0);
+}
+
 test('伴奏型: 計画の組はすべて実在する型を指し、後半のほうが音数が多い', () => {
   for (const pairs of ACCOMP_PLAN) {
     for (const [first, second] of pairs) {
@@ -107,13 +116,15 @@ test('伴奏型: 計画の組はすべて実在する型を指し、後半のほ
   // A'' だけは着地なので密度を下げる。それ以外は折り返しで上げる。
   for (let s = 0; s < 3; s++) {
     for (const [first, second] of ACCOMP_PLAN[s]) {
-      assert.ok(ACCOMP_PATTERNS[second].steps.length >= ACCOMP_PATTERNS[first].steps.length,
-        `セクション${s}: 後半 ${second} が前半 ${first} より薄い`);
+      const a = accompNoteCount(ACCOMP_PATTERNS[first]);
+      const b = accompNoteCount(ACCOMP_PATTERNS[second]);
+      assert.ok(b >= a, `セクション${s}: 後半 ${second}(${b}音) が前半 ${first}(${a}音) より薄い`);
     }
   }
   for (const [first, second] of ACCOMP_PLAN[3]) {
-    assert.ok(ACCOMP_PATTERNS[second].steps.length <= ACCOMP_PATTERNS[first].steps.length,
-      `A'': 後半 ${second} が前半 ${first} より厚い`);
+    const a = accompNoteCount(ACCOMP_PATTERNS[first]);
+    const b = accompNoteCount(ACCOMP_PATTERNS[second]);
+    assert.ok(b <= a, `A'': 後半 ${second}(${b}音) が前半 ${first}(${a}音) より厚い`);
   }
 });
 
