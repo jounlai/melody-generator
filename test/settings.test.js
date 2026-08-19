@@ -106,8 +106,36 @@ test('曲コードに音量やリバーブは含まれない', () => {
 });
 
 test('曲コードに楽器が載る', () => {
-  const code = encodeSongCode('x', { ...defaultSettings(), instrument: 'koto' });
-  assert.ok(code.includes('it=koto'), code);
+  const base = encodeSongCode('x', defaultSettings());
+  const koto = encodeSongCode('x', { ...defaultSettings(), instrument: 'koto' });
+  assert.notEqual(koto, base, '楽器を変えても曲コードが変わらない');
+  assert.equal(decodeSongCode(koto).settings.instrument, 'koto');
+});
+
+test('曲コードは既定値のときシードだけになる', () => {
+  // URL のハッシュに載るので、短さがそのまま使い勝手になる。
+  assert.equal(encodeSongCode('k3f9zq', defaultSettings()), 'k3f9zq');
+});
+
+test('曲コードは選択肢を1文字ずつに詰める', () => {
+  const code = encodeSongCode('k3f9zq', {
+    ...defaultSettings(), mood: 'wistful', tempoFeel: 'flowing', instrument: 'santur',
+  });
+  assert.match(code, /^k3f9zq\.[0-9a-z]+$/, code);
+  assert.ok(code.length <= 12, `曲コードが長い: ${code}`);
+  const back = decodeSongCode(code).settings;
+  assert.equal(back.mood, 'wistful');
+  assert.equal(back.tempoFeel, 'flowing');
+  assert.equal(back.instrument, 'santur');
+});
+
+test('古い形式の曲コードも読める', () => {
+  // 共有済みの URL を壊さない。
+  const back = decodeSongCode('#s=abc123&md=bright&tp=slow&it=harp');
+  assert.equal(back.seed, 'abc123');
+  assert.equal(back.settings.mood, 'bright');
+  assert.equal(back.settings.tempoFeel, 'slow');
+  assert.equal(back.settings.instrument, 'harp');
 });
 
 test('composeParamKeys は作曲系のキーだけを返す', () => {

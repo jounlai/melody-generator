@@ -91,9 +91,8 @@ function groupOrder() {
  * @param {{
  *   settings?: Record<string, unknown>,
  *   onChange?: (key: string, value: unknown, next: Record<string, unknown>) => void,
- *   onRebuild?: () => void,
  * }} [options]
- * @returns {{ setSettings: (s: Record<string, unknown>) => void, clearPending: () => void }}
+ * @returns {{ setSettings: (s: Record<string, unknown>) => void }}
  */
 export function createSettingsPanel(rootEl, options = {}) {
   if (!rootEl) throw new Error('createSettingsPanel: rootEl が必要です');
@@ -101,8 +100,6 @@ export function createSettingsPanel(rootEl, options = {}) {
   const doc = rootEl.ownerDocument || globalThis.document;
   const onChange =
     typeof options.onChange === 'function' ? options.onChange : () => {};
-  const onRebuild =
-    typeof options.onRebuild === 'function' ? options.onRebuild : () => {};
 
   let settings = normalizeSettings(options.settings);
   /** @type {Map<string, (value: unknown) => void>} コントロールへ値を書き戻す関数 */
@@ -117,30 +114,6 @@ export function createSettingsPanel(rootEl, options = {}) {
 
   rootEl.textContent = '';
   rootEl.classList.add('settings');
-
-  // ---- 「次の曲から反映されます」通知 ---------------------------------
-  const pending = el('div', 'settings-pending');
-  pending.hidden = true;
-  pending.setAttribute('role', 'status');
-  pending.setAttribute('aria-live', 'polite');
-  pending.append(el('span', 'settings-pending-text', '次の曲から反映されます'));
-
-  const rebuildButton = el('button', 'settings-rebuild', '今すぐ作り直す');
-  rebuildButton.type = 'button';
-  rebuildButton.addEventListener('click', () => {
-    clearPending();
-    onRebuild();
-  });
-  pending.append(rebuildButton);
-  rootEl.append(pending);
-
-  function showPending() {
-    pending.hidden = false;
-  }
-
-  function clearPending() {
-    pending.hidden = true;
-  }
 
   // ---- 値の反映 -------------------------------------------------------
   function syncOne(key, value) {
@@ -162,12 +135,7 @@ export function createSettingsPanel(rootEl, options = {}) {
 
     settings = next;
     for (const key of changed) syncOne(key, next[key]);
-
-    const needsRebuild = changed.some(
-      (key) => DEF_BY_KEY.get(key)?.apply === 'next',
-    );
     for (const key of changed) onChange(key, next[key], next);
-    if (needsRebuild) showPending();
   }
 
   // ---- コントロールの生成 ---------------------------------------------
@@ -282,6 +250,5 @@ export function createSettingsPanel(rootEl, options = {}) {
       settings = normalizeSettings(nextSettings);
       for (const key of syncers.keys()) syncOne(key, settings[key]);
     },
-    clearPending,
   };
 }

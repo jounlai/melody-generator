@@ -116,32 +116,76 @@ export function defaultSettings() {
   return normalizeSettings({});
 }
 
+/**
+ * 曲コード。URL のハッシュに載せるので、短さがそのまま使い勝手になる。
+ *
+ * 形式は `<シード>` または `<シード>.<選択肢の添字を1文字ずつ>`。
+ * 添字は PARAM_DEFS で code を持つ選択肢パラメータの並び順で、36進数1桁。
+ * すべて既定値のときは添字ごと省く（共有される曲の大半がこれに当たる）。
+ *
+ *   既定のまま      #k3f9zq
+ *   雰囲気と楽器を変更  #k3f9zq.204
+ *
+ * !!! 位置で意味が決まるので、code を持つパラメータを途中に挿入しないこと !!!
+ * 追加するときは必ず末尾に足す（古い URL の添字がずれる）。
+ */
+const CODE_DEFS = () => PARAM_DEFS.filter((d) => d.code && d.type === 'choice');
+
+function optionIndex(def, value) {
+  const i = def.options.findIndex(([o]) => o === String(value));
+  return i < 0 ? def.options.findIndex(([o]) => o === def.def) : i;
+}
+
 export function composeParamKeys() {
-  return PARAM_DEFS.filter((d) => d.code).map((d) => d.key);
+  return CODE_DEFS().map((d) => d.key);
 }
 
 export function encodeSongCode(seed, settings) {
-  const parts = [`s=${seed}`];
-  for (const d of PARAM_DEFS) {
-    if (!d.code) continue;
-    const v = settings[d.key];
-    parts.push(`${d.code}=${d.type === 'toggle' ? (v ? 1 : 0) : v}`);
-  }
-  return parts.join('&');
+  const s = normalizeSettings(settings);
+  const defs = CODE_DEFS();
+  const digits = defs.map((d) => optionIndex(d, s[d.key]));
+  // 全部が既定値なら添字を書かない。いちばん短い形にする。
+  if (digits.every((v, i) => v === optionIndex(defs[i], defs[i].def))) return String(seed);
+  return `${seed}.${digits.map((v) => v.toString(36)).join('')}`;
 }
 
+/**
+ * 曲コードを解く。古い形式（`s=...&md=...`）も読めるようにしてある。
+ * 共有済みの URL を壊さないため。
+ */
 export function decodeSongCode(str) {
-  const map = new Map();
-  for (const kv of String(str ?? '').replace(/^#/, '').split('&')) {
-    const i = kv.indexOf('=');
-    if (i <= 0) continue;
-    map.set(kv.slice(0, i), kv.slice(i + 1));
+  const text = String(str ?? '').replace(/^#/, '').trim();
+
+  // --- 旧形式 ---
+  if (text.includes('=')) {
+    const map = new Map();
+    for (const kv of text.split('&')) {
+      const i = kv.indexOf('=');
+      if (i <= 0) continue;
+      map.set(kv.slice(0, i), kv.slice(i + 1));
+    }
+    const raw = {};
+    for (const d of PARAM_DEFS) {
+      if (d.code && map.has(d.code)) raw[d.key] = map.get(d.code);
+    }
+    const old = map.get('s');
+    return {
+      seed: old && /^[0-9a-z]+$/i.test(old) ? old : null,
+      settings: normalizeSettings(raw),
+    };
   }
+
+  // --- 現行形式 ---
+  const dot = text.indexOf('.');
+  const seed = dot < 0 ? text : text.slice(0, dot);
+  const digits = dot < 0 ? '' : text.slice(dot + 1);
   const raw = {};
-  for (const d of PARAM_DEFS) {
-    if (d.code && map.has(d.code)) raw[d.key] = map.get(d.code);
-  }
-  const seed = map.get('s');
+  CODE_DEFS().forEach((d, i) => {
+    const ch = digits[i];
+    if (ch === undefined) return;
+    const n = parseInt(ch, 36);
+    if (Number.isFinite(n) && n >= 0 && n < d.options.length) raw[d.key] = d.options[n][0];
+  });
   return {
     seed: seed && /^[0-9a-z]+$/i.test(seed) ? seed : null,
     settings: normalizeSettings(raw),

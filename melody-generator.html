@@ -57,13 +57,27 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /*
+   * 縦のフレックス。main が余った高さを吸うので、その中で中央寄せした
+   * 再生ボタンが画面の中ほどに来る。上に貼り付くと親指が届かない。
+   */
   .page {
     position: relative;
     z-index: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
     max-width: 680px;
     margin: 0 auto;
-    padding: clamp(20px, 5vw, 64px) clamp(16px, 4vw, 32px)
-      calc(28px + env(safe-area-inset-bottom, 0px));
+    padding: clamp(20px, 5vw, 48px) clamp(16px, 4vw, 32px)
+      calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+
+  main {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   /* ---- 癒しのアニメーション ----
@@ -120,7 +134,21 @@
   }
 
   /* 再生ボタンの後ろで広がって消える波紋。呼吸のリズムそのもの */
-  .stage { position: relative; text-align: center; }
+  /*
+   * 再生は画面の中ほどに置く。上に貼り付くと親指が届かず、
+   * 画面の上端まで手を伸ばす操作は片手では成立しない。
+   * 高さの下限を先に確保してから中央寄せするので、
+   * 中身の量が変わってもボタンの位置はほとんど動かない。
+   */
+  .stage {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 46dvh;
+    text-align: center;
+  }
 
   .pulse {
     position: absolute;
@@ -295,6 +323,7 @@
   /* ページの左右余白ぶんだけ外へ広げて、楽譜を一番大きく見せる。
      100vw ではなく余白の実寸を打ち消しているので、横スクロールは生まれない。 */
   .score-section {
+    flex: none;
     margin: clamp(18px, 5vw, 28px) calc(-1 * clamp(16px, 4vw, 32px)) 0;
   }
 
@@ -358,6 +387,7 @@
    * 常時ぜんぶ並べると、最初の画面が説明文と入力欄で埋まってしまう。
    */
   .tools {
+    flex: none;
     display: flex;
     justify-content: center;
     gap: 8px;
@@ -384,21 +414,90 @@
     border-color: var(--line-strong);
   }
 
-  .panel {
-    margin-top: 10px;
-    padding: 16px;
+  /* ---- モーダル ---- */
+
+  .sheet {
+    width: min(460px, calc(100vw - 24px));
+    padding: 18px;
+    color: var(--text);
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
   }
 
-  .panel[hidden] { display: none; }
+  .sheet::backdrop {
+    background: rgb(4 6 8 / 74%);
+    backdrop-filter: blur(3px);
+  }
 
-  .panel-note {
-    margin: 12px 0 0;
+  .sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .sheet-head h2 {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+
+  .sheet-close {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    color: var(--muted);
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .sheet-note {
+    margin: 14px 0 0;
     color: var(--muted);
     font-size: 0.7rem;
     line-height: 1.7;
+  }
+
+  /* 狭い画面では下から出るシートにする。親指の近くに現れるほうが押しやすい */
+  /* ---- 狭い画面 ---- */
+
+  @media (max-width: 560px) {
+    /* 道具は下端に固定する。再生を中ほどまで下げると、
+       流し込みのままでは設定や共有が画面の外へ出てしまう。 */
+    .page { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+
+    .stage { min-height: 70dvh; }
+
+    .tools {
+      position: fixed;
+      z-index: 10;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      margin: 0;
+      padding: 6px max(10px, env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom, 0px));
+      gap: 4px;
+      background: rgb(11 13 16 / 88%);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--line);
+    }
+
+    #status { bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+
+    .sheet {
+      width: 100vw;
+      max-width: 100vw;
+      margin: auto auto 0;
+      padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+      border-width: 1px 0 0;
+      border-radius: 16px 16px 0 0;
+    }
   }
 
   .row {
@@ -409,61 +508,33 @@
 
   .row > button { flex: 1 1 auto; min-height: 44px; }
 
-  #song-code {
-    flex: 1 1 100%;
-    min-width: 0;
-    padding: 10px 12px;
-    color: var(--text);
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    /* 16px を切ると iOS が入力時にページを勝手に拡大する */
-    font-size: 16px;
-  }
-
-  #song-code::placeholder { color: var(--muted); }
-
-  .icon-btn {
-    display: grid;
-    place-items: center;
-    flex: 0 0 auto;
-    width: 44px;
-    min-height: 44px;
-    padding: 0;
-    color: var(--muted);
-  }
-
+  /* 知らせは画面の下に一瞬だけ出す。場所を常時取らせない */
   #status {
-    margin-top: 12px;
-    min-height: 1.5em;
+    position: fixed;
+    z-index: 20;
+    left: 50%;
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    max-width: min(92vw, 30em);
+    padding: 10px 16px;
     color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
     font-size: 0.7rem;
     letter-spacing: 0.04em;
     text-align: center;
+    opacity: 0;
+    transform: translate(-50%, 8px);
+    pointer-events: none;
+    transition: opacity 0.24s ease, transform 0.24s ease;
     overflow-wrap: anywhere;
   }
+
+  #status[data-shown="true"] { opacity: 1; transform: translate(-50%, 0); }
 
   /* ---- 設定パネル（src/ui.js が組み立てる） ---- */
 
   .settings { display: grid; gap: 8px; }
-
-  .settings-pending {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    color: var(--muted);
-    font-size: 0.7rem;
-  }
-
-  .settings-pending[hidden] { display: none; }
-  .settings-rebuild { padding: 7px 12px; font-size: 0.7rem; background: transparent; }
 
   /* 見出しの帯は出さない。項目名だけで足りる */
   .settings-group { border: 0; }
@@ -1689,6 +1760,7 @@
     <section class="stage" aria-label="再生">
       <div class="transport" role="group" aria-label="再生操作">
         <div class="pulse" aria-hidden="true"><i></i><i></i><i></i></div>
+
         <button id="prev" class="transport-btn" type="button" aria-label="前の曲へ戻る">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M18 5.5v13a1 1 0 0 1-1.55.83L7.5 13.2v5.3a1 1 0 0 1-2 0v-13a1 1 0 0 1 2 0v5.3l8.95-6.13A1 1 0 0 1 18 5.5Z"/>
@@ -1722,75 +1794,40 @@
       </div>
     </section>
 
-    <nav class="tools" aria-label="道具">
-      <button id="score-toggle" class="tool" type="button" aria-pressed="true" aria-controls="score-view">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M4 6h16M4 10h16M4 14h7M4 18h7"/>
-          <circle cx="16" cy="17" r="2.6"/><path d="M18.6 17V9.4l2.4-.8"/>
-        </svg>
-        楽譜
-      </button>
-
-      <button id="tool-settings" class="tool" type="button" aria-expanded="false" aria-controls="panel-settings">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M4 7h9M17 7h3M4 17h3M11 17h9M4 12h5M13 12h7"/>
-          <circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/><circle cx="11" cy="12" r="2"/>
-        </svg>
-        設定
-      </button>
-
-      <button id="tool-export" class="tool" type="button" aria-expanded="false" aria-controls="panel-export">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M12 3.5v11M8 10.8l4 3.7 4-3.7M4.5 17.5v1.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>
-        </svg>
-        保存
-      </button>
-
-      <button id="tool-code" class="tool" type="button" aria-expanded="false" aria-controls="panel-code">
-        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M10 4.5 8 19.5M16 4.5l-2 15M4.5 9h15M3.5 15h15"/>
-        </svg>
-        コード
-      </button>
-    </nav>
-
-    <div id="panel-settings" class="panel" hidden>
-      <div id="settings-panel"></div>
-    </div>
-
-    <div id="panel-export" class="panel" hidden>
-      <div class="row">
-        <button id="export-musicxml" type="button" disabled>MusicXML</button>
-        <button id="export-midi" type="button" disabled>MIDI</button>
-      </div>
-      <p class="panel-note">
-        MusicXML は MuseScore などで五線譜として開けます。MIDI は DAW で編集できます。
-      </p>
-    </div>
-
-    <div id="panel-code" class="panel" hidden>
-      <div class="row">
-        <input id="song-code" type="text" aria-label="曲コード"
-               spellcheck="false" autocomplete="off" autocapitalize="off"
-               placeholder="再生するとここに出ます">
-        <button id="copy-code" class="icon-btn" type="button" aria-label="曲コードをコピー">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect x="9" y="9" width="11" height="11" rx="2"/>
-            <path d="M15 5.5A1.5 1.5 0 0 0 13.5 4H6a2 2 0 0 0-2 2v7.5A1.5 1.5 0 0 0 5.5 15"/>
-          </svg>
-        </button>
-        <button id="load-code" class="icon-btn" type="button" aria-label="曲コードを読み込む">
-          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M4 12h11M11.5 8.2l3.8 3.8-3.8 3.8M17.5 4h1a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5h-1"/>
-          </svg>
-        </button>
-      </div>
-      <p class="panel-note">同じコードを読み込めば、同じ曲がもう一度流れます。</p>
-    </div>
-
-    <div id="status" role="status" aria-live="polite"></div>
-
   </main>
+
+  <nav class="tools" aria-label="道具">
+    <button id="score-toggle" class="tool" type="button" aria-pressed="true" aria-controls="score-view">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 6h16M4 10h16M4 14h7M4 18h7"/>
+        <circle cx="16" cy="17" r="2.6"/><path d="M18.6 17V9.4l2.4-.8"/>
+      </svg>
+      楽譜
+    </button>
+
+    <button id="tool-settings" class="tool" type="button" aria-haspopup="dialog">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 7h9M17 7h3M4 17h3M11 17h9M4 12h5M13 12h7"/>
+        <circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/><circle cx="11" cy="12" r="2"/>
+      </svg>
+      設定
+    </button>
+
+    <button id="tool-export" class="tool" type="button" aria-haspopup="dialog">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 3.5v11M8 10.8l4 3.7 4-3.7M4.5 17.5v1.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>
+      </svg>
+      保存
+    </button>
+
+    <button id="copy-url" class="tool" type="button">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M10.5 13.5a4 4 0 0 0 5.66 0l2.6-2.6a4 4 0 1 0-5.66-5.66l-1.1 1.1"/>
+        <path d="M13.5 10.5a4 4 0 0 0-5.66 0l-2.6 2.6a4 4 0 1 0 5.66 5.66l1.1-1.1"/>
+      </svg>
+      共有
+    </button>
+  </nav>
 
   <footer class="site-foot">
     <p class="foot-credit">
@@ -1806,6 +1843,42 @@
   </footer>
 
 </div>
+
+<!-- 設定。変えた瞬間に、その設定で鳴り直す -->
+<dialog id="dlg-settings" class="sheet" aria-labelledby="dlg-settings-title">
+  <div class="sheet-head">
+    <h2 id="dlg-settings-title">設定</h2>
+    <button class="sheet-close" type="button" data-close aria-label="閉じる">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M6 6l12 12M18 6L6 18"/>
+      </svg>
+    </button>
+  </div>
+  <div id="settings-panel"></div>
+  <p class="sheet-note">変えた設定は、その場で鳴り直して反映されます。</p>
+</dialog>
+
+<!-- 書き出し -->
+<dialog id="dlg-export" class="sheet" aria-labelledby="dlg-export-title">
+  <div class="sheet-head">
+    <h2 id="dlg-export-title">保存</h2>
+    <button class="sheet-close" type="button" data-close aria-label="閉じる">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M6 6l12 12M18 6L6 18"/>
+      </svg>
+    </button>
+  </div>
+  <div class="row">
+    <button id="export-musicxml" type="button" disabled>MusicXML</button>
+    <button id="export-midi" type="button" disabled>MIDI</button>
+  </div>
+  <p class="sheet-note">
+    MusicXML は MuseScore などで五線譜として開けます。MIDI は DAW で編集できます。
+  </p>
+</dialog>
+
+<div id="status" role="status" aria-live="polite"></div>
+
 <script>
 (function () {
 'use strict';
@@ -2048,32 +2121,76 @@ function defaultSettings() {
   return normalizeSettings({});
 }
 
+/**
+ * 曲コード。URL のハッシュに載せるので、短さがそのまま使い勝手になる。
+ *
+ * 形式は `<シード>` または `<シード>.<選択肢の添字を1文字ずつ>`。
+ * 添字は PARAM_DEFS で code を持つ選択肢パラメータの並び順で、36進数1桁。
+ * すべて既定値のときは添字ごと省く（共有される曲の大半がこれに当たる）。
+ *
+ *   既定のまま      #k3f9zq
+ *   雰囲気と楽器を変更  #k3f9zq.204
+ *
+ * !!! 位置で意味が決まるので、code を持つパラメータを途中に挿入しないこと !!!
+ * 追加するときは必ず末尾に足す（古い URL の添字がずれる）。
+ */
+const CODE_DEFS = () => PARAM_DEFS.filter((d) => d.code && d.type === 'choice');
+
+function optionIndex(def, value) {
+  const i = def.options.findIndex(([o]) => o === String(value));
+  return i < 0 ? def.options.findIndex(([o]) => o === def.def) : i;
+}
+
 function composeParamKeys() {
-  return PARAM_DEFS.filter((d) => d.code).map((d) => d.key);
+  return CODE_DEFS().map((d) => d.key);
 }
 
 function encodeSongCode(seed, settings) {
-  const parts = [`s=${seed}`];
-  for (const d of PARAM_DEFS) {
-    if (!d.code) continue;
-    const v = settings[d.key];
-    parts.push(`${d.code}=${d.type === 'toggle' ? (v ? 1 : 0) : v}`);
-  }
-  return parts.join('&');
+  const s = normalizeSettings(settings);
+  const defs = CODE_DEFS();
+  const digits = defs.map((d) => optionIndex(d, s[d.key]));
+  // 全部が既定値なら添字を書かない。いちばん短い形にする。
+  if (digits.every((v, i) => v === optionIndex(defs[i], defs[i].def))) return String(seed);
+  return `${seed}.${digits.map((v) => v.toString(36)).join('')}`;
 }
 
+/**
+ * 曲コードを解く。古い形式（`s=...&md=...`）も読めるようにしてある。
+ * 共有済みの URL を壊さないため。
+ */
 function decodeSongCode(str) {
-  const map = new Map();
-  for (const kv of String(str ?? '').replace(/^#/, '').split('&')) {
-    const i = kv.indexOf('=');
-    if (i <= 0) continue;
-    map.set(kv.slice(0, i), kv.slice(i + 1));
+  const text = String(str ?? '').replace(/^#/, '').trim();
+
+  // --- 旧形式 ---
+  if (text.includes('=')) {
+    const map = new Map();
+    for (const kv of text.split('&')) {
+      const i = kv.indexOf('=');
+      if (i <= 0) continue;
+      map.set(kv.slice(0, i), kv.slice(i + 1));
+    }
+    const raw = {};
+    for (const d of PARAM_DEFS) {
+      if (d.code && map.has(d.code)) raw[d.key] = map.get(d.code);
+    }
+    const old = map.get('s');
+    return {
+      seed: old && /^[0-9a-z]+$/i.test(old) ? old : null,
+      settings: normalizeSettings(raw),
+    };
   }
+
+  // --- 現行形式 ---
+  const dot = text.indexOf('.');
+  const seed = dot < 0 ? text : text.slice(0, dot);
+  const digits = dot < 0 ? '' : text.slice(dot + 1);
   const raw = {};
-  for (const d of PARAM_DEFS) {
-    if (d.code && map.has(d.code)) raw[d.key] = map.get(d.code);
-  }
-  const seed = map.get('s');
+  CODE_DEFS().forEach((d, i) => {
+    const ch = digits[i];
+    if (ch === undefined) return;
+    const n = parseInt(ch, 36);
+    if (Number.isFinite(n) && n >= 0 && n < d.options.length) raw[d.key] = d.options[n][0];
+  });
   return {
     seed: seed && /^[0-9a-z]+$/i.test(seed) ? seed : null,
     settings: normalizeSettings(raw),
@@ -7621,9 +7738,8 @@ function groupOrder() {
  * @param {{
  *   settings?: Record<string, unknown>,
  *   onChange?: (key: string, value: unknown, next: Record<string, unknown>) => void,
- *   onRebuild?: () => void,
  * }} [options]
- * @returns {{ setSettings: (s: Record<string, unknown>) => void, clearPending: () => void }}
+ * @returns {{ setSettings: (s: Record<string, unknown>) => void }}
  */
 function createSettingsPanel(rootEl, options = {}) {
   if (!rootEl) throw new Error('createSettingsPanel: rootEl が必要です');
@@ -7631,8 +7747,6 @@ function createSettingsPanel(rootEl, options = {}) {
   const doc = rootEl.ownerDocument || globalThis.document;
   const onChange =
     typeof options.onChange === 'function' ? options.onChange : () => {};
-  const onRebuild =
-    typeof options.onRebuild === 'function' ? options.onRebuild : () => {};
 
   let settings = normalizeSettings(options.settings);
   /** @type {Map<string, (value: unknown) => void>} コントロールへ値を書き戻す関数 */
@@ -7647,30 +7761,6 @@ function createSettingsPanel(rootEl, options = {}) {
 
   rootEl.textContent = '';
   rootEl.classList.add('settings');
-
-  // ---- 「次の曲から反映されます」通知 ---------------------------------
-  const pending = el('div', 'settings-pending');
-  pending.hidden = true;
-  pending.setAttribute('role', 'status');
-  pending.setAttribute('aria-live', 'polite');
-  pending.append(el('span', 'settings-pending-text', '次の曲から反映されます'));
-
-  const rebuildButton = el('button', 'settings-rebuild', '今すぐ作り直す');
-  rebuildButton.type = 'button';
-  rebuildButton.addEventListener('click', () => {
-    clearPending();
-    onRebuild();
-  });
-  pending.append(rebuildButton);
-  rootEl.append(pending);
-
-  function showPending() {
-    pending.hidden = false;
-  }
-
-  function clearPending() {
-    pending.hidden = true;
-  }
 
   // ---- 値の反映 -------------------------------------------------------
   function syncOne(key, value) {
@@ -7692,12 +7782,7 @@ function createSettingsPanel(rootEl, options = {}) {
 
     settings = next;
     for (const key of changed) syncOne(key, next[key]);
-
-    const needsRebuild = changed.some(
-      (key) => DEF_BY_KEY.get(key)?.apply === 'next',
-    );
     for (const key of changed) onChange(key, next[key], next);
-    if (needsRebuild) showPending();
   }
 
   // ---- コントロールの生成 ---------------------------------------------
@@ -7812,7 +7897,6 @@ function createSettingsPanel(rootEl, options = {}) {
       settings = normalizeSettings(nextSettings);
       for (const key of syncers.keys()) syncOne(key, settings[key]);
     },
-    clearPending,
   };
 }
 
@@ -8087,18 +8171,6 @@ function describeSong(song) {
   return [resolveInstrument(song?.instrument).label, key, `${tempo} BPM`, `${bars}小節`].join(' ・ ');
 }
 
-/** input でも div でも同じように書けるようにする */
-function setFieldValue(el, text) {
-  if (!el) return;
-  if ('value' in el) el.value = text;
-  else el.textContent = text;
-}
-
-function getFieldValue(el) {
-  if (!el) return '';
-  return String(('value' in el ? el.value : el.textContent) ?? '').trim();
-}
-
 // 単一ファイル版: fetch は file:// では使えないので、
 // ページに埋め込んだ application/json のブロックから id 指定で読む。
 // 呼び出し側の Promise.all / catch をそのまま活かすため async のまま残す。
@@ -8231,17 +8303,18 @@ function init() {
     playLabel: byId('play-label'),
     prev: byId('prev'),
     next: byId('next'),
-    songCode: byId('song-code'),
-    copyCode: byId('copy-code'),
-    loadCode: byId('load-code'),
+    copyUrl: byId('copy-url'),
     nowPlaying: byId('now-playing'),
     settingsPanel: byId('settings-panel'),
     status: byId('status'),
     scoreView: byId('score-view'),
     scoreToggle: byId('score-toggle'),
-    tools: Array.from(document.querySelectorAll('.tool[aria-controls^="panel-"]')),
     exportMusicXml: byId('export-musicxml'),
     exportMidi: byId('export-midi'),
+    dlgSettings: byId('dlg-settings'),
+    dlgExport: byId('dlg-export'),
+    toolSettings: byId('tool-settings'),
+    toolExport: byId('tool-export'),
   };
 
   // ---- 状態 -----------------------------------------------------------
@@ -8265,11 +8338,14 @@ function init() {
       clearTimeout(statusTimer);
       statusTimer = null;
     }
-    if (els.status) els.status.textContent = text;
+    if (els.status) {
+      els.status.textContent = text;
+      els.status.dataset.shown = text ? 'true' : 'false';
+    }
     if (clearAfterMs) {
       statusTimer = setTimeout(() => {
         statusTimer = null;
-        if (els.status) els.status.textContent = '';
+        if (els.status) els.status.dataset.shown = 'false';
       }, clearAfterMs);
     }
   }
@@ -8624,21 +8700,9 @@ function init() {
     if (!song) return;
     buildScore(song);
     updateExportButtons();
-    const code = encodeSongCode(song.seed, settings);
-    setFieldValue(els.songCode, code);
-
-    // リロードしても同じ曲に戻れるようにハッシュを合わせる。
-    // 履歴を汚さないよう replaceState を優先する（URL の見た目は同じ）。
-    try {
-      const { history, location } = globalThis;
-      if (history?.replaceState) {
-        history.replaceState(null, '', `${location.pathname}${location.search}#${code}`);
-      } else if (location) {
-        location.hash = code;
-      }
-    } catch (err) {
-      console.warn('URL ハッシュを更新できませんでした', err);
-    }
+    // !!! URL のハッシュは自動では書き換えない !!!
+    // 書き換えると、次に開いたとき同じ曲から始まってしまう。
+    // 共有したいときだけ、そのときの曲から URL を組み立てる（下の copy-url）。
 
     const label = describeSong(song);
     if (els.nowPlaying) els.nowPlaying.textContent = label;
@@ -8648,28 +8712,31 @@ function init() {
   }
 
   // ---- 設定パネル ------------------------------------------------------
+  //
+  // 設定は「次の曲から」ではなく、変えた瞬間に反映する。
+  // 曲の組み立て時にすでに使われている値（楽器・雰囲気・テンポ）は、
+  // いま鳴っている曲を止めて、同じシードのまま鳴らし直すことで反映する。
+  // 同じシードを使うのは、変えた1点だけが違う演奏を聴き比べられるようにするため。
   if (els.settingsPanel) {
     panel = createSettingsPanel(els.settingsPanel, {
       settings,
       onChange(key, value, next) {
         settings = normalizeSettings(next);
         storeSettings(settings);
-        // サウンド系だけは鳴っている最中でも即座に反映する。
-        // 作曲・演奏系は曲の組み立て時にすでに使われているので次の曲から。
-        if (DEF_BY_KEY.get(key)?.apply === 'live' && player) {
-          player.applySettings(resolveSettings(settings));
+        if (DEF_BY_KEY.get(key)?.apply === 'live') {
+          // 音量など、鳴らしたまま反映できるもの
+          if (player) player.applySettings(resolveSettings(settings));
+          return;
         }
-      },
-      onRebuild() {
-        // 同じシードのまま、新しい設定で作り直す
-        const seed = player?.getCurrentSong()?.seed ?? pendingSeed ?? undefined;
+        if (!player?.isPlaying()) return;
+        const seed = player.getCurrentSong()?.seed ?? undefined;
         startPlayback(seed);
       },
     });
   }
 
   // ---- ボタン ----------------------------------------------------------
-  const gatedButtons = [els.playToggle, els.prev, els.next, els.loadCode].filter(Boolean);
+  const gatedButtons = [els.playToggle, els.prev, els.next].filter(Boolean);
   for (const button of gatedButtons) button.disabled = true;
 
   setPlayLabel(false);
@@ -8707,6 +8774,31 @@ function init() {
     });
   }
 
+  // ---- モーダル --------------------------------------------------------
+  // <dialog> に任せる。焦点の閉じ込めも Esc も背景の暗転も、
+  // 自前で書くとどれかを落とすが、ブラウザの実装なら全部そろっている。
+  function openSheet(dialog) {
+    if (!dialog) return;
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
+
+  for (const [button, dialog] of [
+    [els.toolSettings, els.dlgSettings],
+    [els.toolExport, els.dlgExport],
+  ]) {
+    if (button && dialog) button.addEventListener('click', () => openSheet(dialog));
+  }
+
+  for (const dialog of [els.dlgSettings, els.dlgExport]) {
+    if (!dialog) continue;
+    dialog.querySelector('[data-close]')?.addEventListener('click', () => dialog.close());
+    // 背景（::backdrop）を押したら閉じる。dialog 自身が押された＝中身の外側。
+    dialog.addEventListener('click', (ev) => {
+      if (ev.target === dialog) dialog.close();
+    });
+  }
+
   // ---- ロック画面・ヘッドセットのボタン --------------------------------
   bindMediaKeys({
     play: () => { if (!player?.isPlaying()) { pendingSeed = null; startPlayback(); } },
@@ -8720,74 +8812,41 @@ function init() {
     next: () => { if (player?.isPlaying()) player.next(); },
   });
 
-  // ---- 道具の開閉 ----------------------------------------------------
-  // 開くのは一度に1つ。3つとも開くと、それだけで画面1つぶんになる。
-  function openPanel(button) {
-    for (const other of els.tools) {
-      const panel = byId(other.getAttribute('aria-controls'));
-      const open = other === button && other.getAttribute('aria-expanded') !== 'true';
-      other.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (panel) panel.hidden = !open;
-    }
-  }
-
-  for (const button of els.tools) {
-    button.addEventListener('click', () => openPanel(button));
-  }
-
-  if (els.copyCode) {
-    els.copyCode.addEventListener('click', async () => {
-      const code = getFieldValue(els.songCode);
-      if (!code) {
-        setStatus('コピーする曲コードがまだありません', 2000);
+  if (els.copyUrl) {
+    els.copyUrl.addEventListener('click', async () => {
+      // 共有するときだけ URL を組み立てる。アドレス欄は書き換えない
+      // （書き換えると、次に開いたとき同じ曲から始まってしまう）。
+      const song = player?.getCurrentSong?.();
+      if (!song) {
+        setStatus('再生すると、共有できる URL になります', 2500);
         return;
       }
+      const loc = globalThis.location;
+      const code = encodeSongCode(song.seed, settings);
+      const url = `${loc.origin}${loc.pathname}${loc.search}#${code}`;
       const clipboard = globalThis.navigator?.clipboard;
       if (clipboard?.writeText) {
         try {
-          await clipboard.writeText(code);
-          setStatus('コピーしました', 1500);
+          await clipboard.writeText(url);
+          setStatus('URL をコピーしました', 2000);
           return;
         } catch (err) {
           console.warn('クリップボードへの書き込みに失敗しました', err);
         }
       }
       // http:// や古いブラウザではクリップボード API が使えない。
-      // 選択状態にして、手でコピーしてもらう。
-      try {
-        els.songCode?.focus?.();
-        els.songCode?.select?.();
-      } catch (err) {
-        console.warn('曲コードを選択できませんでした', err);
+      // 共有 API があればそちらへ回す（スマートフォンではこちらのほうが自然）。
+      const share = globalThis.navigator?.share;
+      if (typeof share === 'function') {
+        try {
+          await globalThis.navigator.share({ title: '無限ヒーリングピアノ', url });
+          return;
+        } catch (err) {
+          if (err?.name !== 'AbortError') console.warn('共有できませんでした', err);
+          return;
+        }
       }
-      setStatus('コピーできませんでした。選択してあるので Ctrl+C を押してください', 4000);
-    });
-  }
-
-  if (els.loadCode) {
-    els.loadCode.addEventListener('click', () => {
-      const raw = getFieldValue(els.songCode);
-      if (!raw) {
-        setStatus('曲コードを入力してください', 2500);
-        return;
-      }
-      const decoded = decodeSongCode(raw);
-      if (!decoded.seed) {
-        setStatus('曲コードが正しくありません', 3000);
-        return;
-      }
-      // 作曲パラメータだけ取り込む。音量やリバーブは今の設定のまま。
-      settings = normalizeSettings({
-        ...settings,
-        ...pickComposeParams(decoded.settings),
-      });
-      storeSettings(settings);
-      panel?.setSettings(settings);
-      panel?.clearPending();
-      if (player) player.applySettings(resolveSettings(settings));
-      pendingSeed = null;
-      setStatus('曲コードを読み込みました', 2000);
-      startPlayback(decoded.seed);
+      setStatus('コピーできませんでした。アドレス欄の URL を控えてください', 4000);
     });
   }
 

@@ -80,18 +80,6 @@ function describeSong(song) {
   return [resolveInstrument(song?.instrument).label, key, `${tempo} BPM`, `${bars}小節`].join(' ・ ');
 }
 
-/** input でも div でも同じように書けるようにする */
-function setFieldValue(el, text) {
-  if (!el) return;
-  if ('value' in el) el.value = text;
-  else el.textContent = text;
-}
-
-function getFieldValue(el) {
-  if (!el) return '';
-  return String(('value' in el ? el.value : el.textContent) ?? '').trim();
-}
-
 async function fetchJson(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -221,17 +209,18 @@ function init() {
     playLabel: byId('play-label'),
     prev: byId('prev'),
     next: byId('next'),
-    songCode: byId('song-code'),
-    copyCode: byId('copy-code'),
-    loadCode: byId('load-code'),
+    copyUrl: byId('copy-url'),
     nowPlaying: byId('now-playing'),
     settingsPanel: byId('settings-panel'),
     status: byId('status'),
     scoreView: byId('score-view'),
     scoreToggle: byId('score-toggle'),
-    tools: Array.from(document.querySelectorAll('.tool[aria-controls^="panel-"]')),
     exportMusicXml: byId('export-musicxml'),
     exportMidi: byId('export-midi'),
+    dlgSettings: byId('dlg-settings'),
+    dlgExport: byId('dlg-export'),
+    toolSettings: byId('tool-settings'),
+    toolExport: byId('tool-export'),
   };
 
   // ---- 状態 -----------------------------------------------------------
@@ -255,11 +244,14 @@ function init() {
       clearTimeout(statusTimer);
       statusTimer = null;
     }
-    if (els.status) els.status.textContent = text;
+    if (els.status) {
+      els.status.textContent = text;
+      els.status.dataset.shown = text ? 'true' : 'false';
+    }
     if (clearAfterMs) {
       statusTimer = setTimeout(() => {
         statusTimer = null;
-        if (els.status) els.status.textContent = '';
+        if (els.status) els.status.dataset.shown = 'false';
       }, clearAfterMs);
     }
   }
@@ -614,21 +606,9 @@ function init() {
     if (!song) return;
     buildScore(song);
     updateExportButtons();
-    const code = encodeSongCode(song.seed, settings);
-    setFieldValue(els.songCode, code);
-
-    // リロードしても同じ曲に戻れるようにハッシュを合わせる。
-    // 履歴を汚さないよう replaceState を優先する（URL の見た目は同じ）。
-    try {
-      const { history, location } = globalThis;
-      if (history?.replaceState) {
-        history.replaceState(null, '', `${location.pathname}${location.search}#${code}`);
-      } else if (location) {
-        location.hash = code;
-      }
-    } catch (err) {
-      console.warn('URL ハッシュを更新できませんでした', err);
-    }
+    // !!! URL のハッシュは自動では書き換えない !!!
+    // 書き換えると、次に開いたとき同じ曲から始まってしまう。
+    // 共有したいときだけ、そのときの曲から URL を組み立てる（下の copy-url）。
 
     const label = describeSong(song);
     if (els.nowPlaying) els.nowPlaying.textContent = label;
@@ -638,28 +618,31 @@ function init() {
   }
 
   // ---- 設定パネル ------------------------------------------------------
+  //
+  // 設定は「次の曲から」ではなく、変えた瞬間に反映する。
+  // 曲の組み立て時にすでに使われている値（楽器・雰囲気・テンポ）は、
+  // いま鳴っている曲を止めて、同じシードのまま鳴らし直すことで反映する。
+  // 同じシードを使うのは、変えた1点だけが違う演奏を聴き比べられるようにするため。
   if (els.settingsPanel) {
     panel = createSettingsPanel(els.settingsPanel, {
       settings,
       onChange(key, value, next) {
         settings = normalizeSettings(next);
         storeSettings(settings);
-        // サウンド系だけは鳴っている最中でも即座に反映する。
-        // 作曲・演奏系は曲の組み立て時にすでに使われているので次の曲から。
-        if (DEF_BY_KEY.get(key)?.apply === 'live' && player) {
-          player.applySettings(resolveSettings(settings));
+        if (DEF_BY_KEY.get(key)?.apply === 'live') {
+          // 音量など、鳴らしたまま反映できるもの
+          if (player) player.applySettings(resolveSettings(settings));
+          return;
         }
-      },
-      onRebuild() {
-        // 同じシードのまま、新しい設定で作り直す
-        const seed = player?.getCurrentSong()?.seed ?? pendingSeed ?? undefined;
+        if (!player?.isPlaying()) return;
+        const seed = player.getCurrentSong()?.seed ?? undefined;
         startPlayback(seed);
       },
     });
   }
 
   // ---- ボタン ----------------------------------------------------------
-  const gatedButtons = [els.playToggle, els.prev, els.next, els.loadCode].filter(Boolean);
+  const gatedButtons = [els.playToggle, els.prev, els.next].filter(Boolean);
   for (const button of gatedButtons) button.disabled = true;
 
   setPlayLabel(false);
@@ -697,6 +680,31 @@ function init() {
     });
   }
 
+  // ---- モーダル --------------------------------------------------------
+  // <dialog> に任せる。焦点の閉じ込めも Esc も背景の暗転も、
+  // 自前で書くとどれかを落とすが、ブラウザの実装なら全部そろっている。
+  function openSheet(dialog) {
+    if (!dialog) return;
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
+
+  for (const [button, dialog] of [
+    [els.toolSettings, els.dlgSettings],
+    [els.toolExport, els.dlgExport],
+  ]) {
+    if (button && dialog) button.addEventListener('click', () => openSheet(dialog));
+  }
+
+  for (const dialog of [els.dlgSettings, els.dlgExport]) {
+    if (!dialog) continue;
+    dialog.querySelector('[data-close]')?.addEventListener('click', () => dialog.close());
+    // 背景（::backdrop）を押したら閉じる。dialog 自身が押された＝中身の外側。
+    dialog.addEventListener('click', (ev) => {
+      if (ev.target === dialog) dialog.close();
+    });
+  }
+
   // ---- ロック画面・ヘッドセットのボタン --------------------------------
   bindMediaKeys({
     play: () => { if (!player?.isPlaying()) { pendingSeed = null; startPlayback(); } },
@@ -710,74 +718,41 @@ function init() {
     next: () => { if (player?.isPlaying()) player.next(); },
   });
 
-  // ---- 道具の開閉 ----------------------------------------------------
-  // 開くのは一度に1つ。3つとも開くと、それだけで画面1つぶんになる。
-  function openPanel(button) {
-    for (const other of els.tools) {
-      const panel = byId(other.getAttribute('aria-controls'));
-      const open = other === button && other.getAttribute('aria-expanded') !== 'true';
-      other.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (panel) panel.hidden = !open;
-    }
-  }
-
-  for (const button of els.tools) {
-    button.addEventListener('click', () => openPanel(button));
-  }
-
-  if (els.copyCode) {
-    els.copyCode.addEventListener('click', async () => {
-      const code = getFieldValue(els.songCode);
-      if (!code) {
-        setStatus('コピーする曲コードがまだありません', 2000);
+  if (els.copyUrl) {
+    els.copyUrl.addEventListener('click', async () => {
+      // 共有するときだけ URL を組み立てる。アドレス欄は書き換えない
+      // （書き換えると、次に開いたとき同じ曲から始まってしまう）。
+      const song = player?.getCurrentSong?.();
+      if (!song) {
+        setStatus('再生すると、共有できる URL になります', 2500);
         return;
       }
+      const loc = globalThis.location;
+      const code = encodeSongCode(song.seed, settings);
+      const url = `${loc.origin}${loc.pathname}${loc.search}#${code}`;
       const clipboard = globalThis.navigator?.clipboard;
       if (clipboard?.writeText) {
         try {
-          await clipboard.writeText(code);
-          setStatus('コピーしました', 1500);
+          await clipboard.writeText(url);
+          setStatus('URL をコピーしました', 2000);
           return;
         } catch (err) {
           console.warn('クリップボードへの書き込みに失敗しました', err);
         }
       }
       // http:// や古いブラウザではクリップボード API が使えない。
-      // 選択状態にして、手でコピーしてもらう。
-      try {
-        els.songCode?.focus?.();
-        els.songCode?.select?.();
-      } catch (err) {
-        console.warn('曲コードを選択できませんでした', err);
+      // 共有 API があればそちらへ回す（スマートフォンではこちらのほうが自然）。
+      const share = globalThis.navigator?.share;
+      if (typeof share === 'function') {
+        try {
+          await globalThis.navigator.share({ title: '無限ヒーリングピアノ', url });
+          return;
+        } catch (err) {
+          if (err?.name !== 'AbortError') console.warn('共有できませんでした', err);
+          return;
+        }
       }
-      setStatus('コピーできませんでした。選択してあるので Ctrl+C を押してください', 4000);
-    });
-  }
-
-  if (els.loadCode) {
-    els.loadCode.addEventListener('click', () => {
-      const raw = getFieldValue(els.songCode);
-      if (!raw) {
-        setStatus('曲コードを入力してください', 2500);
-        return;
-      }
-      const decoded = decodeSongCode(raw);
-      if (!decoded.seed) {
-        setStatus('曲コードが正しくありません', 3000);
-        return;
-      }
-      // 作曲パラメータだけ取り込む。音量やリバーブは今の設定のまま。
-      settings = normalizeSettings({
-        ...settings,
-        ...pickComposeParams(decoded.settings),
-      });
-      storeSettings(settings);
-      panel?.setSettings(settings);
-      panel?.clearPending();
-      if (player) player.applySettings(resolveSettings(settings));
-      pendingSeed = null;
-      setStatus('曲コードを読み込みました', 2000);
-      startPlayback(decoded.seed);
+      setStatus('コピーできませんでした。アドレス欄の URL を控えてください', 4000);
     });
   }
 
