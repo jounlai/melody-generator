@@ -112,9 +112,32 @@ test('曲コードに楽器が載る', () => {
   assert.equal(decodeSongCode(koto).settings.instrument, 'koto');
 });
 
-test('曲コードは既定値のときシードだけになる', () => {
-  // URL のハッシュに載るので、短さがそのまま使い勝手になる。
-  assert.equal(encodeSongCode('k3f9zq', defaultSettings()), 'k3f9zq');
+test('シードだけの短い曲コードは、初版の既定値を指す', () => {
+  // URL のハッシュに載るので短さがそのまま使い勝手になる……のだが、
+  // 桁を省いてよいのは初版の既定値のときだけ。桁の無いコードは初版として
+  // 解かれるので、最新の生成器の曲で桁を省くと、自分のコードが別の曲を指す。
+  const v1 = { ...defaultSettings(), generatorVersion: '1' };
+  assert.equal(encodeSongCode('k3f9zq', v1), 'k3f9zq');
+
+  // 共有済みの短いコードは、いまも初版の既定値として解ける。
+  const back = decodeSongCode('k3f9zq');
+  assert.equal(back.seed, 'k3f9zq');
+  assert.equal(back.settings.generatorVersion, '1');
+  assert.equal(back.settings.mood, defaultSettings().mood);
+
+  // 最新の生成器の曲は必ず桁を書く。
+  const now = encodeSongCode('k3f9zq', defaultSettings());
+  assert.match(now, /^k3f9zq\.[0-9a-z]+$/, now);
+  assert.equal(decodeSongCode(now).settings.generatorVersion,
+    defaultSettings().generatorVersion);
+});
+
+test('桁の足りない曲コードは、生成器の版だけ初版に倒れる', () => {
+  // 版が増える前に共有されたコードには gv の桁が無い。既定値（＝最新）に
+  // 倒すと、共有済みの URL が全部べつの曲を鳴らすことになる。
+  for (const code of ['k3f9zq', 'k3f9zq.114', 's=abc&md=bright']) {
+    assert.equal(decodeSongCode(code).settings.generatorVersion, '1', code);
+  }
 });
 
 test('曲コードは選択肢を1文字ずつに詰める', () => {
@@ -158,10 +181,20 @@ test('全パラメータが ui 真偽値を持つ', () => {
   }
 });
 
-test('曲コードに載るのは画面に出す作曲パラメータだけ', () => {
+test('曲コードに載るのは画面に出す作曲パラメータと、生成器の版だけ', () => {
+  // 版は例外。ユーザーが選ぶ好みではなく「そのコードが指す曲を再現するための
+  // 目印」なので、画面には出さないが曲コードには載せる。
   for (const d of PARAM_DEFS) {
-    if (d.code) assert.equal(d.ui, true, `${d.key}: 画面に出さないのに曲コードに載っている`);
+    if (!d.code || d.key === 'generatorVersion') continue;
+    assert.equal(d.ui, true, `${d.key}: 画面に出さないのに曲コードに載っている`);
   }
+  const gv = PARAM_DEFS.find((d) => d.key === 'generatorVersion');
+  assert.ok(gv?.code, '生成器の版が曲コードに載っていない');
+  assert.equal(gv.ui, false, '生成器の版は画面に出さない');
+  // !!! 版は必ず末尾 !!! 途中に入れると、共有済みのコードの添字がずれる。
+  const coded = PARAM_DEFS.filter((d) => d.code && d.type === 'choice');
+  assert.equal(coded[coded.length - 1].key, 'generatorVersion',
+    '生成器の版が曲コードの末尾にない');
 });
 
 test('resolveSettings は雰囲気を長調比率へ展開する', () => {

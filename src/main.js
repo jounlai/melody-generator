@@ -51,9 +51,17 @@ const SCROLL_EASE = 0.25;
 /** 曲コードに載るキー（＝曲の内容を決めるパラメータ）だけを抜き出す */
 const CODE_KEYS = PARAM_DEFS.filter((d) => d.code).map((d) => d.key);
 
+// 生成器の版だけは、曲コードから読んでも設定に持ち越さない。
+//
+// 雰囲気やテンポは「この設定で聴きたい」という好みなので引き継いで正しいが、
+// 版は「そのコードが指す曲を再現するための目印」でしかない。持ち越すと、
+// 古いコードを一度開いただけで、そのあと作る曲まで全部が初版に固定される
+// （再生中に曲コードを URL へ書き戻すので、リロードのたびに再発する）。
+const CARRY_KEYS = CODE_KEYS.filter((k) => k !== 'generatorVersion');
+
 function pickComposeParams(source) {
   const out = {};
-  for (const key of CODE_KEYS) {
+  for (const key of CARRY_KEYS) {
     if (source && key in source) out[key] = source[key];
   }
   return out;
@@ -248,6 +256,8 @@ function init() {
   let settings = normalizeSettings(loadStoredSettings());
   /** 次の再生で使うシード（URL ハッシュや曲コード由来）。使ったら捨てる */
   let pendingSeed = null;
+  /** ハッシュの曲コードが指す生成器の版。pendingSeed と同じく、使ったら捨てる */
+  let pendingVersion = null;
   /** @type {object | null} */
   let data = null;
   /** @type {AudioContext | null} */
@@ -314,6 +324,8 @@ function init() {
       ...pickComposeParams(decoded.settings),
     });
     pendingSeed = decoded.seed;
+    // 版はこの1曲にだけ効かせる。次の曲からは既定（＝最新）に戻る。
+    pendingVersion = decoded.settings.generatorVersion;
   }
 
   // ---- 音まわりの生成は最初のクリックまで遅らせる -------------------------
@@ -325,7 +337,10 @@ function init() {
     audioCtx = new Ctor();
     engine = createEngine(audioCtx, resolveSettings(settings));
     // 設定は関数越しに渡す。player 側でキャッシュさせないため。
-    player = createPlayer(audioCtx, engine, data, () => resolveSettings(settings));
+    player = createPlayer(audioCtx, engine, data,
+      () => resolveSettings(pendingVersion === null
+        ? settings
+        : { ...settings, generatorVersion: pendingVersion }));
     player.onSongChange(handleSongChange);
     return player;
   }
@@ -695,6 +710,8 @@ function init() {
       const seed = pendingSeed;
       pendingSeed = null;
       startPlayback(seed);
+      // ハッシュの曲を1曲鳴らしたら、版は既定へ戻す（次の曲は最新の生成器で作る）
+      pendingVersion = null;
     });
   }
 
@@ -706,6 +723,7 @@ function init() {
       }
       // 停止中に押されたら、そのまま新しい曲で再生を始める
       pendingSeed = null;
+      pendingVersion = null;
       startPlayback();
     });
   }
@@ -789,7 +807,7 @@ function init() {
 
   // ---- ロック画面・ヘッドセットのボタン --------------------------------
   bindMediaKeys({
-    play: () => { if (!player?.isPlaying()) { pendingSeed = null; startPlayback(); } },
+    play: () => { if (!player?.isPlaying()) { pendingSeed = null; pendingVersion = null; startPlayback(); } },
     pause: () => {
       if (!player?.isPlaying()) return;
       player.stop();
