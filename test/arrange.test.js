@@ -64,7 +64,9 @@ test('arpeggioIndex: 上行して下行する波で構成音を巡回する', ()
   assert.equal(arpeggioIndex(3, 1), 0);
 });
 
-import { ACCOMP_PATTERNS, ACCOMP_PLAN, arrangeSong } from '../src/arrange.js';
+import {
+  ACCOMP_PATTERNS, ACCOMP_PLAN, BASS_PATTERNS, BASS_PLAN, arrangeSong,
+} from '../src/arrange.js';
 import { makeRng, seedFromString } from '../src/rng.js';
 
 // 32小節・4セクション・各8小節ぶんの最小の barInfo を作る。
@@ -141,10 +143,11 @@ test('arrangeSong: 伴奏が途切れず、最終小節だけ刻みを止めて�
   const song = fakeSong(32);
   const { accomp, bass, pad } = arrangeSong(song, fakeBarInfo(32), makeRng(seedFromString('x:arr')));
   assert.equal(pad.length, 32);
-  assert.equal(bass.length, 32);
+  // ベースは型によって1小節の音数が変わる（Task 5）。守るべきは「どの小節にも音がある」こと。
   for (let bar = 0; bar < 32; bar++) {
     const inBar = accomp.filter((n) => Math.floor(n.beat / 4) === bar);
     assert.ok(inBar.length > 0, `${bar}小節目の伴奏が無音`);
+    assert.ok(bass.some((n) => Math.floor(n.beat / 4) === bar), `${bar}小節目のベースが無音`);
   }
   const last = accomp.filter((n) => n.beat >= 31 * 4);
   assert.equal(last.length, 1, '最終小節が刻んでいる');
@@ -165,4 +168,42 @@ test('arrangeSong: 16小節でも64小節でも8区間になる', () => {
     const { patterns } = arrangeSong(fakeSong(bars), fakeBarInfo(bars), makeRng(seedFromString('x:arr')));
     assert.equal(patterns.accomp.length, 8, `${bars}小節で区間が ${patterns.accomp.length}`);
   }
+});
+
+test('ベース型: どの型も1小節からはみ出さない', () => {
+  for (const [name, p] of Object.entries(BASS_PATTERNS)) {
+    const out = expandBass(p.steps, 0, 36, 41, [0, 4, 7], p.vel, 55);
+    assert.ok(out.length > 0, `${name} が無音`);
+    for (const n of out) {
+      assert.ok(n.beat >= 0 && n.beat + n.dur <= 4 + 1e-9, `${name}: 小節をはみ出す`);
+      assert.ok(n.midi >= 28 && n.midi <= 55, `${name}: 音域外 ${n.midi}`);
+    }
+  }
+});
+
+test('ベース型: 計画の組はすべて実在する型を指す', () => {
+  for (const pairs of BASS_PLAN) {
+    for (const pair of pairs) {
+      for (const name of pair) assert.ok(BASS_PATTERNS[name], `未定義の型: ${name}`);
+    }
+  }
+});
+
+test('arrangeSong: ベースも8区間に分かれ、全小節に音がある', () => {
+  const { bass, patterns } = arrangeSong(fakeSong(32), fakeBarInfo(32), makeRng(seedFromString('x:arr')));
+  assert.equal(patterns.bass.length, 8);
+  for (let bar = 0; bar < 32; bar++) {
+    assert.ok(bass.some((n) => Math.floor(n.beat / 4) === bar), `${bar}小節目のベースが無音`);
+  }
+});
+
+test('arrangeSong: ベースの先取りが曲の外へはみ出さない', () => {
+  const { bass } = arrangeSong(fakeSong(32), fakeBarInfo(32), makeRng(seedFromString('x:arr')));
+  for (const n of bass) {
+    assert.ok(n.beat + n.dur <= 32 * 4 + 1e-9, `曲の終わりを越えている: ${n.beat}+${n.dur}`);
+  }
+  // 最終小節は終止。刻まず先取りもしない。
+  const last = bass.filter((n) => n.beat >= 31 * 4);
+  assert.equal(last.length, 1);
+  assert.equal(last[0].dur, 4);
 });

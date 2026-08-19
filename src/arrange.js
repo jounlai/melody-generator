@@ -164,7 +164,39 @@ export const ACCOMP_PLAN = [
   [['broken', 'brokenHalf'], ['arp8', 'brokenHalf']],                // A'' 着地
 ];
 
-// ベースは Task 5 で型にする。ここではまだ全音符のまま。
+// ---------------------------------------------------------------------------
+// ベース型
+//
+// 初版は全小節が全音符だった。和音は変わるのに刻みが変わらないので、
+// 土台がずっと止まって聴こえる。8ビートバラードの推進力は、ベースが
+// 次の小節の根音を半拍先に鳴らす「食い」から出る。
+// ---------------------------------------------------------------------------
+export const BASS_PATTERNS = {
+  whole: { vel: 0.5, steps: [{ beat: 0, kind: 'root', dur: 4 }] },
+  rootFifth: {
+    vel: 0.5,
+    steps: [{ beat: 0, kind: 'root', dur: 2 }, { beat: 2, kind: 'fifth', dur: 2 }],
+  },
+  rootOctave: {
+    vel: 0.5,
+    steps: [{ beat: 0, kind: 'root', dur: 2 }, { beat: 2, kind: 'octave', dur: 2 }],
+  },
+  drive: { vel: 0.45, steps: [0, 1, 2, 3].map((beat) => ({ beat, kind: 'root', dur: 1 })) },
+  // 拍3.5で次の小節の根音を先取りする。これが8ビートバラードの推進力の正体。
+  anticipate: {
+    vel: 0.5,
+    steps: [{ beat: 0, kind: 'root', dur: 3.5 }, { beat: 3.5, kind: 'next', dur: 0.5 }],
+  },
+};
+
+// セクションごとのベース型の候補。伴奏と同じく [前半, 後半]。
+export const BASS_PLAN = [
+  [['whole', 'whole'], ['whole', 'rootFifth']],                          // A
+  [['rootFifth', 'rootFifth'], ['whole', 'rootOctave']],                 // A'
+  [['rootOctave', 'anticipate'], ['rootFifth', 'drive'], ['anticipate', 'anticipate']], // B
+  [['whole', 'rootFifth'], ['whole', 'whole']],                          // A''
+];
+
 const BASS_VEL = 0.5;
 const PAD_VEL = 0.3;
 const FINAL_ACCOMP_VEL = 0.4;
@@ -186,15 +218,22 @@ export function arrangeSong(song, barInfo, rng) {
   const barsPerSection = bars / 4;
   const half = Math.max(1, Math.floor(barsPerSection / 2));
 
-  // 型の割り当て。乱数の消費はセクションごとに1回（4回）。
+  // 型の割り当て。乱数の消費はセクションごとに2回（伴奏の組・ベースの組で計8回）。
   const accompAt = [];
+  const bassAt = [];
   const patterns = { accomp: [], bass: [] };
   for (let s = 0; s < 4; s++) {
-    const [first, second] = pick(rng, ACCOMP_PLAN[s]);
+    const [aFirst, aSecond] = pick(rng, ACCOMP_PLAN[s]);
+    const [bFirst, bSecond] = pick(rng, BASS_PLAN[s]);
     const startBar = s * barsPerSection;
-    patterns.accomp.push({ startBar, pattern: first });
-    patterns.accomp.push({ startBar: startBar + half, pattern: second });
-    for (let i = 0; i < barsPerSection; i++) accompAt[startBar + i] = i < half ? first : second;
+    patterns.accomp.push({ startBar, pattern: aFirst });
+    patterns.accomp.push({ startBar: startBar + half, pattern: aSecond });
+    patterns.bass.push({ startBar, pattern: bFirst });
+    patterns.bass.push({ startBar: startBar + half, pattern: bSecond });
+    for (let i = 0; i < barsPerSection; i++) {
+      accompAt[startBar + i] = i < half ? aFirst : aSecond;
+      bassAt[startBar + i] = i < half ? bFirst : bSecond;
+    }
   }
 
   const accomp = [];
@@ -211,14 +250,21 @@ export function arrangeSong(song, barInfo, rng) {
       dur: isFinal ? FINAL_PAD_DUR : BEATS_PER_BAR,
       vel: PAD_VEL,
     });
-    bass.push({ midi: info.bassNote, beat: barBeat, dur: BEATS_PER_BAR, vel: BASS_VEL });
     if (isFinal) {
+      // 最終小節は終止。刻まず、先取りもしない。
+      bass.push({ midi: info.bassNote, beat: barBeat, dur: BEATS_PER_BAR, vel: BASS_VEL });
       // 刻みをやめて和音を置く。刻み続けたまま終わると、耳は「まだ続く」と判断する。
       accomp.push({
         midi: info.voicing[0], midis: info.voicing.slice(),
         beat: barBeat, dur: BEATS_PER_BAR, vel: FINAL_ACCOMP_VEL,
       });
       continue;
+    }
+    const bp = BASS_PATTERNS[bassAt[bar]];
+    const next = barInfo[bar + 1] ? barInfo[bar + 1].bassNote : null;
+    // 上限はその小節の伴奏の最低音。土台（ベース < 伴奏）が入れ替わると濁る。
+    for (const e of expandBass(bp.steps, barBeat, info.bassNote, next, info.pcs, bp.vel, info.voicing[0])) {
+      bass.push(e);
     }
     const p = ACCOMP_PATTERNS[accompAt[bar]];
     for (const e of expandAccomp(p.steps, info.voicing, barBeat, p.vel)) accomp.push(e);
