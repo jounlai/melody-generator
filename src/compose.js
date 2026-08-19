@@ -21,7 +21,9 @@ import {
   splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
-import { anticipateMelody, arpeggioIndex, arrangeSong, BEATS_PER_BAR } from './arrange.js';
+import {
+  anticipateMelody, arpeggioIndex, arrangeSong, sustainPhraseEnds, BEATS_PER_BAR,
+} from './arrange.js';
 
 // arpeggioIndex の定義は arrange.js にある。compose.js 自身はもう使わないが、
 // 楽譜や外から読む口はここに開けたままにしておく。
@@ -1690,6 +1692,8 @@ export function composeSong(seed, data, settings) {
   const arrRng = makeRng(seedFromString(`${String(seed)}:arr`));
   const anticipated = anticipateMelody(
     { bars, melody, climaxBeat, breathBar, protectedBars }, arrRng);
+  // 食いのあとに伸ばす。食いで次の音が前へ動いた分だけ、伸ばせる長さが縮む。
+  sustainPhraseEnds({ bars, melody, breathBar, sections });
 
   // ---- 声部配置 ----
   //

@@ -76,6 +76,7 @@ test('arpeggioIndex: 上行して下行する波で構成音を巡回する', ()
 
 import {
   ACCOMP_PATTERNS, ACCOMP_PLAN, BASS_PATTERNS, BASS_PLAN, arrangeSong, anticipateMelody,
+  sustainPhraseEnds,
 } from '../src/arrange.js';
 import { makeRng, seedFromString } from '../src/rng.js';
 
@@ -308,4 +309,55 @@ test('食い: protectedBars に挙げた小節（転調の鍵の変わり目な�
   const at = (midi) => song.melody.find((x) => x.midi === midi).beat;
   assert.equal(at(61), 8, '保護された小節を食っている');
   assert.equal(at(63), 15.5, '保護された小節が乱数を消費し、後続の抽選がずれた（乱数を消費してはいけない）');
+});
+
+test('タイ: フレーズ末の音が次の音の手前0.5拍まで伸びる', () => {
+  const song = {
+    bars: 8, melody: [
+      { midi: 60, beat: 0, dur: 0.5 },
+      { midi: 62, beat: 2, dur: 0.5 },   // スロット0の最後 = フレーズ末
+      { midi: 64, beat: 8, dur: 0.5 },
+    ],
+    breathBar: null,
+    sections: [{ startBar: 0, slots: [{ phraseEnd: true }, { phraseEnd: false }] }],
+  };
+  assert.equal(sustainPhraseEnds(song), 1);
+  const n = song.melody.find((x) => x.midi === 62);
+  assert.equal(n.dur, 4, '次の音(拍8)の手前0.5拍まで、上限4拍');
+});
+
+test('タイ: 息継ぎの小節へは伸ばさない', () => {
+  // 伸ばすと息継ぎが消える。歌い手が息を吸う一瞬を潰してはいけない。
+  const song = {
+    bars: 8, melody: [{ midi: 60, beat: 2, dur: 0.5 }, { midi: 64, beat: 12, dur: 0.5 }],
+    breathBar: 1,
+    sections: [{ startBar: 0, slots: [{ phraseEnd: true }] }],
+  };
+  sustainPhraseEnds(song);
+  assert.equal(song.melody[0].dur, 2, '息継ぎの小節(拍4〜)へ食い込んでいる');
+});
+
+test('タイ: 上限4拍を越えず、元より長い音を短くもしない', () => {
+  const song = {
+    bars: 8,
+    melody: [
+      { midi: 60, beat: 0, dur: 0.5 },
+      { midi: 61, beat: 4, dur: 5 },    // フレーズ末。既に上限より長い
+      { midi: 62, beat: 12, dur: 0.5 },
+    ],
+    breathBar: null,
+    sections: [{ startBar: 0, slots: [{ phraseEnd: true }, { phraseEnd: false }] }],
+  };
+  sustainPhraseEnds(song);
+  assert.equal(song.melody[1].dur, 5, '元より短くなっている');
+});
+
+test('タイ: 曲の最後の音は触らない（終止として既に伸ばしてある）', () => {
+  const song = {
+    bars: 8, melody: [{ midi: 60, beat: 0, dur: 0.5 }, { midi: 62, beat: 28, dur: 4 }],
+    breathBar: null,
+    sections: [{ startBar: 6, slots: [{ phraseEnd: true }] }],
+  };
+  assert.equal(sustainPhraseEnds(song), 0);
+  assert.equal(song.melody[1].dur, 4, '終止の音を触っている');
 });

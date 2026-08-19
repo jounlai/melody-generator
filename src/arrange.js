@@ -335,3 +335,59 @@ export function anticipateMelody(song, rng) {
   melody.sort((a, b) => a.beat - b.beat);
   return moved;
 }
+
+// ---------------------------------------------------------------------------
+// タイ（フレーズ末の伸ばし）
+//
+// 初版では旋律の音価の中央値が0.5拍で、2拍以上伸ばす音は 5.0% しか無かった。
+// フレーズの終わりが短く切れて次まで無音、という形が繰り返される。
+// 伸ばし切ってから息を吸う——それがフレーズを「歌」にする。
+//
+// 次の音の手前に必ず0.5拍を残すので、間は潰れない。
+// ---------------------------------------------------------------------------
+const PHRASE_GAP = 0.5;
+const MAX_HOLD = 4;
+
+export function sustainPhraseEnds(song) {
+  const melody = Array.isArray(song?.melody) ? song.melody : [];
+  if (melody.length === 0) return 0;
+  const bars = Number(song.bars);
+  const endBeat = bars * BEATS_PER_BAR;
+  const breathBeat = song.breathBar === null || song.breathBar === undefined
+    ? null
+    : song.breathBar * BEATS_PER_BAR;
+
+  // フレーズ末のスロットが占める拍の範囲。スロットは2小節ひとかたまり。
+  const ranges = [];
+  for (const s of song.sections ?? []) {
+    const slots = Array.isArray(s?.slots) ? s.slots : [];
+    for (let k = 0; k < slots.length; k++) {
+      if (!slots[k]?.phraseEnd) continue;
+      const from = (Number(s.startBar) + 2 * k) * BEATS_PER_BAR;
+      ranges.push([from, from + 2 * BEATS_PER_BAR]);
+    }
+  }
+
+  const sorted = melody.slice().sort((a, b) => a.beat - b.beat);
+  let held = 0;
+  for (const [from, to] of ranges) {
+    // その範囲で最後に鳴り出す音がフレーズ末の音。
+    let last = null;
+    for (const n of sorted) {
+      if (n.beat >= from && n.beat < to && (last === null || n.beat >= last.beat)) last = n;
+    }
+    if (last === null) continue;
+    // 曲の最後の音は、終止として既に最終小節の終わりまで伸ばしてある。触らない。
+    if (last.beat + last.dur >= endBeat) continue;
+    const next = sorted.find((n) => n.beat > last.beat);
+    let limit = next ? next.beat - PHRASE_GAP : endBeat;
+    // 息継ぎの小節へは伸ばさない。
+    if (breathBeat !== null && last.beat < breathBeat) limit = Math.min(limit, breathBeat);
+    const dur = Math.min(MAX_HOLD, limit - last.beat);
+    if (dur > last.dur) {
+      last.dur = dur;
+      held += 1;
+    }
+  }
+  return held;
+}
