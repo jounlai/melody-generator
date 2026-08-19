@@ -75,7 +75,7 @@ test('arpeggioIndex: 上行して下行する波で構成音を巡回する', ()
 });
 
 import {
-  ACCOMP_PATTERNS, ACCOMP_PLAN, BASS_PATTERNS, BASS_PLAN, arrangeSong,
+  ACCOMP_PATTERNS, ACCOMP_PLAN, BASS_PATTERNS, BASS_PLAN, arrangeSong, anticipateMelody,
 } from '../src/arrange.js';
 import { makeRng, seedFromString } from '../src/rng.js';
 
@@ -216,4 +216,78 @@ test('arrangeSong: ベースの先取りが曲の外へはみ出さない', () =
   const last = bass.filter((n) => n.beat >= 31 * 4);
   assert.equal(last.length, 1);
   assert.equal(last[0].dur, 4);
+});
+
+// 常に食う／絶対に食わない乱数。確率の抽選そのものを固定して、
+// 条件のほうだけを検査する。
+const ALWAYS = () => 0;
+const NEVER = () => 0.999999;
+
+function melodySong(melody, over = {}) {
+  return {
+    seed: 'x', bars: 8, totalBeats: 32, melody,
+    climaxBeat: -1, breathBar: null, sections: [], ...over,
+  };
+}
+
+test('食い: 小節の頭の音が半拍前へ出て、長さがその分伸びる', () => {
+  const song = melodySong([
+    { midi: 60, beat: 0, dur: 1 },
+    { midi: 62, beat: 8, dur: 1 },
+  ]);
+  const moved = anticipateMelody(song, ALWAYS);
+  assert.deepEqual(moved, [7.5]);
+  const n = song.melody.find((x) => x.midi === 62);
+  assert.equal(n.beat, 7.5);
+  assert.equal(n.dur, 1.5, '終わりの位置が動いている');
+  assert.equal(n.anticipated, true);
+});
+
+test('食い: 曲の1音目は食わない', () => {
+  // 拍0から始まる曲の頭を食うと、どこが1拍目か掴めないまま曲に入ることになる。
+  const song = melodySong([{ midi: 60, beat: 0, dur: 1 }, { midi: 62, beat: 8, dur: 1 }]);
+  anticipateMelody(song, ALWAYS);
+  assert.equal(song.melody.find((x) => x.midi === 60).beat, 0);
+});
+
+test('食い: 最終小節・クライマックス・息継ぎの直後は食わない', () => {
+  const base = [
+    { midi: 60, beat: 0, dur: 1 },
+    { midi: 62, beat: 8, dur: 1 },    // クライマックス
+    { midi: 64, beat: 16, dur: 1 },   // 息継ぎ(小節3)の直後の小節4
+    { midi: 65, beat: 28, dur: 1 },   // 最終小節(bars=8 → 小節7)
+  ];
+  const song = melodySong(base.map((n) => ({ ...n })), { climaxBeat: 8, breathBar: 3 });
+  anticipateMelody(song, ALWAYS);
+  const at = (midi) => song.melody.find((x) => x.midi === midi).beat;
+  assert.equal(at(62), 8, 'クライマックスを食っている');
+  assert.equal(at(64), 16, '息継ぎの直後を食っている');
+  assert.equal(at(65), 28, '最終小節を食っている');
+});
+
+test('食い: 直前の半拍が塞がっていたら食わない', () => {
+  // 前の音が拍7.75まで鳴っている＝食い込む場所が無い。
+  const song = melodySong([
+    { midi: 60, beat: 0, dur: 1 },
+    { midi: 61, beat: 7, dur: 0.75 },
+    { midi: 62, beat: 8, dur: 1 },
+  ]);
+  assert.deepEqual(anticipateMelody(song, ALWAYS), []);
+});
+
+test('食い: 抽選に外れたら動かさない', () => {
+  const song = melodySong([{ midi: 60, beat: 0, dur: 1 }, { midi: 62, beat: 8, dur: 1 }]);
+  assert.deepEqual(anticipateMelody(song, NEVER), []);
+  assert.equal(song.melody.find((x) => x.midi === 62).beat, 8);
+});
+
+test('食い: 書き換えたあとも melody は拍の昇順に並ぶ', () => {
+  const song = melodySong([
+    { midi: 60, beat: 0, dur: 1 },
+    { midi: 61, beat: 6, dur: 0.5 },
+    { midi: 62, beat: 8, dur: 1 },
+  ]);
+  anticipateMelody(song, ALWAYS);
+  const beats = song.melody.map((n) => n.beat);
+  assert.deepEqual(beats, beats.slice().sort((a, b) => a - b));
 });

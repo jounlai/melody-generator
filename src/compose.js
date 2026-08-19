@@ -21,7 +21,7 @@ import {
   splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
-import { arrangeSong } from './arrange.js';
+import { anticipateMelody, arpeggioIndex, arrangeSong, BEATS_PER_BAR } from './arrange.js';
 
 // arpeggioIndex の定義は arrange.js にある。compose.js 自身はもう使わないが、
 // 楽譜や外から読む口はここに開けたままにしておく。
@@ -1675,6 +1675,12 @@ export function composeSong(seed, data, settings) {
     tail.midi = near < highest ? near : below;
   }
 
+  // ---- 段3: 食い。旋律の音程には触れず、拍と音価だけを書き換える ----
+  // 声部配置より前に置くのが要。ここで小節をまたいだ音を、天井(melodyCeiling)と
+  // 濁りの判定(withoutRub)が見られるようになる。
+  const arrRng = makeRng(seedFromString(`${String(seed)}:arr`));
+  const anticipated = anticipateMelody({ bars, melody, climaxBeat, breathBar }, arrRng);
+
   // ---- 声部配置 ----
   //
   // ここを息継ぎ・クライマックス・最終音の書き換えより後ろに置くのが要。現行は
@@ -1736,7 +1742,6 @@ export function composeSong(seed, data, settings) {
 
   // ---- 段5: 編曲 ----
   // 乱数は作曲とは別の列。編曲を変えても旋律と和声は動かない。
-  const arrRng = makeRng(seedFromString(`${String(seed)}:arr`));
   const { accomp, bass, pad, patterns } = arrangeSong({ bars }, barInfo, arrRng);
 
   const chords = describeChords(barInfo);
@@ -1776,7 +1781,7 @@ export function composeSong(seed, data, settings) {
     arrangement: {
       accompPatterns: patterns.accomp,
       bassPatterns: patterns.bass,
-      anticipated: [],   // Task 7 で埋める
+      anticipated,
     },
   };
 }

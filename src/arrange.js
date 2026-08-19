@@ -275,3 +275,56 @@ export function arrangeSong(song, barInfo, rng) {
   }
   return { accomp, bass, pad, patterns };
 }
+
+// ---------------------------------------------------------------------------
+// 食い（アンティシペーション）
+//
+// 小節の頭の音を半拍前へ出し、小節線をまたいで鳴らす。実測すると初版では
+// 小節線をまたぐ音が 0.6%（85 / 14609）しか無かった。この時代のバラードの
+// 推進力は、ほぼこの一点から出ている。
+//
+// 前の小節の和音との衝突は明示的には検査しない。この関数は声部配置より
+// 前に走るので、パッドが唸る場合は withoutRub が削る。次の和音の和声音が
+// 前の和音の上で鳴ること自体は潰さない——それが食いの響きそのもの。
+// ---------------------------------------------------------------------------
+const ANTICIPATE_SHIFT = 0.5;
+// セクションごとの確率(%)。A / A' / B(サビ) / A''。
+// サビに集めることで、曲を通して単調にならず、いちばん押したいところで前へ出る。
+const ANTICIPATE_CHANCE = [15, 35, 70, 30];
+
+export function anticipateMelody(song, rng) {
+  const melody = Array.isArray(song?.melody) ? song.melody : [];
+  if (melody.length === 0) return [];
+  const bars = Number(song.bars);
+  const barsPerSection = bars / 4;
+  const climaxBeat = Number(song.climaxBeat);
+  const breathBar = song.breathBar === undefined ? null : song.breathBar;
+  const firstBeat = Math.min(...melody.map((n) => n.beat));
+  const moved = [];
+
+  // 拍の早い順に見る。同じ拍なら元の並び順のまま（乱数の消費順を固定するため）。
+  const order = melody.map((_, i) => i)
+    .sort((a, b) => melody[a].beat - melody[b].beat || a - b);
+
+  for (const i of order) {
+    const n = melody[i];
+    if (n.beat % BEATS_PER_BAR !== 0) continue;   // 小節の頭の音だけ
+    const bar = n.beat / BEATS_PER_BAR;
+    if (bar === 0) continue;                      // 前の小節が無い
+    if (n.beat === firstBeat) continue;           // 曲の1音目。拍の位置を示す役目がある
+    if (bar === bars - 1) continue;               // 最終小節。終止は動かさない
+    if (n.beat === climaxBeat) continue;          // 頂点。テヌートと二重に掛かる
+    if (breathBar !== null && bar === breathBar + 1) continue;  // 息継ぎの直後
+    const from = n.beat - ANTICIPATE_SHIFT;
+    // 食い込む半拍が空いているか。鳴っている区間で見る。
+    if (melody.some((m) => m !== n && m.beat < n.beat && m.beat + m.dur > from)) continue;
+    const section = Math.min(3, Math.floor(bar / barsPerSection));
+    if (!(rng() * 100 < ANTICIPATE_CHANCE[section])) continue;
+    n.beat = from;
+    n.dur += ANTICIPATE_SHIFT;   // 終わりの位置は動かさない
+    n.anticipated = true;
+    moved.push(from);
+  }
+  melody.sort((a, b) => a.beat - b.beat);
+  return moved;
+}
