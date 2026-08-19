@@ -286,6 +286,11 @@ export function arrangeSong(song, barInfo, rng) {
 // 前の小節の和音との衝突は明示的には検査しない。この関数は声部配置より
 // 前に走るので、パッドが唸る場合は withoutRub が削る。次の和音の和声音が
 // 前の和音の上で鳴ること自体は潰さない——それが食いの響きそのもの。
+//
+// song.protectedBars は呼び出し側（compose.js）が「この小節は食わせるな」と
+// 指定する小節番号の配列。転調の鍵が変わる小節や A'' の頭がそれに当たるが、
+// この関数はその理由を知らない——いつ鳴らすか（声部配置の層）は、なぜそこか
+// （曲の意味）を知らなくても成り立つ、という境界をここでも保つ。
 // ---------------------------------------------------------------------------
 const ANTICIPATE_SHIFT = 0.5;
 // セクションごとの確率(%)。A / A' / B(サビ) / A''。
@@ -299,6 +304,7 @@ export function anticipateMelody(song, rng) {
   const barsPerSection = bars / 4;
   const climaxBeat = Number(song.climaxBeat);
   const breathBar = song.breathBar === undefined ? null : song.breathBar;
+  const protectedBars = Array.isArray(song.protectedBars) ? song.protectedBars : [];
   const firstBeat = Math.min(...melody.map((n) => n.beat));
   const moved = [];
 
@@ -315,6 +321,7 @@ export function anticipateMelody(song, rng) {
     if (bar === bars - 1) continue;               // 最終小節。終止は動かさない
     if (n.beat === climaxBeat) continue;          // 頂点。テヌートと二重に掛かる
     if (breathBar !== null && bar === breathBar + 1) continue;  // 息継ぎの直後
+    if (protectedBars.includes(bar)) continue;    // 呼び出し側が食わせないと決めた小節
     const from = n.beat - ANTICIPATE_SHIFT;
     // 食い込む半拍が空いているか。鳴っている区間で見る。
     if (melody.some((m) => m !== n && m.beat < n.beat && m.beat + m.dur > from)) continue;

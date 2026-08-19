@@ -1678,8 +1678,18 @@ export function composeSong(seed, data, settings) {
   // ---- 段3: 食い。旋律の音程には触れず、拍と音価だけを書き換える ----
   // 声部配置より前に置くのが要。ここで小節をまたいだ音を、天井(melodyCeiling)と
   // 濁りの判定(withoutRub)が見られるようになる。
+  //
+  // 食わせない小節（転調しない曲では空）。
+  //  ・鍵が実際に変わる小節（つなぎ目があればそこ、無ければ A'' の頭）。
+  //    ここが弱起だと、いつ調が変わったか耳が掴めない。曲の1音目を食わない理由
+  //    （拍の位置を示す役目がある）と同じことが、鍵の変わり目にも言える。
+  //  ・A'' の頭。ここを食うと、新しい調の音が半拍前へ出て、まだ古い調の小節へ
+  //    食い込む。次の和音の音が前の小節に乗ること自体は食いの普通の響きだが、
+  //    これは鍵をまたぐ濁りで、それとは別物。
+  const protectedBars = modulates ? [keyChangeBar, modBar] : [];
   const arrRng = makeRng(seedFromString(`${String(seed)}:arr`));
-  const anticipated = anticipateMelody({ bars, melody, climaxBeat, breathBar }, arrRng);
+  const anticipated = anticipateMelody(
+    { bars, melody, climaxBeat, breathBar, protectedBars }, arrRng);
 
   // ---- 声部配置 ----
   //

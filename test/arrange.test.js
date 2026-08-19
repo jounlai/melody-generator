@@ -291,3 +291,21 @@ test('食い: 書き換えたあとも melody は拍の昇順に並ぶ', () => {
   const beats = song.melody.map((n) => n.beat);
   assert.deepEqual(beats, beats.slice().sort((a, b) => a - b));
 });
+
+test('食い: protectedBars に挙げた小節（転調の鍵の変わり目など）は食わない。しかも乱数を消費しない', () => {
+  // 乱数列を [0, 0.999999] に固定する。保護された小節の音が乱数を1回でも
+  // 消費していたら、そのあとの食える音が0.999999を引いてしまい、
+  // 「本来は当たるはずの抽選」が外れる——という形で消費の有無を検出する。
+  const seq = [0, 0.999999];
+  let i = 0;
+  const rng = () => seq[Math.min(i++, seq.length - 1)];
+  const song = melodySong([
+    { midi: 60, beat: 0, dur: 1 },
+    { midi: 61, beat: 8, dur: 1 },    // 保護された小節（小節2）
+    { midi: 63, beat: 16, dur: 1 },   // 食える音（小節4）
+  ], { protectedBars: [2] });
+  anticipateMelody(song, rng);
+  const at = (midi) => song.melody.find((x) => x.midi === midi).beat;
+  assert.equal(at(61), 8, '保護された小節を食っている');
+  assert.equal(at(63), 15.5, '保護された小節が乱数を消費し、後続の抽選がずれた（乱数を消費してはいけない）');
+});
