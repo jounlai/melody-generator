@@ -216,6 +216,111 @@
     background: var(--surface-2);
   }
 
+  /* ---- 試聴 ---- */
+
+  .listen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 1.4em 0;
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+  }
+
+  .listen-label {
+    flex: 1 1 100%;
+    color: var(--muted);
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+  }
+
+  button[data-demo] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+  }
+
+  button[data-demo]:hover { border-color: var(--line-strong); color: #fff; }
+
+  button[data-demo][data-playing="true"] {
+    color: var(--accent-ink);
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* 三角と二本線。絵文字は使わない（端末ごとに形が変わる） */
+  button[data-demo]::before {
+    content: "";
+    flex: none;
+    width: 9px;
+    height: 11px;
+    background: currentColor;
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+  }
+
+  button[data-demo][data-playing="true"]::before {
+    clip-path: polygon(0 0, 34% 0, 34% 100%, 0 100%, 0 0, 66% 0, 100% 0, 100% 100%, 66% 100%, 66% 0);
+  }
+
+  /* ---- 図 ---- */
+
+  figure {
+    margin: 2em 0;
+    padding: 18px 16px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+
+  figure svg { display: block; width: 100%; height: auto; }
+
+  figcaption {
+    margin-top: 12px;
+    color: var(--muted);
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 0.74rem;
+    line-height: 1.75;
+  }
+
+  .dia-line { fill: none; stroke: var(--line-strong); stroke-width: 1; }
+  .dia-accent { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .dia-fill { fill: var(--accent); }
+  .dia-box { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1; }
+  .dia-text { fill: var(--text); font-size: 11px; font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif; }
+  .dia-muted { fill: var(--muted); font-size: 10px; font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif; }
+
+  /* ---- 出典一覧 ---- */
+
+  .roster {
+    margin: 1.6em 0 0;
+    padding: 0;
+    list-style: none;
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 0.78rem;
+    line-height: 1.8;
+  }
+
+  .roster > li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .roster > li:last-child { border-bottom: 0; }
+  .roster .who { color: var(--text); }
+  .roster .died { color: var(--muted); font-size: 0.92em; }
+  .roster .what { color: var(--muted); }
+
   /* ---- 補足 ---- */
 
   .note {
@@ -311,6 +416,16 @@
 制約充足として定式化する。生成は決定論的であり、6文字のシードが曲を一意に定める。
 </p>
 
+<div class="listen">
+  <span class="listen-label">まず、この生成系が作る曲そのものを聴いてください（約60秒）</span>
+  <button type="button" data-demo="full-song" aria-pressed="false">通しで聴く</button>
+</div>
+
+<p class="note">
+本文の各所に試聴ボタンがある。鳴らしているのは説明用に用意した音ではなく、
+その節で述べている処理を実行した結果そのものである。
+</p>
+
 <nav class="toc" aria-label="目次">
   <ol>
     <li><a href="#s1">問題設定と設計方針</a></li>
@@ -325,6 +440,7 @@
     <li><a href="#s10">演奏設計</a></li>
     <li><a href="#s11">評価</a></li>
     <li><a href="#s12">限界</a></li>
+    <li><a href="#appendix">付録: コーパス収録曲</a></li>
   </ol>
 </nav>
 
@@ -354,6 +470,47 @@
       並べ方は楽節構造・起伏曲線・接続の滑らかさという制約で決まり、
       個々の音符には触れない。</li>
 </ol>
+
+<figure>
+<svg viewBox="0 0 620 250" role="img" aria-label="断片層と構造層の二層構造を示す図">
+  <rect class="dia-box" x="8" y="8" width="604" height="98" rx="8"/>
+  <text class="dia-text" x="24" y="32" font-weight="600">断片層（事前・一度きり）</text>
+  <text class="dia-muted" x="24" y="52">名旋律125曲 → 旋律型490種 → 候補300,000 → 層化抽出 → 断片999個</text>
+  <rect class="dia-box" x="24" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="76" y="82" text-anchor="middle">コーパス統計</text>
+  <path class="dia-accent" d="M134 78h26M154 73l6 5-6 5"/>
+  <rect class="dia-box" x="166" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="218" y="82" text-anchor="middle">評価関数 S(f)</text>
+  <path class="dia-accent" d="M276 78h26M296 73l6 5-6 5"/>
+  <rect class="dia-box" x="308" y="64" width="104" height="28" rx="5"/>
+  <text class="dia-muted" x="360" y="82" text-anchor="middle">層化抽出</text>
+  <path class="dia-accent" d="M418 78h26M438 73l6 5-6 5"/>
+  <rect class="dia-box" x="450" y="64" width="146" height="28" rx="5"/>
+  <text class="dia-muted" x="523" y="82" text-anchor="middle">断片カタログ＋和音適合</text>
+
+  <path class="dia-accent" d="M310 112v22M305 128l5 6 5-6"/>
+  <text class="dia-muted" x="322" y="128">事前計算した集合を渡す</text>
+
+  <rect class="dia-box" x="8" y="142" width="604" height="100" rx="8"/>
+  <text class="dia-text" x="24" y="166" font-weight="600">構造層（実時間・1曲 6.5 ミリ秒）</text>
+  <text class="dia-muted" x="24" y="186">楽節構造・起伏曲線・接続 → 断片を選んで並べる（音符には触れない）</text>
+  <rect class="dia-box" x="24" y="198" width="128" height="28" rx="5"/>
+  <text class="dia-muted" x="88" y="216" text-anchor="middle">形式 A A′ B A″</text>
+  <path class="dia-accent" d="M158 212h26M178 207l6 5-6 5"/>
+  <rect class="dia-box" x="190" y="198" width="128" height="28" rx="5"/>
+  <text class="dia-muted" x="254" y="216" text-anchor="middle">起伏と音高の窓</text>
+  <path class="dia-accent" d="M324 212h26M344 207l6 5-6 5"/>
+  <rect class="dia-box" x="356" y="198" width="112" height="28" rx="5"/>
+  <text class="dia-muted" x="412" y="216" text-anchor="middle">選択と配置</text>
+  <path class="dia-accent" d="M474 212h26M494 207l6 5-6 5"/>
+  <rect class="dia-box" x="506" y="198" width="90" height="28" rx="5"/>
+  <text class="dia-muted" x="551" y="216" text-anchor="middle">演奏設計</text>
+</svg>
+<figcaption>
+  図1　二層構造。上段は曲を作る前に一度だけ走り、下段だけが実時間で動く。
+  「美しさ」の判定は上段で終わっているので、下段は断片を選ぶ制約充足に専念できる。
+</figcaption>
+</figure>
 
 <p>
 この分離により、実時間側の計算は「制約を満たす断片の集合から一つ引く」に還元される。
@@ -396,6 +553,12 @@
 <span class="sym">s<sub>major</sub> = (0,2,4,5,7,9,11)</span>、
 <span class="sym">s<sub>minor</sub> = (0,2,3,5,7,8,10)</span>。
 </p>
+
+<div class="listen">
+  <span class="listen-label">同じ度数列（断片 m0100）を、写像だけ替えて鳴らす。音符は1つも書き換えていない</span>
+  <button type="button" data-demo="degrees-major" aria-pressed="false">長調で</button>
+  <button type="button" data-demo="degrees-minor" aria-pressed="false">短調で</button>
+</div>
 
 <p>
 この表現を採る理由は二つある。第一に、断片が調と旋法から独立になるため、
@@ -458,6 +621,32 @@
 </table>
 </div>
 
+<figure>
+<svg viewBox="0 0 620 210" role="img" aria-label="コーパス125曲の音程分布を示す棒グラフ">
+  <line class="dia-line" x1="52" y1="168" x2="596" y2="168"/>
+  <g class="dia-fill">
+    <rect x="72"  y="146" width="58" height="22" opacity="0.5"/>
+    <rect x="160" y="14"  width="58" height="154"/>
+    <rect x="248" y="127" width="58" height="41" opacity="0.75"/>
+    <rect x="336" y="163" width="58" height="5"  opacity="0.6"/>
+    <rect x="424" y="166" width="58" height="2"  opacity="0.6"/>
+    <rect x="512" y="167" width="58" height="1"  opacity="0.6"/>
+  </g>
+  <g class="dia-muted" text-anchor="middle">
+    <text x="101" y="184">同音</text><text x="189" y="184">2度</text><text x="277" y="184">3度</text>
+    <text x="365" y="184">4度</text><text x="453" y="184">5度</text><text x="541" y="184">6度〜</text>
+    <text x="101" y="141">8.5%</text><text x="189" y="9">69.1%</text><text x="277" y="122">18.3%</text>
+    <text x="365" y="158">2.6%</text><text x="453" y="161">1.2%</text><text x="541" y="162">0.4%</text>
+  </g>
+  <text class="dia-muted" x="8" y="24">比率</text>
+  <line class="dia-line" x1="52" y1="14" x2="52" y2="168"/>
+</svg>
+<figcaption>
+  図2　コーパス125曲・1643音程の分布。2度（順次進行）が約7割を占め、
+  4度以上の跳躍は合わせて4.2%しかない。評価関数の帯（式6）はこの形に由来する。
+</figcaption>
+</figure>
+
 <p>
 この分布から二つの量を定義する。順次進行率と、跳躍後の埋め戻し率である。
 </p>
@@ -507,6 +696,14 @@
 すなわち4度上行してから順次下降する形 —— を典型とする。
 コーパス125曲中189回出現し、多くの曲でクライマックスの瞬間を作っている。
 </p>
+
+<div class="listen">
+  <span class="listen-label">抽出した型を、相対度数のまま鳴らす（これが断片の材料になる）</span>
+  <button type="button" data-demo="formula-descend" aria-pressed="false">順次下降 (0,−1,−2,−3)</button>
+  <button type="button" data-demo="formula-turn" aria-pressed="false">刺繍 (0,1,0,−1,0)</button>
+  <button type="button" data-demo="soar" aria-pressed="false">舞い上がり (0,3,2,1)</button>
+  <button type="button" data-demo="sigh" aria-pressed="false">ため息 (0,4,3,2,1)</button>
+</div>
 
 <h2 id="s4"><span class="num">4</span>断片の生成と評価関数</h2>
 
@@ -639,6 +836,12 @@
     <tr><td>single-peak</td><td>断片内の最高音が一度だけ</td><td class="num">8</td><td class="num">737</td></tr>
   </tbody>
 </table>
+</div>
+
+<div class="listen">
+  <span class="listen-label">カタログ内でスコアが最も高い断片と最も低い断片。同じ和音・同じ調で鳴らす</span>
+  <button type="button" data-demo="score-high" aria-pressed="false">最高スコア</button>
+  <button type="button" data-demo="score-low" aria-pressed="false">最低スコア</button>
 </div>
 
 <p>
@@ -849,6 +1052,51 @@
 変形を用い、<span class="sym">B</span> だけが別の進行を引く。
 </p>
 
+<figure>
+<svg viewBox="0 0 620 178" role="img" aria-label="32小節の形式とスロットの役割を示す図">
+  <g class="dia-muted" text-anchor="middle">
+    <text x="85" y="20">A（提示）</text><text x="235" y="20">A′（高まり）</text>
+    <text x="385" y="20">B（頂点へ）</text><text x="535" y="20">A″（着地）</text>
+  </g>
+  <g>
+    <rect class="dia-box" x="12" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="162" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="312" y="28" width="146" height="34" rx="5"/>
+    <rect class="dia-box" x="462" y="28" width="146" height="34" rx="5"/>
+  </g>
+  <g class="dia-muted" text-anchor="middle">
+    <text x="85" y="49">進行 P₁</text><text x="235" y="49">P₁ の変形</text>
+    <text x="385" y="49">進行 P₂</text><text x="535" y="49">P₁ の変形＋終止</text>
+  </g>
+  <g class="dia-muted" text-anchor="middle" font-size="9">
+    <text x="48" y="82">a</text><text x="85" y="82">a′</text><text x="122" y="82">b</text><text x="158" y="82">a″</text>
+    <text x="198" y="82">a</text><text x="235" y="82">a′</text><text x="272" y="82">b</text><text x="308" y="82">a″</text>
+    <text x="348" y="82">a</text><text x="385" y="82">a′</text><text x="422" y="82">b</text><text x="458" y="82">a″</text>
+    <text x="498" y="82">a</text><text x="535" y="82">a′</text><text x="572" y="82">b</text><text x="608" y="82">a″</text>
+  </g>
+  <g class="dia-box">
+    <rect x="30" y="88" width="36" height="20" rx="3"/><rect x="67" y="88" width="36" height="20" rx="3"/>
+    <rect x="104" y="88" width="36" height="20" rx="3"/><rect x="141" y="88" width="36" height="20" rx="3"/>
+    <rect x="180" y="88" width="36" height="20" rx="3"/><rect x="217" y="88" width="36" height="20" rx="3"/>
+    <rect x="254" y="88" width="36" height="20" rx="3"/><rect x="291" y="88" width="36" height="20" rx="3"/>
+    <rect x="330" y="88" width="36" height="20" rx="3"/><rect x="367" y="88" width="36" height="20" rx="3"/>
+    <rect x="404" y="88" width="36" height="20" rx="3"/><rect x="441" y="88" width="36" height="20" rx="3"/>
+    <rect x="480" y="88" width="36" height="20" rx="3"/><rect x="517" y="88" width="36" height="20" rx="3"/>
+    <rect x="554" y="88" width="36" height="20" rx="3"/><rect x="591" y="88" width="19" height="20" rx="3"/>
+  </g>
+  <rect x="404" y="88" width="36" height="20" rx="3" fill="var(--accent)" opacity="0.85"/>
+  <text class="dia-muted" x="422" y="102" text-anchor="middle" fill="#0b0d10" font-size="9">頂点</text>
+  <text class="dia-muted" x="12" y="126">1スロット = 断片1個 = 2小節。a′ と a″ は a のゼクエンツ、b だけが対比。</text>
+  <path class="dia-accent" d="M48 116v-4M48 112h37M85 112v4" opacity="0.8"/>
+  <text class="dia-muted" x="52" y="146">T&#x2096;（平行移動）</text>
+  <text class="dia-muted" x="330" y="146">k* = L − 2 に頂点を置き、最後のスロットに着地を残す</text>
+</svg>
+<figcaption>
+  図3　32小節の形式。4セクション × 4スロット = 16断片。
+  A 系は同じ進行の変形で通し、B だけが別の進行へ「よそへ行く」。
+</figcaption>
+</figure>
+
 <p>
 セクション内部ではスロットに<em class="term">楽節役割</em>
 <span class="sym">(a, a′, b, a″)</span> を割り当てる。
@@ -878,6 +1126,12 @@
   </mrow>
 </math>
 <span class="tag">(11)</span>
+</div>
+
+<div class="listen">
+  <span class="listen-label">a を鳴らしたあと、a に続けて T₊₂(a) を鳴らす。リズムは同じまま2度上がる</span>
+  <button type="button" data-demo="sequence-a" aria-pressed="false">a だけ</button>
+  <button type="button" data-demo="sequence-both" aria-pressed="false">a → a′（+2）</button>
 </div>
 
 <p>
@@ -1003,6 +1257,42 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 </math>
 <span class="tag">(14)</span>
 </div>
+
+<figure>
+<svg viewBox="0 0 620 210" role="img" aria-label="スロットごとの音高の窓とクライマックスの位置を示す図">
+  <line class="dia-line" x1="46" y1="176" x2="600" y2="176"/>
+  <line class="dia-line" x1="46" y1="16" x2="46" y2="176"/>
+  <text class="dia-muted" x="6" y="20">度数</text>
+  <g class="dia-muted" text-anchor="end">
+    <text x="40" y="30">15</text><text x="40" y="66">12</text><text x="40" y="86">11</text><text x="40" y="106">10</text><text x="40" y="172">1</text>
+  </g>
+  <line class="dia-line" x1="46" y1="66" x2="600" y2="66" stroke-dasharray="3 4"/>
+  <line class="dia-line" x1="46" y1="86" x2="600" y2="86" stroke-dasharray="3 4"/>
+
+  <g fill="var(--line-strong)" opacity="0.45">
+    <rect x="60"  y="86" width="86" height="88"/><rect x="198" y="86" width="86" height="88"/>
+    <rect x="336" y="86" width="60" height="88"/><rect x="474" y="106" width="86" height="68"/>
+  </g>
+  <rect x="404" y="30" width="52" height="36" fill="var(--accent)" opacity="0.85"/>
+  <text x="430" y="52" text-anchor="middle" font-size="10" fill="#0b0d10"
+        font-family="system-ui, sans-serif">頂点</text>
+
+  <path class="dia-accent" d="M74 150 L108 146 L142 140 L212 138 L246 130 L280 124 L350 118 L384 104 L404 66"/>
+  <path class="dia-accent" d="M456 66 L490 128 L524 136 L558 146" opacity="0.75"/>
+
+  <g class="dia-muted" text-anchor="middle">
+    <text x="103" y="194">A</text><text x="241" y="194">A′</text><text x="396" y="194">B</text><text x="517" y="194">A″</text>
+  </g>
+  <text class="dia-muted" x="60" y="78">非クライマックスの天井 = 11</text>
+  <text class="dia-muted" x="468" y="60">下限 = 12</text>
+</svg>
+<figcaption>
+  図4　音高の窓。灰色の帯が各セクションで許される音域、折れ線が実際の旋律の高さの推移。
+  非クライマックスの天井（11）とクライマックスの下限（12）が交わらないので、
+  曲全体の最高音は頂点のスロットにしか現れない。
+  頂点を過ぎたスロットと A″ では、天井をさらに1つ下げて（10）着地させる。
+</figcaption>
+</figure>
 
 <p>
 <span class="sym">σ<sub>m</sub></span> は狭義単調増加なので、
@@ -1168,6 +1458,52 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 伴奏が旋律の上を横切ると主従が入れ替わり、旋律は埋もれる。
 </p>
 
+<figure>
+<svg viewBox="0 0 620 190" role="img" aria-label="伴奏が旋律を追い越す場合と天井の下へ収めた場合の比較図">
+  <text class="dia-muted" x="8" y="16">旧: 絶対的な音域だけで置く</text>
+  <text class="dia-muted" x="326" y="16">新: 旋律の最低音を天井にする</text>
+
+  <g>
+    <line class="dia-line" x1="12" y1="26" x2="300" y2="26"/>
+    <path class="dia-accent" d="M24 62 L60 50 L96 58 L132 44 L168 56 L204 48 L240 60 L276 52"/>
+    <g fill="var(--line-strong)" opacity="0.85">
+      <rect x="24" y="34" width="24" height="6" rx="2"/><rect x="60" y="70" width="24" height="6" rx="2"/>
+      <rect x="96" y="40" width="24" height="6" rx="2"/><rect x="132" y="74" width="24" height="6" rx="2"/>
+      <rect x="168" y="36" width="24" height="6" rx="2"/><rect x="204" y="72" width="24" height="6" rx="2"/>
+      <rect x="240" y="42" width="24" height="6" rx="2"/><rect x="276" y="70" width="24" height="6" rx="2"/>
+    </g>
+    <text class="dia-muted" x="12" y="104">伴奏が旋律の上下を横切る（実測 33.8%）</text>
+  </g>
+
+  <g>
+    <line class="dia-line" x1="330" y1="26" x2="612" y2="26"/>
+    <path class="dia-accent" d="M338 62 L374 50 L410 58 L446 44 L482 56 L518 48 L554 60 L590 52"/>
+    <line class="dia-line" x1="330" y1="70" x2="612" y2="70" stroke-dasharray="4 4"/>
+    <text class="dia-muted" x="334" y="84">天井 C(b) = 旋律の最低音 − 2</text>
+    <g fill="var(--line-strong)" opacity="0.85">
+      <rect x="338" y="90" width="24" height="6" rx="2"/><rect x="374" y="104" width="24" height="6" rx="2"/>
+      <rect x="410" y="94" width="24" height="6" rx="2"/><rect x="446" y="108" width="24" height="6" rx="2"/>
+      <rect x="482" y="92" width="24" height="6" rx="2"/><rect x="518" y="106" width="24" height="6" rx="2"/>
+      <rect x="554" y="96" width="24" height="6" rx="2"/><rect x="590" y="104" width="24" height="6" rx="2"/>
+    </g>
+    <text class="dia-muted" x="330" y="132">伴奏は必ず旋律の下（実測 0.0%）</text>
+  </g>
+
+  <text class="dia-muted" x="12" y="160">折れ線 = 旋律／横棒 = 伴奏の分散和音。縦位置がそのまま音高。</text>
+  <text class="dia-muted" x="12" y="178">動かしてよいのはオクターブ移動と上声の省略だけで、音名は変えない。</text>
+</svg>
+<figcaption>
+  図5　声部の配置。左は絶対的な音域だけで伴奏を置いた場合で、伴奏が旋律を覆う。
+  右は小節ごとに天井を定めた場合。旋律が主、伴奏が従という関係が保たれる。
+</figcaption>
+</figure>
+
+<div class="listen">
+  <span class="listen-label">同じ8小節を、伴奏の置き方だけ替えて鳴らす（旋律が聴こえるかを比べてください）</span>
+  <button type="button" data-demo="voicing-crossed" aria-pressed="false">旧: 伴奏が旋律の上</button>
+  <button type="button" data-demo="voicing-good" aria-pressed="false">新: 伴奏は旋律の下</button>
+</div>
+
 <p>
 小節 <span class="sym">b</span> における天井を旋律の最低音から定める。
 </p>
@@ -1289,6 +1625,37 @@ A→A′ の上昇が消える。どちらか一方を選ぶと必ずもう一�
 <span class="tag">(21)</span>
 </div>
 
+<figure>
+<svg viewBox="0 0 620 204" role="img" aria-label="強弱の三層とその積を示す図">
+  <g class="dia-muted">
+    <text x="8" y="20">L（セクション）</text>
+    <text x="8" y="72">W（フレーズ内）</text>
+    <text x="8" y="124">K（クライマックス）</text>
+    <text x="8" y="182">積 = 実際のベロシティ</text>
+  </g>
+  <line class="dia-line" x1="120" y1="30" x2="612" y2="30" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 34 L243 34 L243 28 L366 28 L366 18 L489 18 L489 32 L612 44"/>
+  <line class="dia-line" x1="120" y1="82" x2="612" y2="82" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 88 L151 76 L182 88 L212 76 L243 88 L274 76 L305 88 L335 76 L366 88 L397 76 L428 88 L458 76 L489 88 L520 76 L551 88 L581 76 L612 88"/>
+  <line class="dia-line" x1="120" y1="134" x2="612" y2="134" stroke-dasharray="2 4"/>
+  <path class="dia-accent" d="M120 134 L376 134 L416 124 L440 114 L452 148 L472 138 L612 134"/>
+  <path class="dia-accent" d="M120 180 L200 177 L280 173 L360 169 L416 162 L440 154 L455 190 L500 182 L560 186 L612 191" opacity="0.9"/>
+  <text class="dia-muted" x="440" y="110" text-anchor="middle">頂点 1.20</text>
+  <text class="dia-muted" x="466" y="150">直後 0.75</text>
+</svg>
+<figcaption>
+  図6　強弱の三層。セクションの基準レベル、フレーズごとの膨らみ、
+  クライマックスの山と直後の脱力を掛け合わせる。最下段が実際に鳴るベロシティで、
+  頂点の直後にいちばん深い谷が来る。この落差が「サビの後の脱力」を作る。
+</figcaption>
+</figure>
+
+<div class="listen">
+  <span class="listen-label">同じ12小節を、強弱設計を掛けた場合と平らにした場合で鳴らす</span>
+  <button type="button" data-demo="dynamics-on" aria-pressed="false">設計あり</button>
+  <button type="button" data-demo="dynamics-flat" aria-pressed="false">平らにした場合</button>
+</div>
+
 <ul class="spaced">
   <li><span class="sym">L</span>：セクションの基準レベル。
       <span class="sym">A: 0.85</span>、<span class="sym">A′: 0.95</span>、
@@ -1399,6 +1766,97 @@ RMS −26.1 dB と、使える音量を大きく余らせていた。据え置�
       語彙の拡張はカタログの再生成を伴う。</li>
 </ol>
 
+<h2 id="appendix"><span class="num">付録</span>コーパス収録曲</h2>
+
+<p>
+評価関数の係数と旋律型はすべてここから帰納した。公有の判定は
+「作曲者の没年が1955年以前、または伝承曲」で、収録曲のうち最も新しい没年は
+1952年（Béla Bartók は1945年、John Ireland は1962年のため不採用）。
+作曲者56人・99曲と、伝承曲26曲の計125曲。旋法は長調93曲・短調32曲。
+</p>
+
+<p>
+採譜したのは各曲の主旋律のうち、記憶に残る一節（8〜27拍、中央値13拍）である。
+和声も伴奏も採っていない。本系が学んでいるのは
+<em class="term">音程の並びとリズムの型だけ</em>で、和声語彙は機能和声から独立に定義した。
+</p>
+
+<div class="table-wrap">
+<table>
+  <caption>表8　地域の内訳</caption>
+  <thead><tr><th>地域</th><th class="num">曲数</th><th>地域</th><th class="num">曲数</th></tr></thead>
+  <tbody>
+    <tr><td>英米</td><td class="num">30</td><td>イタリア</td><td class="num">13</td></tr>
+    <tr><td>ドイツ・オーストリア</td><td class="num">20</td><td>スラヴ</td><td class="num">11</td></tr>
+    <tr><td>日本</td><td class="num">17</td><td>ラテンアメリカ</td><td class="num">10</td></tr>
+    <tr><td>フランス</td><td class="num">16</td><td>韓国</td><td class="num">4</td></tr>
+    <tr><td colspan="2"></td><td>その他</td><td class="num">4</td></tr>
+  </tbody>
+</table>
+</div>
+
+<ul class="roster">
+    <li><span class="who">Johann Pachelbel <span class="died">(没 1706)</span></span><br><span class="what">Canon in D</span></li>
+    <li><span class="who">Johann Sebastian Bach <span class="died">(没 1750)</span></span><br><span class="what">Air on the G String (BWV 1068) ／ Jesu, Joy of Man's Desiring (BWV 147)</span></li>
+    <li><span class="who">Christian Petzold <span class="died">(没 1762)</span></span><br><span class="what">Minuet in G (BWV Anh.114)</span></li>
+    <li><span class="who">Wolfgang Amadeus Mozart <span class="died">(没 1791)</span></span><br><span class="what">Ave Verum Corpus (K.618) ／ Piano Sonata K.545, 1st mvt ／ Lacrimosa (Requiem K.626)</span></li>
+    <li><span class="who">Jean-Paul-Égide Martini <span class="died">(没 1816)</span></span><br><span class="what">Plaisir d'amour</span></li>
+    <li><span class="who">Ludwig van Beethoven <span class="died">(没 1827)</span></span><br><span class="what">Für Elise (WoO 59) ／ Piano Sonata Op.27-2 "Moonlight", 1st mvt ／ Piano Sonata Op.13 "Pathétique", 2nd mvt ／ Ode to Joy (Symphony No.9, 4th mvt)</span></li>
+    <li><span class="who">Franz Schubert <span class="died">(没 1828)</span></span><br><span class="what">Ave Maria (D.839) ／ Ständchen "Serenade" (D.957-4) ／ Der Lindenbaum "菩提樹" (D.911-5) ／ Heidenröslein "野ばら" (D.257) ／ An die Musik "楽に寄す" (D.547)</span></li>
+    <li><span class="who">Thomas Haynes Bayly <span class="died">(没 1839)</span></span><br><span class="what">Long, Long Ago (久しき昔)</span></li>
+    <li><span class="who">Felix Mendelssohn <span class="died">(没 1847)</span></span><br><span class="what">Auf Flügeln des Gesanges (Op.34-2)</span></li>
+    <li><span class="who">Frédéric Chopin <span class="died">(没 1849)</span></span><br><span class="what">Nocturne Op.9 No.2 ／ Prelude Op.28 No.4 ／ Prelude Op.28 No.7 ／ Étude Op.10 No.3 "Tristesse" ／ Nocturne Op.55 No.1</span></li>
+    <li><span class="who">Henry Rowley Bishop <span class="died">(没 1855)</span></span><br><span class="what">Home! Sweet Home! (埴生の宿)</span></li>
+    <li><span class="who">Robert Schumann <span class="died">(没 1856)</span></span><br><span class="what">Träumerei (Kinderszenen Op.15-7) ／ Widmung "献呈" (Op.25-1)</span></li>
+    <li><span class="who">Stephen Foster <span class="died">(没 1864)</span></span><br><span class="what">Beautiful Dreamer ／ Jeanie with the Light Brown Hair ／ Hard Times Come Again No More ／ My Old Kentucky Home</span></li>
+    <li><span class="who">Sebastián Iradier <span class="died">(没 1865)</span></span><br><span class="what">La Paloma</span></li>
+    <li><span class="who">George R. Poulton <span class="died">(没 1867)</span></span><br><span class="what">Aura Lee</span></li>
+    <li><span class="who">Georges Bizet <span class="died">(没 1875)</span></span><br><span class="what">L'amour est un oiseau rebelle (Carmen)</span></li>
+    <li><span class="who">Narciso Serradell Sevilla <span class="died">(没 1877)</span></span><br><span class="what">La Golondrina</span></li>
+    <li><span class="who">Teodoro Cottrau <span class="died">(没 1879)</span></span><br><span class="what">Santa Lucia</span></li>
+    <li><span class="who">Jacques Offenbach <span class="died">(没 1880)</span></span><br><span class="what">Barcarolle (Les contes d'Hoffmann)</span></li>
+    <li><span class="who">Franz Liszt <span class="died">(没 1886)</span></span><br><span class="what">Liebestraum No.3 (S.541-3)</span></li>
+    <li><span class="who">César Franck <span class="died">(没 1890)</span></span><br><span class="what">Panis Angelicus "天使の糧"</span></li>
+    <li><span class="who">Pyotr Ilyich Tchaikovsky <span class="died">(没 1893)</span></span><br><span class="what">Barcarolle "June" (The Seasons Op.37a) ／ Swan Theme (Swan Lake Op.20) ／ None but the Lonely Heart "ただ憧れを知る者だけが" (Op.6-6)</span></li>
+    <li><span class="who">Juventino Rosas <span class="died">(没 1894)</span></span><br><span class="what">Sobre las Olas</span></li>
+    <li><span class="who">Johannes Brahms <span class="died">(没 1897)</span></span><br><span class="what">Wiegenlied "子守歌" (Op.49-4)</span></li>
+    <li><span class="who">Alicia Ann Scott <span class="died">(没 1900)</span></span><br><span class="what">Annie Laurie</span></li>
+    <li><span class="who">Giuseppe Verdi <span class="died">(没 1901)</span></span><br><span class="what">La donna è mobile (Rigoletto) ／ Libiamo ne' lieti calici (La traviata)</span></li>
+    <li><span class="who">滝廉太郎 (Rentarō Taki) <span class="died">(没 1903)</span></span><br><span class="what">荒城の月 ／ 花 ／ 箱根八里</span></li>
+    <li><span class="who">Antonín Dvořák <span class="died">(没 1904)</span></span><br><span class="what">Largo (Symphony No.9 "From the New World", 2nd mvt) ／ Songs My Mother Taught Me "我が母の教え給いし歌" (Op.55-4)</span></li>
+    <li><span class="who">Edvard Grieg <span class="died">(没 1907)</span></span><br><span class="what">Solveig's Song (Peer Gynt Op.55) ／ Morning Mood (Peer Gynt Op.46) ／ Jeg elsker Dig "君を愛す" (Op.5-3)</span></li>
+    <li><span class="who">James A. Bland <span class="died">(没 1911)</span></span><br><span class="what">Carry Me Back to Old Virginny</span></li>
+    <li><span class="who">Jules Massenet <span class="died">(没 1912)</span></span><br><span class="what">Méditation (Thaïs)</span></li>
+    <li><span class="who">Francesco Paolo Tosti <span class="died">(没 1916)</span></span><br><span class="what">Ideale ／ 'A vucchella</span></li>
+    <li><span class="who">Eduardo di Capua <span class="died">(没 1917)</span></span><br><span class="what">Maria, Marì!</span></li>
+    <li><span class="who">Claude Debussy <span class="died">(没 1918)</span></span><br><span class="what">Clair de lune (Suite bergamasque) ／ Rêverie (L.68) ／ Arabesque No.1 (L.66)</span></li>
+    <li><span class="who">Ángel Villoldo <span class="died">(没 1919)</span></span><br><span class="what">El Choclo</span></li>
+    <li><span class="who">Camille Saint-Saëns <span class="died">(没 1921)</span></span><br><span class="what">Le Cygne (Le Carnaval des animaux)</span></li>
+    <li><span class="who">Luigi Denza <span class="died">(没 1922)</span></span><br><span class="what">Funiculì, Funiculà</span></li>
+    <li><span class="who">Gabriel Fauré <span class="died">(没 1924)</span></span><br><span class="what">Sicilienne (Op.78) ／ Après un rêve (Op.7-1) ／ Pavane (Op.50)</span></li>
+    <li><span class="who">Giacomo Puccini <span class="died">(没 1924)</span></span><br><span class="what">O mio babbino caro (Gianni Schicchi) ／ Nessun dorma (Turandot)</span></li>
+    <li><span class="who">Erik Satie <span class="died">(没 1925)</span></span><br><span class="what">Gymnopédie No.1 ／ Gnossienne No.1 ／ Je te veux</span></li>
+    <li><span class="who">小山作之助 (Sakunosuke Koyama) <span class="died">(没 1927)</span></span><br><span class="what">夏は来ぬ</span></li>
+    <li><span class="who">中田章 (Akira Nakada) <span class="died">(没 1931)</span></span><br><span class="what">早春賦</span></li>
+    <li><span class="who">Edward Elgar <span class="died">(没 1934)</span></span><br><span class="what">Salut d'Amour (Op.12) ／ Nimrod (Enigma Variations Op.36)</span></li>
+    <li><span class="who">Carlos Gardel <span class="died">(没 1935)</span></span><br><span class="what">Por una Cabeza ／ El día que me quieras ／ Volver</span></li>
+    <li><span class="who">Maurice Ravel <span class="died">(没 1937)</span></span><br><span class="what">Pavane pour une infante défunte</span></li>
+    <li><span class="who">Ernesto De Curtis <span class="died">(没 1937)</span></span><br><span class="what">Torna a Surriento ／ Non ti scordar di me</span></li>
+    <li><span class="who">Vincenzo Di Chiara <span class="died">(没 1937)</span></span><br><span class="what">La Spagnola</span></li>
+    <li><span class="who">José María Lacalle García <span class="died">(没 1937)</span></span><br><span class="what">Amapola</span></li>
+    <li><span class="who">岡野貞一 (Teiichi Okano) <span class="died">(没 1941)</span></span><br><span class="what">ふるさと ／ 朧月夜 ／ 春の小川 ／ 紅葉</span></li>
+    <li><span class="who">Sergei Rachmaninoff <span class="died">(没 1943)</span></span><br><span class="what">Vocalise (Op.34-14)</span></li>
+    <li><span class="who">成田為三 (Tamezō Narita) <span class="died">(没 1945)</span></span><br><span class="what">浜辺の歌</span></li>
+    <li><span class="who">本居長世 (Nagayo Motoori) <span class="died">(没 1945)</span></span><br><span class="what">七つの子 ／ 赤い靴</span></li>
+    <li><span class="who">Salvatore Cardillo <span class="died">(没 1947)</span></span><br><span class="what">Core 'ngrato (Catarì)</span></li>
+    <li><span class="who">Gerardo Matos Rodríguez <span class="died">(没 1948)</span></span><br><span class="what">La Cumparsita</span></li>
+    <li><span class="who">Manuel M. Ponce <span class="died">(没 1948)</span></span><br><span class="what">Estrellita</span></li>
+    <li><span class="who">弘田龍太郎 (Ryūtarō Hirota) <span class="died">(没 1952)</span></span><br><span class="what">靴が鳴る ／ 浜千鳥</span></li>
+    <li><span class="who">伝承曲 <span class="died">(英米)</span></span><br><span class="what">Londonderry Air (Danny Boy) ／ Greensleeves ／ Amazing Grace (New Britain) ／ Auld Lang Syne (蛍の光) ／ Scarborough Fair ／ Shenandoah ／ Loch Lomond ／ Deep River ／ Swing Low, Sweet Chariot ／ Sometimes I Feel Like a Motherless Child ／ Nobody Knows the Trouble I've Seen ／ The Water Is Wide (O Waly Waly) ／ All Through the Night (Ar Hyd y Nos) ／ The Ash Grove (Llwyn Onn) ／ The Last Rose of Summer ／ My Bonnie Lies Over the Ocean ／ Red River Valley ／ Down in the Valley ／ Comin' Thro' the Rye (故郷の空)</span></li>
+    <li><span class="who">伝承曲 <span class="died">(韓国)</span></span><br><span class="what">아리랑 (Arirang) ／ 밀양아리랑 (Miryang Arirang) ／ 도라지타령 (Doraji Taryeong) ／ 새야 새야 (Saeya Saeya)</span></li>
+    <li><span class="who">伝承曲 <span class="died">(日本)</span></span><br><span class="what">さくらさくら ／ 越天楽今様 ／ 江戸子守唄</span></li>
+</ul>
+
 <div class="foot">
   <p>
     実装: <a href="https://github.com/jounlai/melody-generator">github.com/jounlai/melody-generator</a>
@@ -1413,5 +1871,6 @@ RMS −26.1 dB と、使える音量を大きく余らせていた。据え置�
 </div>
 
 </div>
+<script type="module" src="./algorithm.js"></script>
 </body>
 </html>
