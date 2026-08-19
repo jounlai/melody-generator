@@ -311,7 +311,9 @@
 
   #now-playing {
     margin: clamp(16px, 4vw, 24px) 0 0;
-    min-height: 1.7em;
+    /* 2行ぶん先に取る。停止中の案内は2行、再生中の曲名は1行なので、
+       ここが伸び縮みすると押した直後に再生ボタンが動く */
+    min-height: 3.2em;
     color: var(--muted);
     font-size: 0.875rem;
     letter-spacing: 0.06em;
@@ -624,41 +626,51 @@
 
   /* ---- フッタ ---- */
 
+  /*
+   * 添え物なので、場所を取らせない。リンクを一列、クレジットを一列の
+   * 二段に畳んである。行を増やすより、折り返させるほうが短く収まる。
+   */
   .site-foot {
-    margin-top: clamp(28px, 7vw, 48px);
-    padding-top: 18px;
+    margin-top: clamp(18px, 4vw, 28px);
+    padding-top: 10px;
     border-top: 1px solid var(--line);
     color: var(--muted);
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     text-align: center;
     letter-spacing: 0.04em;
   }
 
-  .foot-credit {
+  /* 区切り記号は置かない。折り返したときに行頭や行末へ取り残される */
+  .foot-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0 10px;
+    gap: 0 14px;
     margin: 0;
   }
 
-  /* 区切り記号は置かない。折り返したときに行頭や行末へ取り残される */
-  .foot-links { gap: 0 18px; }
+  .foot-credit {
+    gap: 0 14px;
+    line-height: 1.7;
+    opacity: 0.75;
+  }
 
   .site-foot a {
     display: inline-flex;
     align-items: center;
     /* 指で押せる高さを確保する。文字だけのリンクは狭すぎて外しやすい */
-    min-height: 38px;
+    min-height: 32px;
     color: var(--muted);
     text-decoration-color: var(--line-strong);
     text-underline-offset: 4px;
     transition: color 0.2s ease, text-decoration-color 0.2s ease;
   }
 
+  /* 解説はフッタで唯一の読み物なので、リンクの列の中で少しだけ立たせる */
+  .site-foot a.foot-lead { color: var(--text); text-decoration-color: var(--line-strong); }
+
   .site-foot a:hover { color: var(--text); text-decoration-color: var(--accent); }
-  .foot-built { margin: 6px 0 0; }
 
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
@@ -1856,16 +1868,16 @@
   </nav>
 
   <footer class="site-foot">
-    <p class="foot-credit">
-      <a id="link-algorithm" href="./algorithm.html" data-i18n="foot.algorithm">メロディー生成アルゴリズムの解説</a>
-    </p>
-    <p class="foot-credit" data-i18n="foot.created">Created by Jounlai Cho (cho@heuron.com)</p>
-    <p class="foot-credit foot-links">
+    <p class="foot-row">
+      <a id="link-algorithm" class="foot-lead" href="./algorithm.html" data-i18n="foot.algorithm">アルゴリズム解説</a>
       <a href="https://x.com/jounlai" target="_blank" rel="noopener noreferrer">X @jounlai</a>
       <a href="https://github.com/jounlai/melody-generator" target="_blank" rel="noopener noreferrer">GitHub</a>
       <a href="https://heuron.com" target="_blank" rel="noopener noreferrer" data-i18n="foot.company">ヒューロン株式会社</a>
     </p>
-    <p class="foot-built" data-i18n="foot.built">Built with Anthropic Claude (Claude Code)</p>
+    <p class="foot-row foot-credit">
+      <span data-i18n="foot.created">Created by Jounlai Cho (cho@heuron.com)</span>
+      <span data-i18n="foot.built">Built with Anthropic Claude (Claude Code)</span>
+    </p>
   </footer>
 
 </div>
@@ -6032,7 +6044,7 @@ const MESSAGES = {
     'status.noData': 'データを読み込めていないため再生できません',
     'status.exportFail': '書き出せませんでした: {message}',
 
-    'foot.algorithm': 'メロディー生成アルゴリズムの解説',
+    'foot.algorithm': 'アルゴリズム解説',
     'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
     'foot.company': 'ヒューロン株式会社',
     'foot.built': 'Built with Anthropic Claude (Claude Code)',
@@ -6117,7 +6129,7 @@ const MESSAGES = {
     'status.noData': 'Cannot play — the data has not loaded',
     'status.exportFail': 'Could not export: {message}',
 
-    'foot.algorithm': 'How the melodies are generated',
+    'foot.algorithm': 'How it works',
     'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
     'foot.company': 'Heuron Inc.',
     'foot.built': 'Built with Anthropic Claude (Claude Code)',

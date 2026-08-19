@@ -95,7 +95,7 @@ const MESSAGES = {
     'status.noData': 'データを読み込めていないため再生できません',
     'status.exportFail': '書き出せませんでした: {message}',
 
-    'foot.algorithm': 'メロディー生成アルゴリズムの解説',
+    'foot.algorithm': 'アルゴリズム解説',
     'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
     'foot.company': 'ヒューロン株式会社',
     'foot.built': 'Built with Anthropic Claude (Claude Code)',
@@ -180,7 +180,7 @@ const MESSAGES = {
     'status.noData': 'Cannot play — the data has not loaded',
     'status.exportFail': 'Could not export: {message}',
 
-    'foot.algorithm': 'How the melodies are generated',
+    'foot.algorithm': 'How it works',
     'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
     'foot.company': 'Heuron Inc.',
     'foot.built': 'Built with Anthropic Claude (Claude Code)',
