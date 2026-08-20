@@ -14,6 +14,12 @@ const melodies = JSON.parse(readFileSync(DATA_PATH, 'utf8'));
 const progressions = JSON.parse(readFileSync(PROG_PATH, 'utf8'));
 
 const COUNT = 999;
+
+// カタログには版1と版2が同居している。版1は v を持たず先に並び、版2は v: 2 を持つ。
+// 版1の並びは二度と動かさない（共有済みの曲コードがその添字を指しているため）。
+const V1 = melodies.filter((m) => m.v === undefined);
+const V2 = melodies.filter((m) => m.v === 2);
+const BY_VERSION = [['版1', V1, 'm'], ['版2', V2, 'w']];
 const MODES = ['major', 'minor'];
 const CONTOURS = ['arch', 'wave', 'descend', 'ascend', 'answer', 'question'];
 const REQUIRED_KEYS = [
@@ -42,16 +48,28 @@ const median = (values) => {
 // 度数差1 = 2度(順次進行, コーパス 0.696) / 2 = 3度(0.185) / 3以上 = 4度以上(0.055)。
 const metaOf = (m) => analyzeFragment(m.notes);
 
-test('断片はちょうど999件', () => {
+test('断片は版ごとにちょうど999件', () => {
   assert.ok(Array.isArray(melodies));
-  assert.equal(melodies.length, COUNT);
+  for (const [name, list] of BY_VERSION) {
+    assert.equal(list.length, COUNT, `${name}が${list.length}件`);
+  }
+  assert.equal(melodies.length, COUNT * BY_VERSION.length, '版の数と総数が合わない');
 });
 
-test('id は m0001〜m0999 で重複なし', () => {
-  const ids = melodies.map((m) => m.id);
-  assert.equal(new Set(ids).size, COUNT, 'id が重複している');
-  const expected = Array.from({ length: COUNT }, (_, i) => `m${String(i + 1).padStart(4, '0')}`);
-  assert.deepEqual(ids, expected);
+test('版1が先頭に並び、その順序が動いていない', () => {
+  // ここが崩れると、共有済みの曲コードが別の断片を指す。
+  for (let i = 0; i < COUNT; i += 1) {
+    assert.equal(melodies[i].v, undefined, `${i}番目に版2が混ざっている`);
+  }
+});
+
+test('id は版ごとに連番で、全体で重複しない', () => {
+  assert.equal(new Set(melodies.map((m) => m.id)).size, melodies.length, 'id が重複している');
+  for (const [name, list, prefix] of BY_VERSION) {
+    const expected = Array.from({ length: COUNT },
+      (_, i) => `${prefix}${String(i + 1).padStart(4, '0')}`);
+    assert.deepEqual(list.map((m) => m.id), expected, `${name}の id が連番でない`);
+  }
 });
 
 test('全件が必須フィールドをすべて持つ', () => {
@@ -207,14 +225,18 @@ test('long-ending タグは「最後の音が2.5拍以上」と完全に一致�
   }
 });
 
-test('long-ending の断片が350〜550件ある(多すぎても少なすぎても困る)', () => {
-  const n = withTag('long-ending').length;
-  assert.ok(n >= 350 && n <= 550, `long-ending が ${n} 件`);
+test('long-ending の断片が版ごとに350〜550件ある(多すぎても少なすぎても困る)', () => {
+  for (const [name, list] of BY_VERSION) {
+    const n = list.filter((m) => m.tags.includes('long-ending')).length;
+    assert.ok(n >= 350 && n <= 550, `${name}の long-ending が ${n} 件`);
+  }
 });
 
-test('long-ending を持たない断片が350件以上ある', () => {
-  const n = melodies.filter((m) => !m.tags.includes('long-ending')).length;
-  assert.ok(n >= 350, `終止感の無い断片が ${n} 件しかない`);
+test('long-ending を持たない断片が版ごとに350件以上ある', () => {
+  for (const [name, list] of BY_VERSION) {
+    const n = list.filter((m) => !m.tags.includes('long-ending')).length;
+    assert.ok(n >= 350, `${name}の終止感の無い断片が ${n} 件しかない`);
+  }
 });
 
 test('最後の音が1拍以下の「流す」断片が250件以上ある', () => {

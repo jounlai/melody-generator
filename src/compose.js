@@ -116,7 +116,11 @@ const MELODY_VEL_SCALE = 0.82;
 // （直後4拍の音の64%は頂点と同じスロットの中にあり、スロット単位の手当てでは届かない）。
 // 泣けるのは高い音そのものではなく、そのあとの静けさとの落差のほう。
 // 戻し切るのは、A'' を素の側で削ると伴奏に埋もれるから（A'' の減衰は演奏側が掛ける）。
-const RELEASE_FLOOR = 0.72;
+// 版2は音が疎（1小節3.40音。版1は4.58音）なので、1音の重みが大きい。
+// 同じ 0.72 だと「頂点の直後が直前より弱い曲」が 82.8% まで落ちる。
+// 落差そのものが感動の形なので、疎な語彙では脱力を深くしないと落差に聴こえない。
+// 実測: 0.72→82.8% / 0.66→93.2% / 0.60→98.7%（版1は 0.72 のままで 97.8%）
+const RELEASE_FLOOR_BY_VERSION = { 1: 0.72, 2: 0.60 };
 const RELEASE_BEATS = 8;
 
 // 進行データが空、あるいはそのモードの進行が1つも無いときの最終手段。
@@ -1727,10 +1731,12 @@ export function composeSong(seed, data, settings) {
   }
 
   // 頂点を越えたら、素材の側からも確実に下げる。上げて、頂点で解放し、下りてくる。
+  const releaseFloor = RELEASE_FLOOR_BY_VERSION[String(cfg.generatorVersion)]
+    ?? RELEASE_FLOOR_BY_VERSION[1];
   for (const n of melody) {
     const d = n.beat - climaxBeat;
     if (d <= 0 || d >= RELEASE_BEATS) continue;
-    n.vel *= RELEASE_FLOOR + (1 - RELEASE_FLOOR) * (d / RELEASE_BEATS);
+    n.vel *= releaseFloor + (1 - releaseFloor) * (d / RELEASE_BEATS);
   }
 
   // 曲の最後の1音だけは、断片の形より終止を優先する。
