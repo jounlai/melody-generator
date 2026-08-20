@@ -73,6 +73,20 @@ export const PARAM_DEFS = [
   { key: 'curveStrength', group: 'compose', label: 'param.curveStrength', type: 'range', min: 0, max: 100, step: 5, def: 100, unit: '%', apply: 'next', ui: false },
   { key: 'maxLeap', group: 'compose', label: 'param.maxLeap', type: 'range', min: 2, max: 6, step: 1, def: 2, unit: '度', apply: 'next', ui: false },
   { key: 'motifRecall', group: 'compose', label: 'param.motifRecall', type: 'toggle', def: true, apply: 'next', ui: false },
+
+  // ---- 生成器の版 ----
+  //
+  // 選び方や材料を変えると、同じ曲コードから別の曲が出る。共有された URL が
+  // 別の曲を鳴らすのは、この道具では壊れたのと同じことなので、版で分ける。
+  //
+  // 曲コードに桁が無い＝この項目がまだ無かった時代のコード＝初版。
+  // decodeSongCode がそこだけ既定値ではなく LEGACY_VERSION に倒す。
+  // 逆に新しい曲は必ず桁を書く（encodeSongCode の短縮形は初版のときだけ）。
+  //
+  // !!! code を持つので、この定義より後ろに code 付きの項目を足さないこと !!!
+  { key: 'generatorVersion', group: 'compose', label: 'param.generatorVersion', type: 'choice', apply: 'next', ui: false, code: 'gv',
+    def: '2',
+    options: [['1', 'opt.gv.1'], ['2', 'opt.gv.2']] },
 ];
 
 /** 画面に出すパラメータだけを返す。UI はこれだけを描く。 */
@@ -131,6 +145,9 @@ export function defaultSettings() {
  * !!! 位置で意味が決まるので、code を持つパラメータを途中に挿入しないこと !!!
  * 追加するときは必ず末尾に足す（古い URL の添字がずれる）。
  */
+// 桁が足りない曲コードが指す版。初版の曲コードには gv の桁が無い。
+export const LEGACY_VERSION = '1';
+
 const CODE_DEFS = () => PARAM_DEFS.filter((d) => d.code && d.type === 'choice');
 
 function optionIndex(def, value) {
@@ -147,7 +164,10 @@ export function encodeSongCode(seed, settings) {
   const defs = CODE_DEFS();
   const digits = defs.map((d) => optionIndex(d, s[d.key]));
   // 全部が既定値なら添字を書かない。いちばん短い形にする。
-  if (digits.every((v, i) => v === optionIndex(defs[i], defs[i].def))) return String(seed);
+  // ただし「既定値」の基準は**初版**の値。桁の無いコードは初版として解かれるので、
+  // 版2の曲で桁を省くと、自分の曲コードが別の曲を指すことになる。
+  const shortDef = (d) => (d.key === 'generatorVersion' ? LEGACY_VERSION : d.def);
+  if (digits.every((v, i) => v === optionIndex(defs[i], shortDef(defs[i])))) return String(seed);
   return `${seed}.${digits.map((v) => v.toString(36)).join('')}`;
 }
 
@@ -171,6 +191,8 @@ export function decodeSongCode(str) {
       if (d.code && map.has(d.code)) raw[d.key] = map.get(d.code);
     }
     const old = map.get('s');
+    // 旧形式のコードは、生成器が1つしか無かった時代のもの。
+    if (!('generatorVersion' in raw)) raw.generatorVersion = LEGACY_VERSION;
     return {
       seed: old && /^[0-9a-z]+$/i.test(old) ? old : null,
       settings: normalizeSettings(raw),
@@ -184,7 +206,12 @@ export function decodeSongCode(str) {
   const raw = {};
   CODE_DEFS().forEach((d, i) => {
     const ch = digits[i];
-    if (ch === undefined) return;
+    if (ch === undefined) {
+      // 桁が無い＝その項目がまだ無かった時代のコード。生成器の版だけは
+      // 既定値（＝最新）ではなく初版に倒す。共有済みの URL を守るため。
+      if (d.key === 'generatorVersion') raw[d.key] = LEGACY_VERSION;
+      return;
+    }
     const n = parseInt(ch, 36);
     if (Number.isFinite(n) && n >= 0 && n < d.options.length) raw[d.key] = d.options[n][0];
   });

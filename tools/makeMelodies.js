@@ -22,13 +22,30 @@ import { makeRng } from '../src/rng.js';
 import { CHORD_VOCAB, splitBars, fitsBar, hasSuspension, chordIndex } from '../src/theory.js';
 import { analyzeFragment } from './analyze.js';
 import { scoreFragment } from './score.js';
-import { generateCandidate, containsFormula, FORMULAS, CADENCES, RHYTHMS } from './generate.js';
+import {
+  generateCandidate, containsFormula, FORMULAS, CADENCES, RHYTHMS,
+  MOTIF_RHYTHMS_V2, FREE_RHYTHMS_V2, RHYTHMS_V2,
+} from './generate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_PATH = resolve(HERE, '../src/data/melodies.json');
 const PROG_PATH = resolve(HERE, '../src/data/progressions.json');
 
 const SEED = 20260816;
+
+// ---------------------------------------------------------------------------
+// 生成器の版
+//
+//   MELODIES_VERSION=2 node tools/makeMelodies.js
+//
+// 版2は 70〜80年代のリズム語彙で断片を作り、既存の版1の断片の**後ろに足す**。
+// 版1の断片は1件も書き換えない。共有済みの曲コードは版1として解かれるので、
+// 古い URL からは今までと同じ曲が出続ける。
+// ---------------------------------------------------------------------------
+const VERSION = process.env.MELODIES_VERSION === '2' ? 2 : 1;
+const TABLES = VERSION === 2
+  ? { motif: MOTIF_RHYTHMS_V2, free: FREE_RHYTHMS_V2 }
+  : null;
 // 候補数。緊張度1の断片と sigh、そして answer 輪郭は出現率が数%以下なので、
 // これだけ引かないと下限を満たすだけの母数が集まらない。
 const CANDIDATES = 300000;
@@ -129,7 +146,8 @@ function rhythmKeyOf(notes) {
   return notes.map((n) => `${n.beat}:${n.dur}`).join(',');
 }
 
-const RHYTHM_KEYS = [...new Set(RHYTHMS.map((r) => r.map((n) => `${n.b}:${n.d}`).join(',')))];
+const RHYTHM_KEYS = [...new Set((VERSION === 2 ? RHYTHMS_V2 : RHYTHMS)
+  .map((r) => r.map((n) => `${n.b}:${n.d}`).join(',')))];
 
 // 断片が乗れるスロット(SLOTS の添字)の一覧。候補1件につき一度だけ計算する。
 function slotsOf(fit) {
@@ -158,8 +176,9 @@ const GOALS = [
   { key: 'penta-major', min: 400, test: hasTag('penta-major') },
   { key: 'penta-minor', min: 250, test: hasTag('penta-minor') },
   // 動機として成立しているか。後半が前半の平行移動・完全反復であること。
-  { key: 'inner-sequence', min: 300, test: hasTag('inner-sequence') },
-  { key: 'inner-repeat', min: 120, test: hasTag('inner-repeat') },
+  // 内部反復はモチーフ型の数に比例する。版2のモチーフ型は12（版1は30）。
+  { key: 'inner-sequence', min: VERSION === 2 ? 120 : 300, test: hasTag('inner-sequence') },
+  { key: 'inner-repeat', min: VERSION === 2 ? 50 : 120, test: hasTag('inner-repeat') },
   { key: 'inner-motif', min: 50, test: hasTag('inner-motif') },
   // 「泣ける」の中核。跳躍上行のあとの順次下降。
   { key: 'sigh', min: 100, test: hasTag('sigh') },
@@ -172,11 +191,29 @@ const GOALS = [
     min: 120,
     test: (c) => c.meta.peakDeg >= 12 && c.meta.peakCount === 1 && c.meta.tags.includes('soar'),
   },
-  // ピアノ曲としての密度。薄いとアンビエントになって退屈になる。
-  // ただし詰めるだけだと音価が均一になるので、上げるのは中央値までにする。
-  { key: 'notes>=12', min: 120, test: (c) => c.notes.length >= 12 },
-  { key: 'notes>=10', min: 350, test: (c) => c.notes.length >= 10 },
-  { key: 'notes>=8', min: 560, test: (c) => c.notes.length >= 8 }, // 中央値8以上の担保
+  // 密度。版1は「薄いとアンビエントになる」ので詰める方向の目標だった。
+  // 版2は逆で、音で埋めないことが目標になる。この時代のバラードは
+  // 間と伸ばしで聴かせるので、1型あたり 5〜8 音しか書いていない。
+  // 版1の数字（10音以上を350件）は版2の語彙では原理的に満たせない。
+  ...(VERSION === 2
+    ? [
+      { key: 'notes>=8', min: 300, test: (c) => c.notes.length >= 8 },
+      // 伸ばしと食い。この2つが版2の存在理由なので、明示的に下限を置く。
+      { key: 'long-note', min: 400, test: (c) => c.notes.some((n) => n.dur >= 2) },
+      // 食い。候補の段階では 63.6% が持っているが、層化抽出を通すと 267 件
+      // （26.7%）まで落ちる。下限はその実測より少し下に置いて、痩せたときだけ
+      // 引っかかる形にする。数字を満たすために抽出そのものを歪めない。
+      {
+        key: 'anticipation',
+        min: 250,
+        test: (c) => c.notes.some((n) => n.beat < 4 && n.beat + n.dur > 4),
+      },
+    ]
+    : [
+      { key: 'notes>=12', min: 120, test: (c) => c.notes.length >= 12 },
+      { key: 'notes>=10', min: 350, test: (c) => c.notes.length >= 10 },
+      { key: 'notes>=8', min: 560, test: (c) => c.notes.length >= 8 }, // 中央値8以上の担保
+    ]),
   // クライマックス用。頂点の一回性(peakCount===1)まで満たす帯が薄いと、
   // 組み立て側が接続を諦めて曲が痩せる。
   { key: 'peak>=12', min: 50, test: (c) => c.meta.peakDeg >= 12 },
@@ -188,7 +225,8 @@ const GOALS = [
   // 両方の帯をカタログに用意する(上限は CAPS 側)。
   { key: 'long-ending', min: 450, test: hasTag('long-ending') },
   { key: 'not-long-ending', min: 350, test: (c) => !c.meta.tags.includes('long-ending') },
-  { key: 'flowing-end', min: 250, test: (c) => lastDurOf(c.notes) <= 1 },
+  // 流し型。版2は伸ばして終わる型が主体なので、実測(221)に合わせて下げる。
+  { key: 'flowing-end', min: VERSION === 2 ? 200 : 250, test: (c) => lastDurOf(c.notes) <= 1 },
   // 曲の閉じ方。最後の1音は主音を3拍以上伸ばして終わりたいので、
   // 「トニックに着地して、そこで本当に伸びる」断片を明示的に確保する。
   {
@@ -325,7 +363,7 @@ function collect() {
   const pool = { total: 0, tags: {}, contour: {}, tension: {}, notes: {} };
 
   for (let i = 0; i < CANDIDATES; i++) {
-    const { notes, source, formulas } = generateCandidate(rng);
+    const { notes, source, formulas } = generateCandidate(rng, TABLES);
 
     // 音が2個以下では旋律の体をなさない。
     if (notes.length < 3) {
@@ -501,7 +539,9 @@ function toRecord(cand, i) {
   const m = cand.meta;
   const { fit, sus } = chordMaps(cand.notes);
   return {
-    id: `m${String(i + 1).padStart(4, '0')}`,
+    // 版2は id の頭を分けて、混ざっても目で見分けられるようにする。
+    id: VERSION === 2 ? `w${String(i + 1).padStart(4, '0')}` : `m${String(i + 1).padStart(4, '0')}`,
+    ...(VERSION === 2 ? { v: 2 } : {}),
     notes: cand.notes,
     startDeg: m.startDeg,
     endDeg: m.endDeg,
@@ -657,11 +697,19 @@ if (chosen.length !== TARGET) {
   throw new Error(`${chosen.length} 件しか選べません(必要 ${TARGET} 件)`);
 }
 
-const unmet = GOALS.filter((g) => chosen.filter(g.test).length < g.min);
+const unmet = GOALS
+  .map((g) => ({ ...g, got: chosen.filter(g.test).length }))
+  .filter((g) => g.got < g.min);
 const lens = chosen.map((c) => c.notes.length);
-if (median(lens) < 8) unmet.push({ key: `音数中央値 ${median(lens)}`, min: 8 });
+// 音数の中央値。版1は「薄いとアンビエントになる」ので8を下限にした。
+// 版2は間と伸ばしで聴かせる語彙なので、詰まっていないことのほうが要件になる。
+const MIN_MEDIAN_NOTES = VERSION === 2 ? 6 : 8;
+if (median(lens) < MIN_MEDIAN_NOTES) {
+  unmet.push({ key: `音数中央値 ${median(lens)}`, min: MIN_MEDIAN_NOTES });
+}
 if (unmet.length > 0) {
-  const detail = unmet.map((g) => `${g.key}(必要${g.min})`).join(' / ');
+  const detail = unmet
+    .map((g) => `${g.key}(${g.got ?? '?'}/必要${g.min})`).join(' / ');
   throw new Error(`目標を満たせません: ${detail}`);
 }
 
@@ -670,7 +718,17 @@ chosen.sort((a, b) => a.index - b.index);
 const melodies = chosen.map(toRecord);
 
 mkdirSync(dirname(OUT_PATH), { recursive: true });
-writeFileSync(OUT_PATH, serialize(melodies), 'utf8');
+if (VERSION === 2) {
+  // 既存ファイルから版1（v を持たない断片）だけを残し、その後ろへ足す。
+  // 版1の並びと添字を動かさないことが、共有済みの曲コードを守る条件。
+  const existing = JSON.parse(readFileSync(OUT_PATH, 'utf8'));
+  const v1 = existing.filter((m) => m.v === undefined);
+  if (v1.length === 0) throw new Error('版1の断片が見つからない。先に版1を生成すること');
+  writeFileSync(OUT_PATH, serialize([...v1, ...melodies]), 'utf8');
+  console.log(`版1 ${v1.length}件はそのまま、版2 ${melodies.length}件を追加した`);
+} else {
+  writeFileSync(OUT_PATH, serialize(melodies), 'utf8');
+}
 
 report(melodies, chosen, {
   rejected: collected.rejected,

@@ -155,12 +155,103 @@ export const FREE_RHYTHMS = [
 
 export const RHYTHMS = [...MOTIF_RHYTHMS, ...FREE_RHYTHMS];
 
+// ---------------------------------------------------------------------------
+// リズム型カタログ（版2）— 70〜80年代の歌謡曲・ニューミュージック系バラード
+//
+// 版1の表は 1955 年以前の名旋律から取った統計の器で、次の3つが構造的に無い。
+//
+//   小節線をまたぐ音   0 / 51 型   ← 食いが1つも書けない
+//   1型あたりの音数    平均 8.4 音  ← 音で埋まっていて間が無い
+//   2拍以上の音        ごく少数     ← フレーズ末が伸びない
+//
+// この3つがこの時代のバラードの土台そのものなので、版2では表ごと書き直す。
+// 表は最初から手書きで、曲から採ったものではない（版1も同じ）。
+//
+//   食いを持つ型  半分。3.5拍から鳴り出して小節線をまたぎ、次の小節の頭へ着く。
+//                 splitBars がこの音を「次の小節の頭の音」として和声判定する。
+//   間            音数を 6〜8 に落とし、休符と白玉で息を置く。
+//   伸ばし        24型中22型が2拍以上の音を含む。フレーズ末が本当に伸びる。
+//
+// MOTIF_RHYTHMS_V2 は前半と後半の音数が等しい型（ゼクエンツ・反復を作る側が
+// 前半の形をそのまま後半へ写すため、音数が揃っている必要がある）。
+// 等分でない型は FREE_RHYTHMS_V2 として通しで書き下ろす側に回る。
+// ---------------------------------------------------------------------------
+
+// 前半と後半の音数が等しい型。内部反復とゼクエンツはここから作る。
+const MOTIF_V2_SOURCE = [
+  cell([[0, 1], [1, 0.5], [1.5, 1.5], [3.5, 1], [4.5, 0.5], [5, 1], [6, 1.5], [7.5, 0.5]]), // 食い
+  cell([[0.5, 0.5], [1, 1], [2, 1], [3.5, 1], [4.5, 0.5], [5, 1.5], [6.5, 0.5], [7, 1]]), // 弱起+食い
+  cell([[0, 2], [2, 1], [3.5, 1.5], [5, 1], [6, 1.5], [7.5, 0.5]]), // 白玉+食い
+  cell([[0, 1.5], [1.5, 0.5], [2, 2], [4, 1.5], [5.5, 0.5], [6, 2]]), // 付点+伸ばし
+  cell([[0, 1], [1, 0.5], [1.5, 1], [2.5, 1.5], [4, 1], [5, 0.5], [5.5, 1], [6.5, 1.5]]),
+  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3.5, 1], [4.5, 1.5], [6, 0.5], [6.5, 1], [7.5, 0.5]]), // 食い
+  cell([[0, 0.5], [0.5, 1], [1.5, 1], [2.5, 1.5], [4, 0.5], [4.5, 1], [5.5, 1], [6.5, 1.5]]),
+  cell([[0, 2], [2, 1.5], [3.5, 1], [4.5, 2], [6.5, 1], [7.5, 0.5]]), // 白玉+食い
+  cell([[0.5, 1], [1.5, 1], [2.5, 0.5], [3.5, 1.5], [5, 1], [6, 1], [7, 0.5], [7.5, 0.5]]), // 弱起+食い
+  cell([[0, 1], [1, 1], [2, 1.5], [3.5, 1.5], [5, 1], [6, 1], [7, 0.5], [7.5, 0.5]]), // 食い
+  cell([[0, 0.5], [0.5, 1.5], [2, 1], [3, 1], [4, 0.5], [4.5, 1.5], [6, 1], [7, 1]]),
+  cell([[0, 1.5], [1.5, 1], [2.5, 1], [3.5, 1], [4.5, 1.5], [6, 1], [7, 0.5], [7.5, 0.5]]), // 食い
+];
+
+// 通しで書き下ろす型。前半と後半で音数が違ってよい。
+const FREE_V2_SOURCE = [
+  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3.5, 1.5], [5, 0.5], [5.5, 0.5], [6, 2]]), // 食い
+  cell([[0.5, 1], [1.5, 0.5], [2, 1.5], [3.5, 1], [4.5, 1], [5.5, 0.5], [6, 2]]), // 弱起+食い
+  cell([[0, 1], [2, 0.5], [2.5, 0.5], [3.5, 1.5], [5, 1], [6, 2]]), // 間+食い
+  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3, 0.5], [3.5, 1], [4.5, 0.5], [5, 1], [6, 2]]), // 付点+食い
+  cell([[0, 0.5], [0.5, 0.5], [1, 1], [2, 1], [3.5, 1.5], [5, 0.5], [5.5, 0.5], [6, 2]]), // 食い
+  cell([[0, 1], [1, 0.5], [1.5, 0.5], [2, 1], [3.5, 1.5], [5, 3]]), // 食い+終止
+  cell([[0, 1.5], [1.5, 1], [2.5, 0.5], [3.5, 1], [4.5, 1], [5.5, 0.5], [6, 2]]), // 食い
+  cell([[0.75, 0.25], [1, 1], [2, 1], [3.5, 1.5], [5, 0.5], [5.5, 0.5], [6, 2]]), // 16分弱起+食い
+  cell([[0, 1], [1, 1], [2, 0.5], [2.5, 0.5], [3.5, 1], [4.5, 1.5], [6, 2]]), // 食い
+  cell([[0, 1], [1, 1], [2, 2], [4, 1], [5, 0.5], [5.5, 0.5], [6, 2]]),
+  cell([[0.5, 0.5], [1, 1.5], [2.5, 0.5], [3, 1], [4, 1], [5, 3]]), // 弱起+終止
+  cell([[0, 0.5], [0.5, 0.5], [1, 0.5], [1.5, 0.5], [2, 2], [4, 0.5], [4.5, 0.5], [5, 3]]), // 同音連打+終止
+  cell([[0, 2], [2, 0.5], [2.5, 0.5], [3, 1], [4, 2], [6, 1.5], [7.5, 0.5]]),
+  cell([[0.5, 1], [1.5, 0.5], [2, 2], [4, 0.5], [4.5, 1], [5.5, 0.5], [6, 2]]), // 弱起
+  cell([[0, 1], [1, 0.5], [1.5, 2.5], [4, 1], [5, 0.5], [5.5, 0.5], [6, 2]]),
+  cell([[0, 0.5], [0.5, 1.5], [2, 1], [3, 1], [4, 1], [5, 0.5], [5.5, 2.5]]), // 終止
+  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3, 1], [4, 0.5], [4.5, 0.5], [5, 3]]), // 終止
+  cell([[0, 2], [2, 1.5], [3.5, 0.5], [4, 1], [5, 0.5], [5.5, 2.5]]), // 終止
+  cell([[0.5, 0.5], [1, 1], [2, 1.5], [3.5, 0.5], [4, 2], [6, 1.5], [7.5, 0.5]]), // 弱起
+  cell([[0, 1], [1, 1.5], [2.5, 0.5], [3, 1], [4, 2], [6, 2]]),
+
+  // --- 流し型（最後が 0.5〜1拍）。フレーズ途中で止まらず次へ渡す ---
+  // 組み立て側はフレーズ途中のスロットに「閉じない断片」を要求する。
+  // ここが薄いと、2小節ごとに律儀に区切れて楽節が聴こえなくなる。
+  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3.5, 1.5], [5, 1], [6, 1], [7, 1]]), // 食い
+  cell([[0, 2], [2, 1], [3.5, 1.5], [5, 1.5], [6.5, 0.5], [7, 1]]), // 食い
+  cell([[0.5, 1], [1.5, 1], [2.5, 1], [4, 1.5], [5.5, 0.5], [6, 1], [7, 1]]), // 弱起+休符
+  cell([[0, 1], [1, 0.5], [1.5, 1.5], [3.5, 1], [4.5, 1.5], [6, 1], [7, 1]]), // 食い
+  cell([[0, 1.5], [1.5, 0.5], [2, 2], [4, 1], [5, 1.5], [6.5, 0.5], [7, 1]]),
+  cell([[0, 0.5], [0.5, 1.5], [2, 1], [3.5, 1.5], [5, 1], [6, 1.5], [7.5, 0.5]]), // 食い
+  cell([[0, 1], [1, 1.5], [2.5, 0.5], [3, 1], [4, 1.5], [5.5, 0.5], [6, 1], [7, 1]]),
+  cell([[0.5, 0.5], [1, 1], [2, 1.5], [3.5, 1], [4.5, 1.5], [6, 1], [7, 1]]), // 弱起+食い
+];
+
+// 前半と後半の音数が等しいかで振り分ける。手で分類すると必ずずれるので機械で。
+const barSplitAt = (r) => r.findIndex((n) => n.b >= BAR);
+const isEvenHalves = (r) => {
+  const i = barSplitAt(r);
+  return i > 0 && i === r.length - i;
+};
+
+export const MOTIF_RHYTHMS_V2 = MOTIF_V2_SOURCE.filter(isEvenHalves);
+export const FREE_RHYTHMS_V2 = [
+  ...FREE_V2_SOURCE,
+  // 等分でないものが混ざっていたら通し型へ回す（表を足したときの取りこぼし防止）
+  ...MOTIF_V2_SOURCE.filter((r) => !isEvenHalves(r)),
+];
+export const RHYTHMS_V2 = [...MOTIF_RHYTHMS_V2, ...FREE_RHYTHMS_V2];
+
 // リズム型の抽選。大衆的なメロディーは反復が多いので、
 // 後半が前半と同形の型を優先的に引く(6〜7割)。
 export const MOTIF_RATE = 0.65;
 
-export function pickRhythm(rng) {
-  return rng() < MOTIF_RATE ? pick(rng, MOTIF_RHYTHMS) : pick(rng, FREE_RHYTHMS);
+export function pickRhythm(rng, tables = null) {
+  const motif = tables?.motif ?? MOTIF_RHYTHMS;
+  const free = tables?.free ?? FREE_RHYTHMS;
+  return rng() < MOTIF_RATE ? pick(rng, motif) : pick(rng, free);
 }
 
 // ---------------------------------------------------------------------------
@@ -771,10 +862,10 @@ export function drawPath(rng) {
 }
 
 // --- 旋律型から2小節を組む ---
-function formulaCandidate(rng, kind, contour, wantSus) {
+function formulaCandidate(rng, kind, contour, wantSus, tables) {
   const mode = drawBar2Mode(rng);
   const paired = mode === 'sequence' || mode === 'repeat';
-  const rhythm = paired ? pick(rng, MOTIF_RHYTHMS) : pickRhythm(rng);
+  const rhythm = paired ? pick(rng, tables?.motif ?? MOTIF_RHYTHMS) : pickRhythm(rng, tables);
 
   const split = rhythm.findIndex((r) => r.b >= BAR);
   const n1 = split < 0 ? rhythm.length : split;
@@ -824,10 +915,10 @@ function formulaCandidate(rng, kind, contour, wantSus) {
 // 曲のクライマックスで使うので、6〜7割は高いところ(度数12以上)へ届かせる。
 export const SOAR_HIGH_RATE = 0.65;
 
-function soarCandidate(rng, kind, contour, wantSus) {
+function soarCandidate(rng, kind, contour, wantSus, tables) {
   // 完全反復は頂点が2回鳴るので使わない。終止形で閉じるか、別の型を続ける。
   const mode = rng() < 0.55 ? 'cadence' : 'other';
-  const rhythm = pickRhythm(rng);
+  const rhythm = pickRhythm(rng, tables);
   const split = rhythm.findIndex((r) => r.b >= BAR);
   const n1 = split < 0 ? rhythm.length : split;
   const n2 = rhythm.length - n1;
@@ -861,11 +952,11 @@ function soarCandidate(rng, kind, contour, wantSus) {
 }
 
 // --- 輪郭テンプレートから2小節を組む(多様性の担保) ---
-function contourCandidate(rng, kind, contour, wantSus) {
+function contourCandidate(rng, kind, contour, wantSus, tables) {
   const mode = drawPath(rng);
 
   if (mode === 'free') {
-    const rhythm = pickRhythm(rng);
+    const rhythm = pickRhythm(rng, tables);
     const degs = pentaize(buildDegrees(rng, contour, rhythm.length), kind);
     if (wantSus) {
       seedSuspension(degs, 0);
@@ -875,8 +966,10 @@ function contourCandidate(rng, kind, contour, wantSus) {
     return { rhythm, degs, used: [], path: `contour:${mode}` };
   }
 
-  const rhythm = pick(rng, MOTIF_RHYTHMS);
-  const half = rhythm.length / 2;
+  const rhythm = pick(rng, tables?.motif ?? MOTIF_RHYTHMS);
+  // 前半の音数は小節線で数える。版1の型は mirror で作ってあるので length/2 と
+  // 一致し、従来と同じ値になる。版2は等分でも mirror ではないので、こちらが正。
+  const half = rhythm.findIndex((r) => r.b >= BAR);
   const lo = randInt(rng, 2, 7);
   const span = randInt(rng, 2, 6);
   const raw = buildDegrees(rng, contour, half, { lo, span });
@@ -910,14 +1003,14 @@ function contourCandidate(rng, kind, contour, wantSus) {
   };
 }
 
-export function generateCandidate(rng) {
+export function generateCandidate(rng, tables = null) {
   const kind = drawPenta(rng);
   const route = drawRoute(rng);
   const contour = pick(rng, CONTOUR_NAMES);
   const wantSus = rng() < 0.35;
 
   const build = { soar: soarCandidate, formula: formulaCandidate, contour: contourCandidate }[route];
-  const built = build(rng, kind, contour, wantSus);
+  const built = build(rng, kind, contour, wantSus, tables);
   const useFormula = route !== 'contour';
 
   const degs = built.degs.map(clampDeg);

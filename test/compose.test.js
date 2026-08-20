@@ -864,6 +864,25 @@ test('withoutRub は旋律と半音でぶつかる持続音だけを落とす', 
   assert.deepEqual(withoutRub([59, 64, 67], [{ beat: 1, midi: 60, dur: 0.5 }], 0), [59, 64, 67]);
 });
 
+test('melodyCeiling: 前の小節から伸びてきて鳴っている音も天井に効く', () => {
+  // 拍3.5から2拍伸びる音は、1小節目(拍4〜8)でも鳴っている。
+  const melody = [{ midi: 60, beat: 3.5, dur: 2 }];
+  assert.equal(melodyCeiling(melody, 0), 58, '自分の小節で効いていない');
+  assert.equal(melodyCeiling(melody, 1), 58, 'またいで鳴っている音を取りこぼしている');
+  // 小節1の途中で鳴り終わる音は、小節2には効かない。
+  assert.equal(melodyCeiling(melody, 2), 72);
+});
+
+test('withoutRub: 食った音は短くても表扱いになる', () => {
+  // 拍3.5から1拍。強拍にも無く1.5拍にも満たないが、聴き手には次の小節の
+  // 頭の音として聴こえている。半音でぶつかるパッドは削る。
+  const melody = [{ midi: 60, beat: 3.5, dur: 1, anticipated: true }];
+  assert.deepEqual(withoutRub([59, 62, 65], melody, 0), [62, 65]);
+  // 食っていなければ従来どおり（表の条件に当たらないので削らない）。
+  const plain = [{ midi: 60, beat: 3.5, dur: 1 }];
+  assert.deepEqual(withoutRub([59, 62, 65], plain, 0), [59, 62, 65]);
+});
+
 test('実データ: 伴奏とパッドが旋律を追い越さない', () => {
   let notes = 0;
   let crossed = 0;
@@ -891,35 +910,20 @@ test('pad / bass / accomp が全小節ぶん鳴る', () => {
   for (const bars of ['16', '32', '64']) {
     const song = composeSong('layers', DATA, S({ songBars: bars }));
     assert.equal(song.pad.length, song.bars);
-    assert.equal(song.bass.length, song.bars);
-    // 伴奏は8分音符。1小節8音で左手を途切れさせない。
-    // ただし最終小節だけは刻みを止めて和音を置く（＝1イベント）。
-    assert.equal(song.accomp.length, (song.bars - 1) * 8 + 1);
+    // ベースは型によって1小節の音数が変わる（rootFifth/drive/anticipate は複数鳴る）。
+    // 変わらず守られるのは「どの小節の頭にも根音がちょうど1つ鳴ること」。
     for (let bar = 0; bar < song.bars; bar++) {
-      const isFinal = bar === song.bars - 1;
-      assert.equal(song.pad[bar].beat, bar * 4);
-      assert.equal(song.pad[bar].dur, isFinal ? 6 : 4);
-      // パッドは旋律の下へ収めるために上の音を落とすことがある。
-      // 和音として成り立つ最低限（2音）は必ず残る。
-      assert.ok(song.pad[bar].midis.length >= 2);
-      assert.equal(song.bass[bar].beat, bar * 4);
-      assert.equal(song.bass[bar].dur, 4);
+      const onDownbeat = song.bass.filter((n) => n.beat === bar * 4);
+      assert.equal(onDownbeat.length, 1, `${bar}小節目の頭にベースの根音が無い`);
+    }
+    // 最終小節は刻まず先取りもしないので、ベースはその1音だけ。
+    const lastBarBass = song.bass.filter((n) => Math.floor(n.beat / 4) === song.bars - 1);
+    assert.equal(lastBarBass.length, 1, '最終小節のベースが1音でない');
+    // 伴奏は小節ごとに型が変わるので、音数は一定ではない。
+    // 守るべきなのは「どの小節にも音がある」＝左手が止まらないこと。
+    for (let bar = 0; bar < song.bars; bar++) {
       const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
-      if (isFinal) {
-        assert.equal(inBar.length, 1, '最終小節で刻みが止まっていない');
-        assert.equal(inBar[0].beat, bar * 4);
-        assert.equal(inBar[0].dur, 4);
-        assert.ok(inBar[0].midis.length >= 3, '最終小節の伴奏が和音になっていない');
-        assert.ok(song.bass[bar].midi < Math.min(...inBar[0].midis));
-        continue;
-      }
-      assert.equal(inBar.length, 8);
-      assert.deepEqual(inBar.map((n) => n.beat - bar * 4), [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5]);
-      // ベースは伴奏より下、伴奏はパッドより下（同じ高さになることはある）。
-      // 層が入れ替わると土台が濁る。
-      // 同度は許す（左手が根音を重ねる形）。潜らせないことだけを見る。
-      assert.ok(song.bass[bar].midi <= Math.min(...inBar.map((n) => n.midi)));
-      assert.ok(Math.min(...inBar.map((n) => n.midi)) <= Math.min(...song.pad[bar].midis));
+      assert.ok(inBar.length > 0, `${bar}小節目の伴奏が無音`);
     }
   }
 });
@@ -974,7 +978,8 @@ test('I - V/3 - vi - I/5 のベースが4小節にわたって単調非増加', 
   for (const seed of SEEDS) {
     const song = composeSong(seed, data, S({ songBars: '16', majorRatio: 100 }));
     // A（level 0）は進行そのまま。ここが下降ベースの本体。
-    const line = song.bass.slice(0, 4).map((n) => n.midi);
+    // 小節の頭（根音）だけを見る。5度・オクターブ・先取りは根音の進行そのものではない。
+    const line = song.bass.filter((n) => n.beat % 4 === 0).slice(0, 4).map((n) => n.midi);
     for (let i = 1; i < line.length; i++) {
       assert.ok(line[i] <= line[i - 1], `${seed}: ベースが上がった ${line.join(' → ')}`);
     }
@@ -1016,7 +1021,8 @@ test('隣り合う小節のベースと伴奏が跳ね回らない（合成フ�
     for (const seed of SEEDS) {
       const song = composeSong(seed, DATA, S({ songBars: bars }));
       songs++;
-      after += meanStep(song.bass.map((n) => n.midi));
+      // 根音（小節の頭）だけを比べる。5度・オクターブ・先取りは根音の進行ではない。
+      after += meanStep(song.bass.filter((n) => n.beat % 4 === 0).map((n) => n.midi));
       before += meanStep(rawBassLine(song, barChordsOf));
       const lows = [];
       for (let bar = 0; bar < song.bars; bar++) {
@@ -1624,20 +1630,22 @@ test('arpeggioIndex: 上行して下行する波で構成音を巡回する', ()
   }
 });
 
-test('伴奏は1小節8音の8分音符で、単純な繰り返しになっていない', () => {
+test('伴奏はセクションごとに型が変わり、どの小節も途切れない', () => {
   const song = composeSong('accomp', DATA, S({ songBars: '32' }));
-  assert.equal(song.accomp.length, (song.bars - 1) * 8 + 1);
   const lastBarBeat = (song.bars - 1) * 4;
   for (const n of song.accomp) {
     if (n.beat >= lastBarBeat) continue; // 最終小節は保持和音なので別枠
-    assert.ok(n.dur > 0 && n.dur <= 1, `dur が長すぎる: ${n.dur}`);
+    assert.ok(n.dur > 0 && n.dur <= 4, `dur が長すぎる: ${n.dur}`);
     assert.ok(n.vel > 0 && n.vel <= 0.35, `伴奏が強すぎる: ${n.vel}`);
+    assert.ok(n.beat + n.dur <= Math.floor(n.beat / 4) * 4 + 4 + 1e-9, '小節をはみ出している');
   }
-  // 8音のうち、単純な i % voices の繰り返しとは違う並びになっていること。
+  // 初版はここが全曲・全小節で同じ8分アルペジオだった。
+  // Aメロを薄く、サビで厚く——その落差が曲の起伏そのものになる。
+  assert.equal(song.arrangement.accompPatterns.length, 8);
+  const kinds = new Set(song.arrangement.accompPatterns.map((p) => p.pattern));
+  assert.ok(kinds.size >= 4, `伴奏型が ${kinds.size} 種類しかない`);
   const bar0 = song.accomp.filter((n) => n.beat < 4);
-  const midis = bar0.map((n) => n.midi);
-  assert.equal(new Set(midis).size >= 3, true, '同じ音ばかり鳴っている');
-  assert.equal(midis[0], Math.min(...midis), '小節頭が最低音ではない');
+  assert.ok(bar0.length > 0, '1小節目の伴奏が無音');
 });
 
 // ---------------------------------------------------------------------------
@@ -2324,16 +2332,57 @@ test('実データ: popularity >= 4 の進行が7割以上使われる', realOpt
   assert.ok(share >= 0.7, `人気進行の採用率が低い: ${(100 * share).toFixed(1)}%`);
 });
 
-test('実データ: 伴奏が1小節8音で鳴り、最終小節だけ和音を保持する', realOpts, () => {
+test('実データ: 伴奏がどの小節も途切れず、最終小節だけ和音を保持する', realOpts, () => {
   for (const bars of ['16', '32', '64']) {
     const song = composeSong('accomp-real', REAL, S({ songBars: bars }));
-    assert.equal(song.accomp.length, (song.bars - 1) * 8 + 1);
     for (let bar = 0; bar < song.bars; bar++) {
       const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
-      const want = bar === song.bars - 1 ? 1 : 8;
-      assert.equal(inBar.length, want, `${bar}小節目の伴奏が ${inBar.length} 音`);
+      if (bar === song.bars - 1) {
+        assert.equal(inBar.length, 1, `最終小節の伴奏が ${inBar.length} イベント`);
+        assert.equal(inBar[0].dur, 4);
+      } else {
+        assert.ok(inBar.length > 0, `${bar}小節目の伴奏が無音`);
+      }
     }
   }
+});
+
+test('実データ: コードのpcsは伴奏とパッドを合わせた実音から作られる', realOpts, () => {
+  // song は barInfo を直接は返さないので、実際に鳴っている音（song.accomp と
+  // song.pad）から「その小節で本当に鳴っている音」を小節ごとに再構成し、
+  // song.chords[bar].pcs と突き合わせる。天井に収めるために伴奏の上の音を
+  // 省いた小節でも、パッドがその音を持っていれば和音としては鳴っているので、
+  // コードネームは両方を合わせて決めなければならない（describeChords のコメント参照）。
+  const pcOf = (m) => (((Math.round(m) % 12) + 12) % 12);
+  function soundingPcsInBar(song, bar) {
+    const from = bar * 4;
+    const to = from + 4;
+    const midis = [];
+    for (const n of song.accomp) {
+      if (n.beat < from || n.beat >= to) continue;
+      if (n.midis) midis.push(...n.midis); else midis.push(n.midi);
+    }
+    for (const n of song.pad) {
+      if (n.beat < from || n.beat >= to) continue;
+      if (n.midis) midis.push(...n.midis); else midis.push(n.midi);
+    }
+    return [...new Set(midis.map(pcOf))].sort((a, b) => a - b);
+  }
+  let checked = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS.slice(0, 5)) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      const byBar = new Map(song.chords.map((c) => [c.bar, c]));
+      for (let bar = 0; bar < song.bars; bar++) {
+        const expected = soundingPcsInBar(song, bar);
+        const actual = byBar.get(bar).pcs;
+        assert.deepEqual(actual, expected,
+          `${seed}/${bars} ${bar}小節目: pcs=${JSON.stringify(actual)} 実際に鳴っている音=${JSON.stringify(expected)}`);
+        checked++;
+      }
+    }
+  }
+  assert.ok(checked >= 100, `検査した小節が少ない: ${checked}`);
 });
 
 test('実データ: 無音の小節が無く、音域も外れない', realOpts, () => {
@@ -2727,7 +2776,8 @@ test('実データ: ベースと伴奏が隣の小節へ滑らかにつながる
     for (const seed of REAL_SEEDS.slice(0, 100)) {
       const song = composeSong(seed, REAL, S({ songBars: bars }));
       songs++;
-      after += meanStep(song.bass.map((n) => n.midi));
+      // 根音（小節の頭）だけを比べる。5度・オクターブ・先取りは根音の進行ではない。
+      after += meanStep(song.bass.filter((n) => n.beat % 4 === 0).map((n) => n.midi));
       before += meanStep(rawBassLine(song, chordsOf));
       const lows = [];
       for (let bar = 0; bar < song.bars; bar++) {
@@ -2743,7 +2793,8 @@ test('実データ: ベースと伴奏が隣の小節へ滑らかにつながる
       for (let bar = 0; bar < song.bars; bar++) {
         const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
         const lo = Math.min(...inBar.map((n) => n.midi));
-        assert.ok(song.bass[bar].midi <= lo, `${seed}/${bar}: ベースが伴奏より上`);
+        const bassNote = song.bass.find((n) => n.beat === bar * 4);
+        assert.ok(bassNote.midi <= lo, `${seed}/${bar}: ベースが伴奏より上`);
         assert.ok(lo <= Math.min(...song.pad[bar].midis), `${seed}/${bar}: 伴奏がパッドより上`);
       }
     }
@@ -2756,6 +2807,29 @@ test('実データ: ベースと伴奏が隣の小節へ滑らかにつながる
   // 正規化したままより確実に小さくなること。効き目がいちばん出るのは下降ベースの
   // 進行で、その効果は下の「下降ベースの進行で、ベースが実際に下降する」で測る。
   assert.ok(before / songs - after / songs >= 0.3, `正規化したままと大差ない: ${show}`);
+});
+
+test('実データ: ベースはどの音も(先取りを含め)その小節の伴奏の最低音を越えない', realOpts, () => {
+  // 5度・オクターブは Task 3 の expandBass が既に上限で収めていたが、次の小節の
+  // 根音を半拍だけ鳴らす先取り（next）だけは上限を見ずに突き抜けていた。
+  // 半拍とはいえ層（ベース < 伴奏）が入れ替わると土台が濁るので、ここは全音を検査する。
+  let checked = 0;
+  for (const bars of ['16', '32', '64']) {
+    for (const seed of REAL_SEEDS) {
+      const song = composeSong(seed, REAL, S({ songBars: bars }));
+      for (let bar = 0; bar < song.bars; bar++) {
+        const inBar = song.accomp.filter((n) => Math.floor(n.beat / 4) === bar);
+        if (inBar.length === 0) continue;
+        const lo = Math.min(...inBar.map((n) => n.midi));
+        for (const b of song.bass.filter((n) => Math.floor(n.beat / 4) === bar)) {
+          checked++;
+          assert.ok(b.midi <= lo,
+            `${seed}/${bars}/${bar}拍${b.beat - bar * 4}: ベースが伴奏より上 (${b.midi} > ${lo})`);
+        }
+      }
+    }
+  }
+  assert.ok(checked > 10000, `検査した音が少ない: ${checked}`);
 });
 
 // 「下降ベースの進行」＝隣り合う和音の根音が、音名として1〜4半音ずつ下がる形。
@@ -2787,7 +2861,8 @@ test('実データ: 下降ベースの進行で、ベースが実際に下降す
         if (!isDescendingBass(chords, song.mode, song.tonicMidi)) continue;
         checked++;
         const from = song.sections[si].startBar;
-        const line = song.bass.slice(from, from + 4).map((n) => n.midi);
+        // 根音（小節の頭）だけを見る。5度・オクターブ・先取りは根音の進行ではない。
+        const line = song.bass.filter((n) => n.beat % 4 === 0).slice(from, from + 4).map((n) => n.midi);
         if (nonIncreasing(line)) descending++;
         else if (samples.length < 5) samples.push(`${seed}/${bars} ${chords.join('-')}: ${line.join(' → ')}`);
         // 修正前（各和音を独立に正規化した並び）は、ここで跳ね上がっていたはず。
@@ -2819,7 +2894,7 @@ const pcOf = (midi) => ((midi % 12) + 12) % 12;
 
 // その小節で実際に鳴っている音名（ベース・伴奏・パッド）。
 function soundingPitchClasses(song, bar) {
-  const out = new Set([pcOf(song.bass[bar].midi)]);
+  const out = new Set([pcOf(song.bass.find((n) => n.beat === bar * 4).midi)]);
   for (const m of song.pad[bar].midis) out.add(pcOf(m));
   for (const n of song.accomp) {
     if (Math.floor(n.beat / 4) !== bar) continue;
@@ -2945,7 +3020,7 @@ test('実データ: 転調した曲は、新しい調で閉じる', realOpts, ()
       const tonicChord = song.mode === 'major' ? 'I' : 'i';
       assertChordOnly(song, lastBar, tonicChord, m.toTonicMidi,
         `${label}: 最終小節が新しい調の主和音でない`);
-      assert.equal(pcOf(song.bass[lastBar].midi - m.toTonicMidi), 0,
+      assert.equal(pcOf(song.bass.find((n) => n.beat === lastBar * 4).midi - m.toTonicMidi), 0,
         `${label}: 最終小節のベースが新しい主音でない`);
       // 直前の小節は陰りのサブドミナントマイナー（アーメン終止）。これも新しい調で。
       const sub = song.mode === 'major' ? 'iv' : 'VI';
@@ -2989,10 +3064,11 @@ test('実データ: 転調のつなぎ目が、新しい調のドミナントに
       // その小節は既に新しい調で鳴っていて、根音は新しい主音の5度上（＝新調のドミナント）。
       assertChordOnly(song, m.pivotBar, m.pivotChord, m.toTonicMidi,
         `${label}: つなぎ目が新しい調のドミナントで鳴っていない`);
-      assert.equal(pcOf(song.bass[m.pivotBar].midi - m.toTonicMidi), 7,
+      const pivotBass = song.bass.find((n) => n.beat === m.pivotBar * 4);
+      assert.equal(pcOf(pivotBass.midi - m.toTonicMidi), 7,
         `${label}: つなぎ目のベースが新しい調の属音でない`);
       // 元の調のドミナントではないこと（＝ただの V ではなく、上がった先の V）。
-      assert.notEqual(pcOf(song.bass[m.pivotBar].midi - m.fromTonicMidi), 7,
+      assert.notEqual(pcOf(pivotBass.midi - m.fromTonicMidi), 7,
         `${label}: 元の調のドミナントのまま`);
       // その次の小節（A'' の頭）は、A'' の進行の1小節目を**新しい調で**鳴らす。
       // 進行はセクションごとに違うので必ず主和音とは限らないが、
@@ -3001,7 +3077,8 @@ test('実データ: 転調のつなぎ目が、新しい調のドミナントに
       const headChord = prog.bars[0].chord;
       assertChordOnly(song, m.atBar, headChord, m.toTonicMidi,
         `${label}: A'' の頭が新しい調で鳴っていない (${headChord})`);
-      if (pcOf(song.bass[m.atBar].midi - m.toTonicMidi) === 0) toTonicChord++;
+      const atBarBass = song.bass.find((n) => n.beat === m.atBar * 4);
+      if (pcOf(atBarBass.midi - m.toTonicMidi) === 0) toTonicChord++;
     }
   }
   assert.ok(withPivotBar >= 100, `つなぎ目を検査した曲が少ない: ${withPivotBar}`);

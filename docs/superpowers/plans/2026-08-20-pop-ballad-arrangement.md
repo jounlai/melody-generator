@@ -70,7 +70,6 @@ node --test test/compose.test.js                                  # compose 全�
 - [ ] **Step 1: スナップショット生成器を書く**
 
 ```js
-// tools/snapshot.js
 #!/usr/bin/env node
 // 旋律の midi 列のスナップショットを作る。
 //
@@ -336,7 +335,8 @@ git commit -m "composeSong を5段に組み直す
 **Interfaces:**
 - Produces:
   - `expandAccomp(steps, voicing, barBeat, vel) -> Array<{midi, midis?, beat, dur, vel}>`
-  - `expandBass(steps, barBeat, bassNote, nextBassNote, pcs, vel, range) -> Array<{midi, beat, dur, vel}>`
+  - `expandBass(steps, barBeat, bassNote, nextBassNote, pcs, vel, ceiling) -> Array<{midi, beat, dur, vel}>`
+    （`ceiling` はその小節でベースが越えてはいけない高さ。呼び出し側は伴奏の最低音を渡す）
   - `arpeggioIndex(i, voices) -> number`（`compose.js` から移設）
   - `BEATS_PER_BAR = 4`
 
@@ -384,23 +384,23 @@ test('expandAccomp: voicing が2音でも upper が消えない', () => {
 
 test('expandBass: fifth は和音に無ければオクターブ上へ逃がす', () => {
   // C の和音（pc 0,4,7）で最低音 C2=36 なら、5度上 G2=43 は和音の音。
-  assert.equal(expandBass([{ beat: 0, kind: 'fifth', dur: 2 }], 0, 36, null, [0, 4, 7], 0.5, [28, 55])[0].midi, 43);
+  assert.equal(expandBass([{ beat: 0, kind: 'fifth', dur: 2 }], 0, 36, null, [0, 4, 7], 0.5, 55)[0].midi, 43);
   // 第1転回形で最低音が E2=40 なら、5度上 B2=47 は和音の音ではない。
   // 半音単位で押し込むと別の和音になるので、オクターブ上へ逃がす。
-  assert.equal(expandBass([{ beat: 0, kind: 'fifth', dur: 2 }], 0, 40, null, [0, 4, 7], 0.5, [28, 55])[0].midi, 52);
+  assert.equal(expandBass([{ beat: 0, kind: 'fifth', dur: 2 }], 0, 40, null, [0, 4, 7], 0.5, 55)[0].midi, 52);
 });
 
 test('expandBass: next は次の小節の根音を先取りする。次が無ければ鳴らさない', () => {
   const steps = [{ beat: 0, kind: 'root', dur: 3.5 }, { beat: 3.5, kind: 'next', dur: 0.5 }];
-  const withNext = expandBass(steps, 0, 36, 41, [0, 4, 7], 0.5, [28, 55]);
+  const withNext = expandBass(steps, 0, 36, 41, [0, 4, 7], 0.5, 55);
   assert.equal(withNext.length, 2);
   assert.deepEqual([withNext[1].midi, withNext[1].beat], [41, 3.5]);
-  const noNext = expandBass(steps, 0, 36, null, [0, 4, 7], 0.5, [28, 55]);
+  const noNext = expandBass(steps, 0, 36, null, [0, 4, 7], 0.5, 55);
   assert.equal(noNext.length, 1, '次の小節が無いのに先取りしている');
 });
 
 test('expandBass: octave が音域の上限を越えるなら元の音のまま', () => {
-  const out = expandBass([{ beat: 0, kind: 'octave', dur: 2 }], 0, 50, null, [0, 4, 7], 0.5, [28, 55]);
+  const out = expandBass([{ beat: 0, kind: 'octave', dur: 2 }], 0, 50, null, [0, 4, 7], 0.5, 55);
   assert.equal(out[0].midi, 50);
 });
 
@@ -487,16 +487,16 @@ export function expandAccomp(steps, voicing, barBeat, vel) {
 }
 
 /** 5度。和音の音でなければオクターブ上へ逃がす（半音で押し込むと別の和音になる）。 */
-function fifthOf(bassNote, pcs, range) {
+function fifthOf(bassNote, pcs, ceiling) {
   const fifth = bassNote + 7;
   const pc = ((fifth % 12) + 12) % 12;
-  if (fifth <= range[1] && Array.isArray(pcs) && pcs.includes(pc)) return fifth;
-  return octaveOf(bassNote, range);
+  if (fifth <= ceiling && Array.isArray(pcs) && pcs.includes(pc)) return fifth;
+  return octaveOf(bassNote, ceiling);
 }
 
-function octaveOf(bassNote, range) {
+function octaveOf(bassNote, ceiling) {
   const up = bassNote + 12;
-  return up <= range[1] ? up : bassNote;
+  return up <= ceiling ? up : bassNote;
 }
 
 /**
@@ -508,16 +508,18 @@ function octaveOf(bassNote, range) {
  * @param {number|null} nextBassNote 次の小節のベース音。無ければ null
  * @param {number[]} pcs その小節の和音の実音ピッチクラス
  * @param {number} vel
- * @param {[number,number]} range ベースの音域
+ * @param {number} ceiling ベースが越えてはいけない高さ。伴奏の最低音を渡す。
+ *   土台（ベース < 伴奏）が入れ替わると和音が濁る。定数の音域を別に持つより、
+ *   その小節で実際に伴奏がいる高さを見るほうが正しく、定義も1か所で済む。
  */
-export function expandBass(steps, barBeat, bassNote, nextBassNote, pcs, vel, range) {
+export function expandBass(steps, barBeat, bassNote, nextBassNote, pcs, vel, ceiling) {
   const out = [];
   for (const step of steps) {
     const dur = Math.min(step.dur, BEATS_PER_BAR - step.beat);
     if (!(dur > 0)) continue;
     let midi = bassNote;
-    if (step.kind === 'fifth') midi = fifthOf(bassNote, pcs, range);
-    else if (step.kind === 'octave') midi = octaveOf(bassNote, range);
+    if (step.kind === 'fifth') midi = fifthOf(bassNote, pcs, ceiling);
+    else if (step.kind === 'octave') midi = octaveOf(bassNote, ceiling);
     else if (step.kind === 'next') {
       // 次の小節の根音の先取り（食い）。曲の最終小節では鳴らさない。
       if (nextBassNote === null || nextBassNote === undefined) continue;
@@ -621,6 +623,15 @@ test('伴奏型: どの型も1小節(4拍)からはみ出さず、音を1つ以�
   }
 });
 
+// 「厚さ」は step の数ではなく、その小節で実際に鳴る音の数で測る。
+// upper と all は1ステップで和音が出るので、step の数と音の数は一致しない。
+// 実例: syncope は step 6個だが5個が和音なので10音、arp8 は step 8個すべて
+// 単音なので8音。step で測ると syncope のほうが薄いことになってしまう。
+function accompNoteCount(pattern) {
+  return expandAccomp(pattern.steps, [48, 52, 55], 0, pattern.vel)
+    .reduce((n, e) => n + (e.midis ? e.midis.length : 1), 0);
+}
+
 test('伴奏型: 計画の組はすべて実在する型を指し、後半のほうが音数が多い', () => {
   for (const pairs of ACCOMP_PLAN) {
     for (const [first, second] of pairs) {
@@ -631,13 +642,15 @@ test('伴奏型: 計画の組はすべて実在する型を指し、後半のほ
   // A'' だけは着地なので密度を下げる。それ以外は折り返しで上げる。
   for (let s = 0; s < 3; s++) {
     for (const [first, second] of ACCOMP_PLAN[s]) {
-      assert.ok(ACCOMP_PATTERNS[second].steps.length >= ACCOMP_PATTERNS[first].steps.length,
-        `セクション${s}: 後半 ${second} が前半 ${first} より薄い`);
+      const a = accompNoteCount(ACCOMP_PATTERNS[first]);
+      const b = accompNoteCount(ACCOMP_PATTERNS[second]);
+      assert.ok(b >= a, `セクション${s}: 後半 ${second}(${b}音) が前半 ${first}(${a}音) より薄い`);
     }
   }
   for (const [first, second] of ACCOMP_PLAN[3]) {
-    assert.ok(ACCOMP_PATTERNS[second].steps.length <= ACCOMP_PATTERNS[first].steps.length,
-      `A'': 後半 ${second} が前半 ${first} より厚い`);
+    const a = accompNoteCount(ACCOMP_PATTERNS[first]);
+    const b = accompNoteCount(ACCOMP_PATTERNS[second]);
+    assert.ok(b <= a, `A'': 後半 ${second}(${b}音) が前半 ${first}(${a}音) より厚い`);
   }
 });
 
@@ -951,7 +964,7 @@ git commit -m "伴奏型6種を入れ、セクションの前半後半で切り�
 ```js
 test('ベース型: どの型も1小節からはみ出さない', () => {
   for (const [name, p] of Object.entries(BASS_PATTERNS)) {
-    const out = expandBass(p.steps, 0, 36, 41, [0, 4, 7], p.vel, [28, 55]);
+    const out = expandBass(p.steps, 0, 36, 41, [0, 4, 7], p.vel, 55);
     assert.ok(out.length > 0, `${name} が無音`);
     for (const n of out) {
       assert.ok(n.beat >= 0 && n.beat + n.dur <= 4 + 1e-9, `${name}: 小節をはみ出す`);
@@ -1052,7 +1065,8 @@ export const BASS_PLAN = [
   }
 ```
 
-小節ループのベース生成:
+小節ループのベース生成。**Task 4 で書いた無条件の `bass.push({ midi: info.bassNote, ... })`
+の行を必ず削除すること**（残すと最終小節のベースが二重に鳴る）。
 
 ```js
     if (isFinal) {
@@ -1064,15 +1078,13 @@ export const BASS_PLAN = [
     }
     const bp = BASS_PATTERNS[bassAt[bar]];
     const next = barInfo[bar + 1] ? barInfo[bar + 1].bassNote : null;
-    for (const e of expandBass(bp.steps, barBeat, info.bassNote, next, info.pcs, bp.vel, BASS_RANGE)) {
+    // 上限はその小節の伴奏の最低音。土台（ベース < 伴奏）が入れ替わると濁る。
+    for (const e of expandBass(bp.steps, barBeat, info.bassNote, next, info.pcs, bp.vel, info.voicing[0])) {
       bass.push(e);
     }
 ```
 
-`BASS_RANGE` は `compose.js` にあるので、`arrangeSong` の引数で受けるのではなく
-`arrange.js` にも `const BASS_RANGE = [28, 55];` を置き、**`compose.js` 側の
-定義にコメントで対応を書く**（音域は音高の話なので compose が正、arrange は
-はみ出さないための上限としてだけ使う）。
+音域の定数を `arrange.js` に複製しないこと。上限はその小節の `voicing[0]` から取る。
 
 - [ ] **Step 4: テストが通ることを確認する**
 
@@ -1463,15 +1475,28 @@ test('タイ: 息継ぎの小節へは伸ばさない', () => {
   assert.equal(song.melody[0].dur, 2, '息継ぎの小節(拍4〜)へ食い込んでいる');
 });
 
-test('タイ: 元より短くしない。曲の最後の音は触らない', () => {
+test('タイ: 上限4拍を越えず、元より長い音を短くもしない', () => {
   const song = {
-    bars: 8, melody: [{ midi: 60, beat: 0, dur: 3 }, { midi: 62, beat: 28, dur: 4 }],
+    bars: 8,
+    melody: [
+      { midi: 60, beat: 0, dur: 0.5 },
+      { midi: 61, beat: 4, dur: 5 },    // フレーズ末。既に上限より長い
+      { midi: 62, beat: 12, dur: 0.5 },
+    ],
     breathBar: null,
-    sections: [{ startBar: 0, slots: [{ phraseEnd: true }] },
-      { startBar: 6, slots: [{ phraseEnd: true }] }],
+    sections: [{ startBar: 0, slots: [{ phraseEnd: true }, { phraseEnd: false }] }],
   };
   sustainPhraseEnds(song);
-  assert.equal(song.melody[0].dur, 3, '短くなっている');
+  assert.equal(song.melody[1].dur, 5, '元より短くなっている');
+});
+
+test('タイ: 曲の最後の音は触らない（終止として既に伸ばしてある）', () => {
+  const song = {
+    bars: 8, melody: [{ midi: 60, beat: 0, dur: 0.5 }, { midi: 62, beat: 28, dur: 4 }],
+    breathBar: null,
+    sections: [{ startBar: 6, slots: [{ phraseEnd: true }] }],
+  };
+  assert.equal(sustainPhraseEnds(song), 0);
   assert.equal(song.melody[1].dur, 4, '終止の音を触っている');
 });
 ```
@@ -1598,7 +1623,6 @@ git commit -m "フレーズ末の音を次の音の手前0.5拍まで伸ばす
 - [ ] **Step 1: 計測スクリプトを書く**
 
 ```js
-// tools/monotony.js
 #!/usr/bin/env node
 // 単調さの5指標を実測する。仕様書 8.1 の検証に使う。
 // 初版の値は「1曲の伴奏の区間 1 / 小節線をまたぐ音 0.6% / 2拍以上の音 5.0% /

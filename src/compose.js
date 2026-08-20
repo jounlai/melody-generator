@@ -18,9 +18,18 @@
 import { makeRng, seedFromString, randInt, pick } from './rng.js';
 import {
   degToMidi, degToSemitone, chordVoicing, bassMidi, nearestChordToneDeg, chordIndex,
-  splitBars, fitsBar, hasSuspension, chordSemitones, CHORD_VOCAB,
+  splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
+import {
+  anticipateMelody, arpeggioIndex, arrangeSong, sustainPhraseEnds, BEATS_PER_BAR,
+} from './arrange.js';
+
+// arpeggioIndex の定義は arrange.js にある。compose.js 自身はもう使わないが、
+// 楽譜や外から読む口はここに開けたままにしておく。
+// !!! `export ... from` は書かないこと !!! tools/bundle.js が再輸出の形を
+// 解釈できず、単一HTML版の生成が「変換できない export が残っています」で落ちる。
+export { arpeggioIndex };
 
 /**
  * @typedef {{ deg: number, beat: number, dur: number, vel: number }} FragNote
@@ -41,18 +50,8 @@ const SECTION_PLAN = [
   { source: 0, level: 2 }, // A''  転回形＋終止をサブドミナントマイナーへ
 ];
 
-// 伴奏のアルペジオ位置。8分音符で途切れさせない。
-// 4点だけだと左手が止まって聴こえ、曲全体が停滞する（実際のピアノの左手は流れ続ける）。
-const ACCOMP_OFFSETS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
-// 8分の長さ(0.5)より少し伸ばして、ペダルのように隣同士を重ねる。
-const ACCOMP_DUR = 0.75;
-// 音数が倍になるぶん、1音あたりは弱くする。
-const ACCOMP_VEL = 0.3;
-const BEATS_PER_BAR = 4;
 const ACCOMP_LOWEST = 48;
-const PAD_VEL = 0.3;
 const PAD_LOWEST = 55;
-const BASS_VEL = 0.5;
 const BASS_LOWEST = 36;
 
 // 声部進行（ボイスリーディング）で使う音域。
@@ -87,11 +86,6 @@ const LAYER_GAP = 2;
 // 伴奏の本来の上限をそのまま使う。
 const NO_MELODY_CEILING = ACCOMP_RANGE[1];
 
-// 終止の形。実際のピアノ曲は、終わりで左手の刻みを止めて和音を置く。
-// 刻み続けたまま終わると、耳は「まだ続く」と判断して曲が閉じない。
-// 最終小節だけ分散をやめて和音を保持し、パッドは小節をはみ出して余韻を作る。
-const FINAL_ACCOMP_VEL = 0.4;
-const FINAL_PAD_DUR = 6;
 // 曲の最後の音は、最終小節の終わりまで伸ばす（短くても3拍）。
 // 長く伸びた主音の上に主和音が鳴る、これが「終わった」という感覚を作る。
 const FINAL_NOTE_MIN_DUR = 3;
@@ -124,7 +118,11 @@ const MELODY_VEL_SCALE = 0.82;
 // （直後4拍の音の64%は頂点と同じスロットの中にあり、スロット単位の手当てでは届かない）。
 // 泣けるのは高い音そのものではなく、そのあとの静けさとの落差のほう。
 // 戻し切るのは、A'' を素の側で削ると伴奏に埋もれるから（A'' の減衰は演奏側が掛ける）。
-const RELEASE_FLOOR = 0.72;
+// 版2は音が疎（1小節3.40音。版1は4.58音）なので、1音の重みが大きい。
+// 同じ 0.72 だと「頂点の直後が直前より弱い曲」が 82.8% まで落ちる。
+// 落差そのものが感動の形なので、疎な語彙では脱力を深くしないと落差に聴こえない。
+// 実測: 0.72→82.8% / 0.66→93.2% / 0.60→98.7%（版1は 0.72 のままで 97.8%）
+const RELEASE_FLOOR_BY_VERSION = { 1: 0.72, 2: 0.60 };
 const RELEASE_BEATS = 8;
 
 // 進行データが空、あるいはそのモードの進行が1つも無いときの最終手段。
@@ -287,18 +285,6 @@ export function modulatedPeakCap(semitones, mode) {
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
-}
-
-/**
- * 分散和音の何番目の構成音を鳴らすか。上行して下行する三角波で巡回する。
- * 構成音3つなら 0,1,2,1,0,1,2,1、4つなら 0,1,2,3,2,1,0,1。
- * 単純な i % v の繰り返しは折り返しが無く、機械的に聴こえる。
- */
-export function arpeggioIndex(i, voices) {
-  if (voices <= 1) return 0;
-  const period = 2 * (voices - 1);
-  const t = ((i % period) + period) % period;
-  return t < voices ? t : period - t;
 }
 
 /**
@@ -614,6 +600,50 @@ const FLOWING_TIERS = [
   (m) => endingHold(m) < BREATH_HOLD,
 ];
 
+// ---------------------------------------------------------------------------
+// 絞り込みの下限（版2から）
+//
+// narrowCandidates は好みの条件を8段まで重ねる。各段が「該当があれば何件でも
+// そちらを採る」ため、連鎖すると候補が消し飛ぶ。版1の実測:
+//
+//   場面              和音と音域を通る   実際に選ばれうる
+//   A の頭                 84件      →      12種類
+//   A の途中              102件      →       7種類
+//   フレーズ末             52件      →       5種類
+//   サビの登り             41件      →       7種類
+//   短調の陰り             35件      →       1種類   ← 何度生成しても同じ断片
+//
+// 結果、999個のカタログのうち200曲で使われるのは357個で、642個は一度も鳴らない。
+// 上位50個が全スロットの56%を占めていた。「材料が999個ある」は嘘ではないが、
+// 「999個から選んでいる」は嘘だった。
+//
+// そこで各段に下限を置き、割り込むなら絞らないことにする。優先順は変えないので、
+// 前のほう（対比・登り・終止）は今までどおり効き、諦めるのは後ろの段
+// （ペンタトニック・掛留）から。
+//
+// 下限を掛けるのは、対比・登り・終止の3段だけ。残りは全部、実測の閾値つきで
+// 守られている音楽的な条件だと分かったので除外した:
+//   ペンタトニック  掛けると 84.9%→62% まで落ちる（口ずさめなくなる）
+//   掛留            iv/bVI/bVII の上での陰りが薄まる
+//   息の流れ        フレーズ途中と末の差が消え、楽節が聴こえなくなる
+//   余白            サビの出だしが天井に着き、上へ動かせず登れなくなる
+//   出だし・舞い上がり  1曲に1スロットしか無い一回性の条件
+//
+// 下限の値は 1/8/16/24/32/48/64/96 を振って実測で決めた（150曲）。48 で:
+//   使われる断片 329→377 / 最頻の断片 5.88%→3.13%
+//   ペンタトニック率 84.9%→85.2% / フレーズ末が閉じる率 85.3%→85.9%
+// 多様性は上がり、歌らしさの指標は1つも落ちていない。
+// なお伸びしろは小さい。各段が実際に音楽的な仕事をしている以上、
+// 選び方だけで稼げる多様性には限りがあり、残りは材料側の問題になる。
+//
+// 版1は下限1、すなわち「該当があれば必ず採る」で、従来と1ビットも変わらない。
+// 共有済みの曲コードは版1として解かれるので、同じ曲がそのまま鳴る。
+const NARROW_FLOOR = { 1: 1, 2: 48 };
+
+export function narrowFloorFor(version) {
+  return NARROW_FLOOR[String(version)] ?? NARROW_FLOOR[1];
+}
+
 // 楽節の a（アンカー）のスロットだけは、候補がこれを下回るなら息の流れで絞らない。
 //
 // a はそのまま a' と a'' へ移調されて、楽節3スロットぶんを支配する。ここで候補を
@@ -684,9 +714,15 @@ export function fragmentCandidates(melodies, ctx) {
  */
 function narrowCandidates(candidates, ctx) {
   let out = candidates;
+  // 絞り込みの下限。割り込むなら絞らない。既に下限を下回っているときは、
+  // 「何も減らさない条件」だけが通る＝そこで絞り込みは止まる。
+  // floor が 1 なら「該当があれば必ず採る」＝版1の従来どおりの動き。
+  const floor = Number(ctx.narrowFloor) > 0 ? Number(ctx.narrowFloor) : 1;
+  const enoughFor = (n, base) => n > 0 && n >= Math.min(floor, base.length);
+  const take = (sub) => (enoughFor(sub.length, out) ? sub : out);
+
   if (ctx.avoidContour) {
-    const contrast = out.filter((m) => m.contour !== ctx.avoidContour);
-    if (contrast.length > 0) out = contrast;
+    out = take(out.filter((m) => m.contour !== ctx.avoidContour));
   }
   // 楽節の b は、音形だけでなく打点の並びも a と変える。
   //
@@ -694,11 +730,12 @@ function narrowCandidates(candidates, ctx) {
   // 同じ小節が並んでいた。文章に例えると、全部の文が同じ抑揚で読まれている。
   // 対比を作る役目の b で音高だけ変えても、耳は「同じ形の言い直し」と聴く。
   if (ctx.avoidOnsets) {
-    const contrast = out.filter((m) => onsetKey(m) !== ctx.avoidOnsets);
-    if (contrast.length > 0) out = contrast;
+    out = take(out.filter((m) => onsetKey(m) !== ctx.avoidOnsets));
   }
   // 曲の出だしだけは、拍0から鳴り出す断片を採る。
   // 弱起の断片で始まると、聴き手はどこが1拍目か掴めないまま曲に入ることになる。
+  // 曲の出だしと頂点の形だけは下限を掛けない。1曲に1スロットしか無く、
+  // そこで妥協すると「どこが1拍目か」「そこで初めて届いた」が消える。
   if (ctx.preferDownbeat) {
     const onBeat = out.filter((m) => (m.notes?.[0]?.beat ?? 0) === 0);
     if (onBeat.length > 0) out = onBeat;
@@ -714,18 +751,20 @@ function narrowCandidates(candidates, ctx) {
   // 高い断片が残っておらず素通りしてしまう。
   // 「該当が無ければ絞らない」ので、候補が枯れても曲は壊れない。
   if (ctx.rise) {
-    const climbing = out.filter((m) => m.peakDeg >= ctx.rise);
-    if (climbing.length > 0) out = climbing;
+    out = take(out.filter((m) => m.peakDeg >= ctx.rise));
   }
   if (Array.isArray(ctx.endDegrees)) {
     for (const tier of ctx.endDegrees) {
       const closed = out.filter((m) => tier.includes(scaleDegreeOf(m.endDeg)));
-      if (closed.length > 0) { out = closed; break; }
+      if (enoughFor(closed.length, out)) { out = closed; break; }
     }
   }
   // 楽節計画の要。フレーズ末は閉じ、フレーズ途中は閉じずに次の小節へ流し込む。
   // 「該当が無ければ絞らない」に加えて、楽節の a では「痩せすぎるなら絞らない」。
   const keep = ctx.isAnchor ? ANCHOR_MIN_CANDIDATES : 1;
+  // 息の流れにも下限を掛けない。フレーズ途中と末で「終わり方」に差が出ることが
+  // 2小節の断片2つを4小節の1フレーズに聴かせている当のものなので、
+  // ここを多様性と引き換えにすると楽節が消える（実測の閾値つきで守っている）。
   const enough = (n) => n > 0 && n >= keep;
   if (ctx.phraseEnd === true) {
     for (const tier of CLOSING_TIERS) {
@@ -744,10 +783,16 @@ function narrowCandidates(candidates, ctx) {
   // 陰りのコードの上では、掛留がその瞬間の主役。ペンタトニックより先に掛ける。
   // あとに回すと、ペンタトニックで絞ったあとの小さな集合に掛留が残っておらず、
   // 「該当なし」で素通りしてしまう（実測でここが効かず、掛留率がほぼ動かなかった）。
+  // 掛留にも下限を掛けない。iv / bVI / bVII が鳴る瞬間はその曲でいちばん
+  // 感情が動くところで、掛留がその主役。ここが薄まると陰りそのものが消える。
   if (ctx.preferSus && ctx.susOverPenta) {
     const sus = out.filter((m) => hasSus(m, ctx));
     if (sus.length > 0) out = sus;
   }
+  // ペンタトニックは下限を掛けない。「断片が口ずさめるかどうかは、ほぼ
+  // ペンタトニックかどうかで決まる」——ここを多様性と引き換えにすると、
+  // 曲は増えるが歌えなくなる。実測でも下限を掛けるとペンタ率が
+  // 84.9% → 62% まで落ちた。多様性は他の段で稼ぐ。
   if (ctx.preferPenta) {
     const penta = out.filter((m) => hasPentatonic(m, ctx.mode));
     if (penta.length > 0) out = penta;
@@ -756,6 +801,9 @@ function narrowCandidates(candidates, ctx) {
   // ゼクエンツは音形ごと平行移動するので、元が天井に着いていると上へ動かせず、
   // 「少しずつ上げてクライマックスへ」が最初のスロットで詰む。低く始めて余地を残す。
   // 口ずさめること（ペンタトニック）のほうが上なので、その中から低いものを採る。
+  // 余白にも下限を掛けない。ゼクエンツは音形ごと平行移動するので、出だしが
+  // 天井に着いているとサビで上へ動かせず、「少しずつ上げてクライマックスへ」が
+  // 最初のスロットで詰む。実測でも B の平均移動量が A' を下回った。
   if (ctx.headroom) {
     const low = out.filter((m) => m.peakDeg <= ctx.headroom);
     if (low.length > 0) out = low;
@@ -1242,10 +1290,13 @@ const EXPOSED_DUR = 1.5;
  */
 export function withoutRub(midis, melody, bar) {
   const from = bar * 4;
+  const to = from + 4;
   const exposed = [];
   for (const n of melody) {
-    if (n.beat < from || n.beat >= from + 4) continue;
-    if (n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) exposed.push(n.midi);
+    if (n.beat >= to || n.beat + n.dur <= from) continue;
+    // 食った音は無条件に表扱い。拍3.5にあって短くても、聴き手には
+    // 次の小節の頭の音として聴こえている。
+    if (n.anticipated || n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) exposed.push(n.midi);
   }
   if (exposed.length === 0) return midis;
   const rubs = (m) => exposed.some((x) => {
@@ -1262,9 +1313,13 @@ export function withoutRub(midis, melody, bar) {
  */
 export function melodyCeiling(melody, bar) {
   const from = bar * 4;
+  const to = from + 4;
   let low = Infinity;
   for (const n of melody) {
-    if (n.beat < from || n.beat >= from + 4) continue;
+    // 開始拍ではなく「鳴っている区間」で見る。食いとタイで小節をまたぐ音が
+    // 増えたので、開始拍だけを見ると前の小節から伸びてきた音を取りこぼし、
+    // 伴奏がその上を横切る。
+    if (n.beat >= to || n.beat + n.dur <= from) continue;
     if (n.midi < low) low = n.midi;
   }
   return low === Infinity ? NO_MELODY_CEILING : low - LAYER_GAP;
@@ -1329,12 +1384,16 @@ function describeChords(barInfo) {
   for (const info of barInfo) {
     if (!info) continue;
     const pcOf = (midi) => (((Math.round(midi) % 12) + 12) % 12);
+    // コードネームは「実際に鳴っている音の集まり」から作る。
+    // 天井に収めるために伴奏の上の音を省いた小節でも、パッドが持っていれば
+    // 和音としては鳴っているので、両方を合わせて名前を決める。
+    const sounding = [...new Set([...info.voicing, ...info.padVoicing])];
     out.push({
       bar: info.bar,
       symbol: info.symbol,
       rootPc: pcOf(info.rootMidi),
       bassPc: pcOf(info.bassNote),
-      pcs: [...new Set(info.voicing.map(pcOf))].sort((a, b) => a - b),
+      pcs: [...new Set(sounding.map(pcOf))].sort((a, b) => a - b),
     });
   }
   return out;
@@ -1359,6 +1418,9 @@ export function composeSong(seed, data, settings) {
   const cs = climaxSlot(slotCount);
   const roles = phraseRoles(slotCount);
   const strength = clamp(cfg.curveStrength / 100, 0, 1);
+  // 生成器の版。曲コードに桁の無い（＝共有済みの）コードは版1として解かれ、
+  // 絞り込みの下限が1になるので、従来と完全に同じ曲が出る。
+  const narrowFloor = narrowFloorFor(cfg.generatorVersion);
 
   // ここから下の乱数の消費順は変えない：
   // mode → tempo → tonic → 転調するか → 上げ幅 → P1 → P2 → 各スロット。
@@ -1389,20 +1451,26 @@ export function composeSong(seed, data, settings) {
   const keyChangeBar = pivots ? pivotBar : modBar;
   const tonicAtBar = (bar) => (semitones !== 0 && bar >= keyChangeBar ? modTonic : tonicMidi);
 
-  const melodies = Array.isArray(data?.melodies) ? data.melodies : [];
+  // 断片カタログは版1と版2が1つのファイルに同居している。版1の断片は v を
+  // 持たず、版2は v: 2 を持つ。並びは版1が先で、そこは二度と動かさない。
+  //
+  // 版ごとに見る範囲を分けるのが、共有済みの曲コードを守る仕掛けの本体。
+  // 版1の曲は版1の断片だけを、版1と同じ並びのまま見るので、同じ曲が出る。
+  // 版2に版1の断片を混ぜないのは、混ぜると半分が1955年以前の語法のままになり、
+  // 語彙を入れ替えた意味が薄まるため。
+  const allMelodies = Array.isArray(data?.melodies) ? data.melodies : [];
+  const wanted = String(cfg.generatorVersion) === '2' ? 2 : undefined;
+  const versioned = allMelodies.filter((m) => m?.v === wanted);
+  // 版2の断片がまだ焼かれていないデータでも鳴らせるように、空なら全部を使う。
+  const melodies = versioned.length > 0 ? versioned : allMelodies;
   const sources = chooseProgressions(rng, data?.progressions, mode);
 
   const sections = [];
-  const barInfo = [];      // 小節ごとの主音と和音。音階スタイルを掛けるときに引く
+  const chordPlan = [];    // 小節ごとの和音記号。配置と発音は全セクションを組んだあとにやる
   const melody = [];
-  const accomp = [];
-  const bass = [];
-  const pad = [];
   const motif = [];        // A で選ばれた断片（再登場のコピー元）
   const breathSlots = [];  // 息継ぎを置ける「A / A' のフレーズ末スロット」
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
-  let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
-  let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -1462,6 +1530,7 @@ export function composeSong(seed, data, settings) {
 
       const ctx = {
         mode,
+        narrowFloor,
         chordA,
         chordB,
         chordAIdx: chordIndex(mode, chordA),
@@ -1620,79 +1689,10 @@ export function composeSong(seed, data, settings) {
       }
     }
 
+    // 【変更前】この位置に小節ループがあり、bass/accomp/pad を push していた。
+    // 【変更後】和音の割り当てだけを記録して、配置と発音はループの外でやる。
     for (let b = 0; b < barChords.length; b++) {
-      const chord = barChords[b];
-      const beat = (startBar + b) * 4;
-      const isFinalBar = startBar + b === bars - 1;
-      // 主音は小節ごと。A'' と、つなぎ目の属和音の小節だけが新しい調で鳴る。
-      const barTonic = tonicAtBar(startBar + b);
-      // ベースは直前の小節にいちばん近いオクターブへ。
-      // これで I - V/3 - vi - I/5 が7度跳ね上がらずに素直に下降する。
-      const bassRaw = bassMidi(chord, mode, barTonic, BASS_LOWEST);
-      const bassNote = nearestOctave(bassRaw, prevBass, BASS_RANGE);
-      prevBass = bassNote;
-      bass.push({ midi: bassNote, beat, dur: 4, vel: BASS_VEL });
-
-      // 転回形では最低音が根音とは限らないので、根音は記号から取り直す。
-      const rootMidi = barTonic + chordSemitones(chord, mode)[0];
-      // その小節で旋律がいちばん低いところ。伴奏とパッドはこれより下に置く。
-      const ceiling = melodyCeiling(melody, startBar + b);
-
-      // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
-      // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
-      const raw = chordVoicing(chord, mode, barTonic, ACCOMP_LOWEST);
-      const accompLo = Math.max(ACCOMP_RANGE[0], bassNote + 1);
-      // 旋律が低く歌う小節では、普段の音域を割ってでもその下へ降りる。
-      // 降りる限界はベースと同じ高さまで。同じ音を重ねるのは左手の普通の書き方で、
-      // 土台が入れ替わるのは「ベースより下へ潜る」ときだけ。ここを1つ上に
-      // 締めると、旋律が低い小節で伴奏が降りられず、実測で8%が旋律の上に残った。
-      const accompFloor = Math.min(accompLo, bassNote);
-      const voicing = placeUnder(raw, prevAccomp, accompLo, ACCOMP_RANGE[1], ceiling, accompFloor);
-      prevAccomp = voicing[0];
-      // パッドは伴奏と同じ和音を、伴奏の上に薄く重ねる持続音。
-      const padVoicing = withoutRub(
-        placeUnder(chordVoicing(chord, mode, barTonic, PAD_LOWEST),
-          null, voicing[0], ACCOMP_RANGE[1], ceiling, voicing[0]),
-        melody, startBar + b);
-      // 楽譜のコードネームの材料。実際に鳴る積み方（voicing）から名前を作る。
-      barInfo[startBar + b] = {
-        bar: startBar + b,
-        symbol: chord,
-        tonicMidi: barTonic,
-        rootMidi,
-        // コードネームは「実際に鳴っている音の集まり」から作る。
-        // 天井に収めるために伴奏の上の音を省いた小節でも、パッドが持っていれば
-        // 和音としては鳴っているので、両方を合わせて名前を決める。
-        voicing: [...new Set([...voicing, ...padVoicing])].sort((x, y) => x - y),
-        bassNote,
-      };
-      pad.push({
-        midis: padVoicing,
-        beat,
-        dur: isFinalBar ? FINAL_PAD_DUR : 4,
-        vel: PAD_VEL,
-      });
-      if (isFinalBar) {
-        // 刻みをやめて和音を置く。midi は単音しか読まない再生系のための代表音で、
-        // 実際に鳴らしたい全構成音は midis に入れる。
-        accomp.push({
-          midi: voicing[0], midis: voicing.slice(), beat, dur: 4, vel: FINAL_ACCOMP_VEL,
-        });
-        continue;
-      }
-      for (let i = 0; i < ACCOMP_OFFSETS.length; i++) {
-        const at = ACCOMP_OFFSETS[i];
-        accomp.push({
-          midi: voicing[arpeggioIndex(i, voicing.length)],
-          beat: beat + at,
-          // 最後の8分だけは小節線で切る。ACCOMP_DUR はペダルのように隣と重ねる
-          // ための長さだが、小節の終わりでそれをやると前の和音が次の小節へ
-          // 0.25拍はみ出す。和音が変わったところへ古い和音が残るので、
-          // 強拍の半音衝突の27%がここから出ていた。
-          dur: Math.min(ACCOMP_DUR, BEATS_PER_BAR - at),
-          vel: ACCOMP_VEL,
-        });
-      }
+      chordPlan[startBar + b] = { bar: startBar + b, symbol: barChords[b] };
     }
 
     sections.push({
@@ -1722,8 +1722,6 @@ export function composeSong(seed, data, settings) {
     }
   }
 
-  const chords = describeChords(barInfo);
-
   // 頂点の拍。演奏側はここだけテヌートを掛けるので、同点なら最初の1つを指す。
   let climaxBeat = 0;
   let highest = -Infinity;
@@ -1735,10 +1733,12 @@ export function composeSong(seed, data, settings) {
   }
 
   // 頂点を越えたら、素材の側からも確実に下げる。上げて、頂点で解放し、下りてくる。
+  const releaseFloor = RELEASE_FLOOR_BY_VERSION[String(cfg.generatorVersion)]
+    ?? RELEASE_FLOOR_BY_VERSION[1];
   for (const n of melody) {
     const d = n.beat - climaxBeat;
     if (d <= 0 || d >= RELEASE_BEATS) continue;
-    n.vel *= RELEASE_FLOOR + (1 - RELEASE_FLOOR) * (d / RELEASE_BEATS);
+    n.vel *= releaseFloor + (1 - releaseFloor) * (d / RELEASE_BEATS);
   }
 
   // 曲の最後の1音だけは、断片の形より終止を優先する。
@@ -1761,6 +1761,89 @@ export function composeSong(seed, data, settings) {
     const near = tail.midi - below <= above - tail.midi ? below : above;
     tail.midi = near < highest ? near : below;
   }
+
+  // ---- 段3: 食い。旋律の音程には触れず、拍と音価だけを書き換える ----
+  // 声部配置より前に置くのが要。ここで小節をまたいだ音を、天井(melodyCeiling)と
+  // 濁りの判定(withoutRub)が見られるようになる。
+  //
+  // 食わせない小節（転調しない曲では空）。
+  //  ・鍵が実際に変わる小節（つなぎ目があればそこ、無ければ A'' の頭）。
+  //    ここが弱起だと、いつ調が変わったか耳が掴めない。曲の1音目を食わない理由
+  //    （拍の位置を示す役目がある）と同じことが、鍵の変わり目にも言える。
+  //  ・A'' の頭。ここを食うと、新しい調の音が半拍前へ出て、まだ古い調の小節へ
+  //    食い込む。次の和音の音が前の小節に乗ること自体は食いの普通の響きだが、
+  //    これは鍵をまたぐ濁りで、それとは別物。
+  const protectedBars = modulates ? [keyChangeBar, modBar] : [];
+  const arrRng = makeRng(seedFromString(`${String(seed)}:arr`));
+  const anticipated = anticipateMelody(
+    { bars, melody, climaxBeat, breathBar, protectedBars }, arrRng);
+  // 食いのあとに伸ばす。食いで次の音が前へ動いた分だけ、伸ばせる長さが縮む。
+  sustainPhraseEnds({ bars, melody, breathBar, sections });
+
+  // ---- 声部配置 ----
+  //
+  // ここを息継ぎ・クライマックス・最終音の書き換えより後ろに置くのが要。現行は
+  // 息継ぎを適用する「前」の旋律で天井 (melodyCeiling) を計算していたので、
+  // 息継ぎの小節だけ、鳴っていない旋律を避けて伴奏が不必要に低く抑えられていた。
+  // 最終音の書き換えより後ろに置くのも同じ理由による。天井は実際に鳴る旋律
+  // （＝これから上書きされる前の音ではなく、書き換えられたあとの音）から
+  // 計算しなければ、最終小節の伴奏が鳴らない音を避けて組まれてしまう。
+  const barInfo = [];
+  let prevBass = null;     // 直前の小節のベース音（声部進行用。曲をまたいで持ち越さない）
+  let prevAccomp = null;   // 直前の小節の伴奏和音の最低音
+  for (let bar = 0; bar < bars; bar++) {
+    const chord = chordPlan[bar]?.symbol;
+    if (!chord) continue;
+    // 主音は小節ごと。A'' と、つなぎ目の属和音の小節だけが新しい調で鳴る。
+    const barTonic = tonicAtBar(bar);
+    // ベースは直前の小節にいちばん近いオクターブへ。
+    // これで I - V/3 - vi - I/5 が7度跳ね上がらずに素直に下降する。
+    const bassRaw = bassMidi(chord, mode, barTonic, BASS_LOWEST);
+    const bassNote = nearestOctave(bassRaw, prevBass, BASS_RANGE);
+    prevBass = bassNote;
+
+    // 転回形では最低音が根音とは限らないので、根音は記号から取り直す。
+    const rootMidi = barTonic + chordSemitones(chord, mode)[0];
+    // その小節で旋律がいちばん低いところ。伴奏とパッドはこれより下に置く。
+    const ceiling = melodyCeiling(melody, bar);
+
+    // 伴奏の和音も、前の小節の和音に近いオクターブへ寄せる（形は変えず全体を移す）。
+    // 下限はベースの1つ上まで。層（ベース < 伴奏 <= パッド）が入れ替わると土台が濁る。
+    const raw = chordVoicing(chord, mode, barTonic, ACCOMP_LOWEST);
+    const accompLo = Math.max(ACCOMP_RANGE[0], bassNote + 1);
+    // 旋律が低く歌う小節では、普段の音域を割ってでもその下へ降りる。
+    // 降りる限界はベースと同じ高さまで。同じ音を重ねるのは左手の普通の書き方で、
+    // 土台が入れ替わるのは「ベースより下へ潜る」ときだけ。ここを1つ上に
+    // 締めると、旋律が低い小節で伴奏が降りられず、実測で8%が旋律の上に残った。
+    const accompFloor = Math.min(accompLo, bassNote);
+    const voicing = placeUnder(raw, prevAccomp, accompLo, ACCOMP_RANGE[1], ceiling, accompFloor);
+    prevAccomp = voicing[0];
+
+    // パッドは伴奏と同じ和音を、伴奏の上に薄く重ねる持続音。
+    const padVoicing = withoutRub(
+      placeUnder(chordVoicing(chord, mode, barTonic, PAD_LOWEST),
+        null, voicing[0], ACCOMP_RANGE[1], ceiling, voicing[0]),
+      melody, bar);
+
+    barInfo[bar] = {
+      bar,
+      symbol: chord,
+      tonicMidi: barTonic,
+      rootMidi,
+      voicing,
+      padVoicing,
+      bassNote,
+      // ベースの5度が和音の音かどうかを編曲側が判定するために、実音の
+      // ピッチクラスを持たせる。転回形では最低音の5度上が和音の音とは限らない。
+      pcs: chordPitchClasses(chord, mode).map((pc) => (pc + barTonic) % 12),
+    };
+  }
+
+  // ---- 段5: 編曲 ----
+  // 乱数は作曲とは別の列。編曲を変えても旋律と和声は動かない。
+  const { accomp, bass, pad, patterns } = arrangeSong({ bars }, barInfo, arrRng);
+
+  const chords = describeChords(barInfo);
 
   return {
     seed,
@@ -1794,5 +1877,10 @@ export function composeSong(seed, data, settings) {
     accomp,
     bass,
     pad,
+    arrangement: {
+      accompPatterns: patterns.accomp,
+      bassPatterns: patterns.bass,
+      anticipated,
+    },
   };
 }

@@ -136,10 +136,24 @@ export function chordIndex(mode, symbol) {
 
 // 2小節(8拍)の断片を小節ごとに分け、beat を小節内ローカル(0〜4)へ直す。
 export function splitBars(notes) {
-  return [
-    notes.filter((n) => n.beat < 4).map((n) => ({ ...n })),
-    notes.filter((n) => n.beat >= 4).map((n) => ({ ...n, beat: n.beat - 4 })),
-  ];
+  const first = [];
+  const second = [];
+  for (const n of notes) {
+    // 食い（アンティシペーション）。小節線をまたいで鳴る音は、耳には
+    // 「次の小節の頭の音が半拍早く出た」ものとして聴こえる。だから和声も
+    // **次の**小節の和音で判定しなければならない。前の小節の和音で見ると、
+    // この時代のバラードの推進力そのものが「和音に乗らない」と弾かれる。
+    //
+    // 初版（版1）の断片には、またぐ音は1つも無い。だからこの分岐は
+    // 版1の判定を1ビットも変えない。
+    if (n.beat < 4 && n.beat + n.dur > 4) {
+      second.push({ ...n, beat: 0, dur: n.beat + n.dur - 4, anticipates: true });
+      continue;
+    }
+    if (n.beat < 4) first.push({ ...n });
+    else second.push({ ...n, beat: n.beat - 4 });
+  }
+  return [first, second];
 }
 
 // 強拍(0拍目・2拍目)または長い音(1.5拍以上)が非和声音なら、
