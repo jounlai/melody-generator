@@ -27,7 +27,9 @@ import {
 
 // arpeggioIndex の定義は arrange.js にある。compose.js 自身はもう使わないが、
 // 楽譜や外から読む口はここに開けたままにしておく。
-export { arpeggioIndex } from './arrange.js';
+// !!! `export ... from` は書かないこと !!! tools/bundle.js が再輸出の形を
+// 解釈できず、単一HTML版の生成が「変換できない export が残っています」で落ちる。
+export { arpeggioIndex };
 
 /**
  * @typedef {{ deg: number, beat: number, dur: number, vel: number }} FragNote
