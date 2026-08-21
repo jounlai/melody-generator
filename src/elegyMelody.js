@@ -237,3 +237,88 @@ export function ensureRests(notes) {
 }
 
 export { nearestChordTone };
+
+/**
+ * 句の終わりの音を、寄りかかれる音に直す。
+ *
+ * !!! 句末に「解決したがる音」を置いてはいけない !!!
+ * 句末は耳が立ち止まる場所なので、そこに緊張音を置くと句が閉じない。
+ * 実際に、第8小節が Gsus4 の 4th（C5）を3拍、第16小節が G7 の 7th（F4）を
+ * 全音符で伸ばしていた。どちらも次へ行きたがる音で、句末として変に聴こえる。
+ *
+ * 寄りかかれる音＝根音・3度・5度。7th・9th・sus4 は外す。
+ * 伸びている間に和音が変わるなら、あとの和音でも成り立つ音にする
+ *   （第8小節は Gsus4 → G と動くので、C を伸ばすと B とぶつかっていた）。
+ */
+function stablePcs(chord) {
+  const root = chord.pcs[0];
+  return chord.pcs.filter((pc) => [0, 3, 4, 7].includes(((pc - root) % 12 + 12) % 12));
+}
+
+export function settlePhraseEnds(notes, endBars, ceilingFor) {
+  const sorted = notes.slice().sort((a, b) => a.beat - b.beat);
+  for (const bar of endBars) {
+    const inBar = sorted.filter((n) => Math.floor(n.beat / BEATS_PER_BAR) === bar);
+    if (inBar.length === 0) continue;
+    const n = inBar[inBar.length - 1];
+    const from = n.beat - bar * BEATS_PER_BAR;
+    // 伸びている間に鳴る和音すべてで成り立つこと
+    let ok = null;
+    for (let t = from; t < Math.min(BEATS_PER_BAR, from + n.dur); t += 0.5) {
+      const pcs = stablePcs(chordAtBeat(bar, t));
+      ok = ok === null ? pcs : ok.filter((pc) => pcs.includes(pc));
+    }
+    if (!ok || ok.length === 0) continue;
+    const hi = ceilingFor ? ceilingFor(bar) : MEL_HI;
+    const cand = [];
+    for (let m = MEL_LO; m <= hi; m += 1) {
+      if (ok.includes(((m % 12) + 12) % 12)) cand.push(m);
+    }
+    if (cand.length === 0) continue;
+    if (cand.includes(n.midi)) continue;   // すでに寄りかかれる音
+    // 候補は「元の高さに近いか」だけで選んではいけない。
+    // それだけで選んだとき、第8小節が C5→D5 に上がり、次の句の頭 Eb4 との間に
+    // 11半音の跳躍ができた。fixLeaps はこの工程より前に走るので拾えない。
+    // 前後の音へどう繋がるかまで込みで選ぶ。
+    const idx = sorted.indexOf(n);
+    const prev = sorted[idx - 1];
+    const next = sorted[idx + 1];
+    const gap = (m, o) => (o ? Math.max(0, Math.abs(m - o.midi) - 7) * 2 : 0);
+    const cost = (m) => Math.abs(m - n.midi)
+      + (prev && m === prev.midi ? 3 : 0)   // 同音の繰り返しは少しだけ嫌う
+      + gap(m, prev) + gap(m, next);        // 跳びすぎる入り・出は強く嫌う
+    let best = cand[0];
+    for (const m of cand) if (cost(m) < cost(best)) best = m;
+    n.midi = best;
+    // 直前の短い音と同じ高さになると、句末が同音の連打に聴こえる
+    // （第8小節が G4(8分) G4(3拍) になった）。手前を1歩下げて、順次で入る。
+    if (prev && prev.midi === best && prev.dur <= 0.5
+      && Math.abs(prev.beat + prev.dur - n.beat) < 1e-9) {
+      const below = melStep(best, -1);
+      if (below >= MEL_LO) prev.midi = below;
+    }
+  }
+  return notes;
+}
+
+/**
+ * 曲の最後の音を主音にする。
+ *
+ * !!! 終わりの音を「ある高さに近い和音構成音」で決めてはいけない !!!
+ * 目標を 66（F#4）に決め打ちしていたため、Cm(add9) の中で 67（G4）が
+ * いちばん近く、曲全体が5度で終わっていた。閉じるなら主音そのもの。
+ */
+export function endOnTonic(notes, tonicPc = 0) {
+  const sorted = notes.slice().sort((a, b) => a.beat - b.beat);
+  const last = sorted[sorted.length - 1];
+  if (!last) return notes;
+  const prev = sorted[sorted.length - 2];
+  const target = prev ? prev.midi : last.midi;
+  let best = null;
+  for (let m = MEL_LO; m <= MEL_HI; m += 1) {
+    if (((m % 12) + 12) % 12 !== ((tonicPc % 12) + 12) % 12) continue;
+    if (best === null || Math.abs(m - target) < Math.abs(best - target)) best = m;
+  }
+  if (best !== null) last.midi = best;
+  return notes;
+}

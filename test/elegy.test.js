@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compose, inspect, DEFAULT_ATTEMPTS } from '../src/elegySong.js';
-import { RANGE, HARMONY } from '../src/elegy.js';
+import { RANGE, HARMONY, CHORDS } from '../src/elegy.js';
 
 const { MEL_LO, MEL_HI, LH_LO, LH_HI, BEATS_PER_BAR } = RANGE;
 const BARS = 32;
@@ -97,4 +97,33 @@ test('息継ぎは8小節の終わりに来る（2小節ごとに切れない）
 
 test('和声は指定どおり32小節', () => {
   assert.equal(HARMONY.length, BARS);
+});
+
+test('句の終わりは寄りかかれる音（7th・9th・sus4 では閉じない）', () => {
+  for (const bar of [7, 15, 23, 31]) {
+    const inBar = mel.filter((n) => Math.floor(n.beat / BEATS_PER_BAR) === bar);
+    const n = inBar[inBar.length - 1];
+    const from = n.beat - bar * BEATS_PER_BAR;
+    for (let t = from; t < Math.min(BEATS_PER_BAR, from + n.dur); t += 0.5) {
+      const chord = HARMONY[bar];
+      const name = Array.isArray(chord) ? chord[t < 2 ? 0 : 1] : chord;
+      const pcs = CHORDS[name].pcs;
+      const rel = ((((n.midi % 12) + 12) % 12) - pcs[0] + 12) % 12;
+      assert.ok([0, 3, 4, 7].includes(rel),
+        `第${bar + 1}小節の句末が ${name} の緊張音（根音から${rel}半音）`);
+    }
+  }
+});
+
+test('曲は主音で終わる', () => {
+  const last = mel[mel.length - 1];
+  assert.equal(((last.midi % 12) + 12) % 12, 0, `${last.midi} で終わっている`);
+  assert.ok(last.beat + last.dur >= BARS * BEATS_PER_BAR - 1e-9, '最後まで伸びていない');
+});
+
+test('9半音を超える跳躍が無い', () => {
+  for (let i = 1; i < mel.length; i += 1) {
+    const d = Math.abs(mel[i].midi - mel[i - 1].midi);
+    assert.ok(d <= 9, `第${Math.floor(mel[i].beat / BEATS_PER_BAR) + 1}小節に ${d} 半音`);
+  }
 });

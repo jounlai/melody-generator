@@ -16,7 +16,8 @@ import {
   makeMotif, varyMotif, fragmentMotif, augmentMotif, CLOSING_RHYTHMS, fitShape,
 } from './elegyMotif.js';
 import {
-  placeMotif, resolveNonChordTones, fixLeaps, offsetBarHeads, ensureRests, nearestChordTone,
+  placeMotif, resolveNonChordTones, fixLeaps, offsetBarHeads, ensureRests,
+  settlePhraseEnds, endOnTonic, nearestChordTone,
 } from './elegyMelody.js';
 
 const { MEL_LO, MEL_HI, LH_LO, LH_HI, BEATS_PER_BAR } = RANGE;
@@ -421,6 +422,31 @@ export function inspect(song) {
     issues.push(`上位2つのリズムで ${counts[0] + counts[1]} 小節（14小節以下であること）`);
   }
 
+  // 大きすぎる跳躍が残っていないか。
+  // fixLeaps は句末を直す工程より前に走るので、そのあとの書き換えは拾えない。
+  for (let i = 1; i < mel.length; i += 1) {
+    const d = Math.abs(mel[i].midi - mel[i - 1].midi);
+    if (d > 9) {
+      issues.push(`第${Math.floor(mel[i].beat / BEATS_PER_BAR) + 1}小節に ${d} 半音の跳躍`);
+      break;
+    }
+  }
+
+  // 句の終わりが寄りかかれる音か（7th・9th・sus4 では句が閉じない）。
+  for (const bar of [7, 15, 23, 31]) {
+    const inBar = mel.filter((n) => Math.floor(n.beat / BEATS_PER_BAR) === bar);
+    if (inBar.length === 0) continue;
+    const n = inBar[inBar.length - 1];
+    const from = n.beat - bar * BEATS_PER_BAR;
+    let stable = true;
+    for (let t = from; t < Math.min(BEATS_PER_BAR, from + n.dur); t += 0.5) {
+      const chord = chordAtBeat(bar, t);
+      const rel = ((((n.midi % 12) + 12) % 12) - chord.pcs[0] + 12) % 12;
+      if (![0, 3, 4, 7].includes(rel)) { stable = false; break; }
+    }
+    if (!stable) issues.push(`第${bar + 1}小節の句末が寄りかかれない音`);
+  }
+
   // すべての小節が小節頭から始まっていないか
   let heads = 0;
   let played = 0;
@@ -455,14 +481,15 @@ export function composeOnce(seed) {
   // 先に天井を下げても、そのあとの工程が上へ戻してしまい、最高音が
   // 3回出ていた。頂点の一回性は、すべての書き換えが済んだあとで保証する。
   capBySection(notes);
+  // 句末を寄りかかれる音に直すのは、高さの書き換えがすべて済んだあと。
+  settlePhraseEnds(notes, [7, 15, 23, 31],
+    (bar) => SECTION_CEIL[Math.min(3, Math.floor(bar / 8))]);
   notes.sort((a, b) => a.beat - b.beat);
 
   // 最後の音は主音を最終小節の終わりまで伸ばす
+  endOnTonic(notes, 0);
   const last = notes[notes.length - 1];
-  if (last) {
-    last.midi = nearestChordTone(66, chordAt(BARS - 1), MEL_LO, MEL_HI);
-    last.dur = Math.max(2, BARS * BEATS_PER_BAR - last.beat);
-  }
+  if (last) last.dur = Math.max(2, BARS * BEATS_PER_BAR - last.beat);
 
   const { accomp, bass, pedal } = buildAccomp(notes);
   const melody = notes.map((n) => ({
