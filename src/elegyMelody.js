@@ -35,8 +35,9 @@ function nearestChordTone(target, chord, lo = MEL_LO, hi = MEL_HI) {
  * @param {number} startBar  置く小節（曲頭からの通し）
  * @param {number} anchor  だいたいこの高さに置きたい（実音）
  * @param {number|null} prev  直前の音（実音）。声部進行に使う
+ * @param {number} hi  この区画で許す上限（実音）。セクションごとの天井
  */
-export function placeMotif(motif, startBar, anchor, prev) {
+export function placeMotif(motif, startBar, anchor, prev, hi = MEL_HI) {
   const firstChord = chordAtBeat(startBar, motif.rhythm[0].b % BEATS_PER_BAR);
 
   // 起点は「前のフレーズの終わりから続く高さ」を最優先にする。
@@ -45,8 +46,8 @@ export function placeMotif(motif, startBar, anchor, prev) {
   // それをやると2小節ごとに線が飛び、各区画が独立した往復になって
   // 曲全体の線が消える。実際に「行って戻る」だけの旋律になった。
   // 前の音との距離を第一、狙った高さを第二にして選ぶ。
-  const tones = chordTones(firstChord).filter(inMelScale);
-  const pool = tones.length > 0 ? tones : chordTones(firstChord);
+  const tones = chordTones(firstChord, MEL_LO, hi).filter(inMelScale);
+  const pool = tones.length > 0 ? tones : chordTones(firstChord, MEL_LO, hi);
   let start = pool[0];
   let bestScore = Infinity;
   for (const t of pool) {
@@ -75,9 +76,13 @@ export function placeMotif(motif, startBar, anchor, prev) {
     for (let k = 0; k < Math.abs(steps); k += 1) m = melStep(m, Math.sign(steps));
     return m;
   };
+  //
+  // !!! 天井は、置いたあとに潰すのではなくここで効かせること !!!
+  // あとから天井を超えた音だけを下ろすと、下ろした先が前後と噛み合わず
+  // 同じ2音の往復が4箇所生まれた。形ごと収まる高さから始めれば、線は壊れない。
   for (let guard = 0; guard < 8; guard += 1) {
-    if (shiftBy(start, lowSteps) < MEL_LO) start = melStep(start, 1);
-    else if (shiftBy(start, highSteps) > MEL_HI) start = melStep(start, -1);
+    if (shiftBy(start, highSteps) > hi) start = melStep(start, -1);
+    else if (shiftBy(start, lowSteps) < MEL_LO) start = melStep(start, 1);
     else break;
   }
 
@@ -87,7 +92,7 @@ export function placeMotif(motif, startBar, anchor, prev) {
     const r = motif.rhythm[i];
     const steps = motif.shape[i] ?? 0;
     notes.push({
-      midi: Math.min(MEL_HI, Math.max(MEL_LO, shiftBy(start, steps))),
+      midi: Math.min(hi, Math.max(MEL_LO, shiftBy(start, steps))),
       beat: (startBar * BEATS_PER_BAR) + r.b,
       dur: r.d,
     });

@@ -14,7 +14,7 @@ import { defaultSettings } from '../src/settings.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '../out');
 
-const { song, issues, seed, tries } = compose(1, 400);
+const { song, issues, seed, tries } = compose(1);
 console.log(`試行 ${tries} 回 / 採用した種 ${seed}`);
 if (issues.length) {
   console.log('検査で残った違反:');

@@ -9,7 +9,7 @@ import { collectFrom, buildBundleScript, escapeJsonForHtml } from './bundle.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-const { song, seed, issues } = compose(1, 400);
+const { song, seed, issues } = compose(1);
 
 // 再生と楽譜に要るモジュールだけを畳む。
 const { mods, order } = collectFrom('elegyPlayer.js');

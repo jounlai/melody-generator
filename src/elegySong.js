@@ -9,8 +9,12 @@
 // 生成後に機械で検査し、違反があれば別の種で作り直す。
 
 import { makeRng } from './rng.js';
-import { HARMONY, chordAt, chordAtBeat, isChordTone, RANGE, degToMidi } from './elegy.js';
-import { makeMotif, varyMotif, fragmentMotif, augmentMotif } from './elegyMotif.js';
+import {
+  HARMONY, chordAt, chordAtBeat, isChordTone, chordTones, RANGE,
+} from './elegy.js';
+import {
+  makeMotif, varyMotif, fragmentMotif, augmentMotif, CLOSING_RHYTHMS, fitShape,
+} from './elegyMotif.js';
 import {
   placeMotif, resolveNonChordTones, fixLeaps, offsetBarHeads, ensureRests, nearestChordTone,
 } from './elegyMelody.js';
@@ -27,11 +31,26 @@ const SECTIONS = [
   // anchor は「そのセクションで旋律を置きたいおおよその高さ」。
   // 提示は低く静かに、喪失で少し翳り、クライマックスで初めて登り、回想で戻る。
   // 全体に低めに取る——「静かに受け入れる」曲なので、高いところで歌い続けない。
-  { name: '提示', from: 0, anchor: 66, plan: ['motif', 'ending', 'rhythm', 'cadence'] },
-  { name: '喪失', from: 8, anchor: 65, plan: ['augment', 'mirror', 'motif', 'cadence'] },
+  { name: '提示', from: 0, anchor: 64, plan: ['motif', 'ending', 'rhythm', 'cadence'] },
+  { name: '喪失', from: 8, anchor: 64, plan: ['augment', 'mirror', 'motif', 'cadence'] },
   { name: 'クライマックス', from: 16, anchor: 72, plan: ['motif', 'rhythm', 'peak', 'cadence'] },
-  { name: '回想', from: 24, anchor: 64, plan: ['fragment', 'motif', 'fragment', 'cadence'] },
+  { name: '回想', from: 24, anchor: 63, plan: ['fragment', 'motif', 'fragment', 'cadence'] },
 ];
+
+// セクションごとの天井。
+//
+// !!! 提示をクライマックスと同じ高さまで許してはいけない !!!
+// 天井を最高音の1つ下に置いただけでは、提示が第8小節で G5 まで登り、
+// 頂点の Ab5 との差が全音1つしか無くなった。それでは山にならないし、
+// 「抑制された親密な曲」という前提から外れる。
+// 登れるのはクライマックスだけ、と高さで決めておく。
+// クライマックスも1つ下まで。Ab5 そのものは頂点の1音だけに残す。
+// 回想はいちばん低く。思い出す場面なので、提示より上へ出さない。
+const SECTION_CEIL = [74, 75, PEAK_MIDI - 1, 72];   // D5 / Eb5 / G5 / C5
+
+function capBySection(notes) {
+  return capTo(notes, (bar) => SECTION_CEIL[Math.min(3, Math.floor(bar / 8))]);
+}
 
 /** 2小節ぶんの動機を、役割に応じて選ぶ。新しい音型は足さない。 */
 function variantFor(kind, motif, rng) {
@@ -69,7 +88,17 @@ function buildMelody(motif, rng) {
     for (let p = 0; p < 4; p += 1) {
       const bar = sec.from + p * 2;
       const kind = sec.plan[p];
-      const shaped = variantFor(kind, motif, rng);
+      let shaped = variantFor(kind, motif, rng);
+      // フレーズの4区画のうち、最後だけを「長い音で閉じる」型にする。
+      // 途中で閉じると、8小節の一文が2小節のため息4つに割れる。
+      if (p === 3) {
+        const close = CLOSING_RHYTHMS[Math.floor(rng() * CLOSING_RHYTHMS.length)];
+        shaped = {
+          rhythm: close.map((r) => ({ ...r })),
+          shape: fitShape(shaped.shape, close.length),
+          tag: 'var:close',
+        };
+      }
       phraseHeads.add(bar);
       // フレーズの中で高さを動かす。
       //
@@ -89,7 +118,8 @@ function buildMelody(motif, rng) {
       // べき回想が提示より高くなっていた。役割の変わり目は、線を切ってよい
       // ——というより、切るのが自然（そこが段落の境目だから）。
       const atSectionHead = p === 0 && sec.from > 0;
-      const placed = placeMotif(shaped, bar, anchor, atSectionHead ? null : prev);
+      const ceil = kind === 'peak' ? PEAK_MIDI : SECTION_CEIL[Math.floor(bar / 8)];
+      const placed = placeMotif(shaped, bar, anchor, atSectionHead ? null : prev, ceil);
       for (const n of placed) {
         n.role = kind;
         notes.push(n);
@@ -131,17 +161,36 @@ function placePeak(notes) {
 }
 
 /** 頂点以外が Ab5 に届かないよう、天井を1つ下げる。 */
-function capBelowPeak(notes) {
-  for (const n of notes) {
+
+
+/**
+ * 天井を超える音を、その和音の構成音へ下ろす。
+ *
+ * !!! 寄せ先を一律にしてはいけない !!!
+ * 同じ音へ集めると前後と重なり、同音が3つ続く（実測で3箇所出た）。
+ * 隣と重ならない構成音のうち、天井の少し下にいちばん近いものを採る。
+ */
+function capTo(notes, ceilingFor) {
+  const sorted = notes.slice().sort((a, b) => a.beat - b.beat);
+  for (let i = 0; i < sorted.length; i += 1) {
+    const n = sorted[i];
     if (n.isPeak || n.resolvesPeak) continue;
-    if (n.midi >= PEAK_MIDI) {
-      const bar = Math.floor(n.beat / BEATS_PER_BAR);
-      const inBar = n.beat - bar * BEATS_PER_BAR;
-      n.midi = nearestChordTone(PEAK_MIDI - 3, chordAtBeat(bar, inBar), MEL_LO, PEAK_MIDI - 2);
-    }
+    const bar = Math.floor(n.beat / BEATS_PER_BAR);
+    const ceil = ceilingFor(bar);
+    if (n.midi <= ceil) continue;
+    const chord = chordAtBeat(bar, n.beat - bar * BEATS_PER_BAR);
+    const near = [sorted[i - 1]?.midi, sorted[i + 1]?.midi];
+    const tones = chordTones(chord, MEL_LO, ceil).filter((t) => !near.includes(t));
+    const pool = tones.length > 0 ? tones : chordTones(chord, MEL_LO, ceil);
+    if (pool.length === 0) { n.midi = ceil; continue; }
+    const aim = ceil - 2;
+    let best = pool[0];
+    for (const t of pool) if (Math.abs(t - aim) < Math.abs(best - aim)) best = t;
+    n.midi = best;
   }
   return notes;
 }
+
 
 /** 完全に同じ小節が出ないよう、2つ目を1音ずらす。 */
 function breakExactCopies(notes) {
@@ -351,6 +400,27 @@ export function inspect(song) {
   if (!(secAvg[3] < secAvg[0] + 1)) issues.push('回想が提示より低く収まっていない');
   if (secAvg[0] > 71) issues.push(`提示の音域が高い（平均 ${secAvg[0].toFixed(1)} / 71以下）`);
 
+  // リズムが単調になっていないか。
+  //
+  // 音の高さの検査だけ通しても、刻みが同じなら「同じ曲が16回鳴る」ように
+  // 聴こえる。実測で、32小節が2つのリズム型（9回と8回）で半分埋まっていた。
+  // 主題である以上ある程度の反復は要るので、禁止ではなく上限で抑える。
+  const rhythmCount = new Map();
+  for (let bar = 0; bar < BARS; bar += 1) {
+    const k = mel.filter((n) => Math.floor(n.beat / BEATS_PER_BAR) === bar)
+      .map((n) => `${(n.beat % BEATS_PER_BAR).toFixed(2)}:${n.dur}`).join(',');
+    if (!k) continue;
+    rhythmCount.set(k, (rhythmCount.get(k) ?? 0) + 1);
+  }
+  const counts = [...rhythmCount.values()].sort((a, b) => b - a);
+  if (rhythmCount.size < 13) {
+    issues.push(`小節のリズムが ${rhythmCount.size} 種類（13種以上であること）`);
+  }
+  if (counts[0] > 8) issues.push(`同じリズムの小節が ${counts[0]} 回（8回以下であること）`);
+  if ((counts[0] ?? 0) + (counts[1] ?? 0) > 14) {
+    issues.push(`上位2つのリズムで ${counts[0] + counts[1]} 小節（14小節以下であること）`);
+  }
+
   // すべての小節が小節頭から始まっていないか
   let heads = 0;
   let played = 0;
@@ -374,12 +444,17 @@ export function composeOnce(seed) {
   const { notes, phraseHeads } = buildMelody(motif, rng);
 
   placePeak(notes);
-  capBelowPeak(notes);
+  capBySection(notes);
   fixLeaps(notes);
   resolveNonChordTones(notes);
   offsetBarHeads(notes, rng, phraseHeads);
   ensureRests(notes);
   breakExactCopies(notes);
+  // !!! 天井は最後にもう一度掛ける !!!
+  // 跳躍の修正・和声の整え・完全一致の解消は、いずれも音の高さを書き換える。
+  // 先に天井を下げても、そのあとの工程が上へ戻してしまい、最高音が
+  // 3回出ていた。頂点の一回性は、すべての書き換えが済んだあとで保証する。
+  capBySection(notes);
   notes.sort((a, b) => a.beat - b.beat);
 
   // 最後の音は主音を最終小節の終わりまで伸ばす
@@ -423,7 +498,11 @@ export function composeOnce(seed) {
 }
 
 /** 検査を通るまで種を替えて作り直す。 */
-export function compose(startSeed = 1, attempts = 200) {
+// 検査は7項目すべてを同時に満たすことを求めるので、通る種はまばらにしか無い。
+// 実測で 1443 回目。400 回で打ち切ると違反を抱えたまま出力してしまう。
+export const DEFAULT_ATTEMPTS = 4000;
+
+export function compose(startSeed = 1, attempts = DEFAULT_ATTEMPTS) {
   let best = null;
   let bestIssues = null;
   for (let i = 0; i < attempts; i += 1) {

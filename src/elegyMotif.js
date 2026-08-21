@@ -15,68 +15,104 @@ const { BEATS_PER_BAR } = RANGE;
 // 「別れを静かに受け入れる」ので、音数は少なく、間を置き、フレーズ末で伸ばす。
 // 付点8分＋16分は定型として乱用しないよう、候補のうち1つだけに留める。
 // どの型も、4小節のうちに休符が入るよう最後を短く切るか、途中を空けてある。
-const MOTIF_RHYTHMS = [
-  // 68BPM なので、4分音符1つで約0.9秒。ゆっくり歌わせるため音数は少なく、
-  // 1小節に2〜3音、2小節で4〜6音に留める。変化も緩やかにする。
-  //
-  // どの型も「歌い出し → ひと息 → 応え → 伸ばす」の形を持ち、
-  // 2小節目の後半で長く伸ばして息を継げるようにしてある。
-  [{ b: 0, d: 1 }, { b: 1, d: 1 }, { b: 2, d: 2 }, { b: 4, d: 1 }, { b: 5, d: 3 }],
-  [{ b: 0, d: 1.5 }, { b: 1.5, d: 0.5 }, { b: 2, d: 2 }, { b: 4, d: 1.5 }, { b: 5.5, d: 2.5 }],
-  [{ b: 0, d: 2 }, { b: 2, d: 1 }, { b: 3, d: 1 }, { b: 4, d: 2 }, { b: 6, d: 2 }],
-  [{ b: 1, d: 1 }, { b: 2, d: 1 }, { b: 3, d: 1 }, { b: 4, d: 1.5 }, { b: 5.5, d: 2.5 }],
-  [{ b: 0, d: 1 }, { b: 1, d: 0.5 }, { b: 1.5, d: 1.5 }, { b: 3, d: 1 }, { b: 4, d: 3 }],
-  [{ b: 0, d: 1.5 }, { b: 1.5, d: 1.5 }, { b: 3, d: 1 }, { b: 4, d: 2 }, { b: 6, d: 1.5 }],
+// リズムには2つの家系がある。
+//
+// !!! 全部を「長い音で閉じる」型にしてはいけない !!!
+// そうすると2小節ごとに息が切れ、32小節に16回のため息が並ぶだけになる。
+// 「青春の影」も「愛は勝つ」も、フレーズは一息で8小節を歌い切る一文で、
+// 長い音が来るのはその終わりだけ。文の途中で息を継いだら文にならない。
+//
+// flowing : フレーズの途中。最後の音を短く切って、次の小節へ渡す
+// closing : フレーズの終わり。長く伸ばして息を継ぐ
+const FLOWING_RHYTHMS = [
+  [{ b: 0, d: 1 }, { b: 1, d: 1 }, { b: 2, d: 1 }, { b: 3, d: 1 },
+    { b: 4, d: 1.5 }, { b: 5.5, d: 0.5 }, { b: 6, d: 1 }, { b: 7, d: 1 }],
+  [{ b: 0, d: 1.5 }, { b: 1.5, d: 0.5 }, { b: 2, d: 1 }, { b: 3, d: 1 },
+    { b: 4, d: 1 }, { b: 5, d: 1 }, { b: 6, d: 1.5 }, { b: 7.5, d: 0.5 }],
+  [{ b: 0, d: 1 }, { b: 1, d: 0.5 }, { b: 1.5, d: 1.5 }, { b: 3, d: 1 },
+    { b: 4, d: 1 }, { b: 5, d: 1 }, { b: 6, d: 1 }, { b: 7, d: 1 }],
+  [{ b: 1, d: 1 }, { b: 2, d: 1 }, { b: 3, d: 1 },
+    { b: 4, d: 1.5 }, { b: 5.5, d: 0.5 }, { b: 6, d: 1 }, { b: 7, d: 1 }],
+  // !!! 音数の違う型を必ず混ぜること !!!
+  // 上の4型はどれも7〜8音で、変奏が「同じ音数の別の型」しか選べなかったため、
+  // 32小節が実質2つのリズムだけで埋まった（9回と8回、あわせて17小節）。
+  // 音数が散らばっていれば、変奏のたびに刻みの密度そのものが動く。
+  [{ b: 0, d: 2 }, { b: 2, d: 1 }, { b: 3, d: 1 },
+    { b: 4, d: 2 }, { b: 6, d: 1 }, { b: 7, d: 1 }],
+  [{ b: 0, d: 1.5 }, { b: 1.5, d: 2.5 }, { b: 4, d: 1 }, { b: 5, d: 2 }, { b: 7, d: 1 }],
+  [{ b: 1, d: 1 }, { b: 2, d: 2 }, { b: 4, d: 1.5 }, { b: 5.5, d: 0.5 },
+    { b: 6, d: 1 }, { b: 7, d: 1 }],
+  [{ b: 0, d: 1 }, { b: 1, d: 2 }, { b: 3, d: 1 }, { b: 4, d: 1 },
+    { b: 5, d: 0.5 }, { b: 5.5, d: 1.5 }, { b: 7, d: 1 }],
+  [{ b: 0, d: 1 }, { b: 1, d: 1 }, { b: 2, d: 0.5 }, { b: 2.5, d: 0.5 }, { b: 3, d: 1 },
+    { b: 4, d: 1 }, { b: 5, d: 1 }, { b: 6, d: 1 }, { b: 7, d: 1 }],
 ];
+
+const CLOSING_RHYTHMS = [
+  [{ b: 0, d: 1 }, { b: 1, d: 1 }, { b: 2, d: 1 }, { b: 3, d: 1 }, { b: 4, d: 4 }],
+  [{ b: 0, d: 1.5 }, { b: 1.5, d: 0.5 }, { b: 2, d: 2 }, { b: 4, d: 3.5 }],
+  [{ b: 0, d: 1 }, { b: 1, d: 1 }, { b: 2, d: 2 }, { b: 4, d: 1 }, { b: 5, d: 3 }],
+  [{ b: 1, d: 1 }, { b: 2, d: 1 }, { b: 3, d: 1 }, { b: 4, d: 4 }],
+];
+
+const MOTIF_RHYTHMS = [...FLOWING_RHYTHMS, ...CLOSING_RHYTHMS];
 
 // 主動機の輪郭（度数の相対列、先頭0）。
 // 「静かに受け入れる」ので、上って一歩下がる形か、下って収まる形を中心にする。
+// 8小節の一文としての輪郭。フレーズは長いので、形も長く持つ。
+//
+// !!! 上下の幅は3歩まで、往復（… 1 0 1 …）を作らないこと !!!
+// 幅を超えると音域を突き抜け、往復だと線が前へ進まない。
+//
+// 「青春の影」「愛は勝つ」のように一息で歌い切る線は、途中で戻らずに
+// ゆっくり登るか、ゆっくり降りる。山はフレーズにひとつだけ。
 const MOTIF_SHAPES = [
-  // 音階の上での相対位置。1歩 = 隣の音（実音では1〜2半音）。
-  //
-  // !!! 上下の幅は3歩まで !!!
-  // それを超えると音域の上へ突き抜ける（実測で最高音が5回出た）。
-  // 「静かに受け入れる」曲に大きな上昇は要らない。狭い幅の中で動かす。
-  //
-  // !!! 同じ音へ戻る往復（… 1 0 1 …）を作らないこと !!!
-  // 線が前へ進まず、曲全体が破綻して聴こえる。
-  //
-  // 下降型を多めに置く。旋律が下りていく形は昔から美しさの型で、
-  // この曲の主題（別れを受け入れる）にも合う。
-  [0, -1, -2, -3, -2],   // 降りて、一歩だけ戻す
-  [0, 1, 0, -1, -3],     // 一歩上がってから、長く降りる
-  [0, -1, -2, -2, -3],   // 降りて、留まって、さらに降りる
-  [0, 1, 2, 1, -1],      // 登って、そこから降り始める
-  [0, -2, -1, 0, -2],    // 落ちて、戻って、また落ちる
-  [0, 2, 3, 1, 0],       // 登って、落として、始点へ収まる
-  [0, -1, 0, 1, -1],     // ほとんど動かない（間で聴かせる）
+  [0, 1, 2, 3, 2, 1, 0, -1],     // ゆっくり登って、ゆっくり降りる
+  [0, -1, -2, -3, -2, -1, 0, 1], // 沈んでから、登り返す
+  [0, 1, 1, 2, 3, 2, 1, 0],      // 溜めてから登り、収める
+  [0, -1, -1, -2, -3, -2, -1, 0],// 溜めてから降り、戻る
+  [0, 2, 3, 2, 1, 0, -1, -2],    // 早く登って、長く降りる
+  [0, 1, 2, 2, 3, 3, 2, 1],      // 二段で登る（サビの形）
 ];
+
+/**
+ * 形を n 個に伸縮する。位置で線形に補間するので、輪郭の山谷は保たれる。
+ * 「最後の動きを繰り返す」やり方だと、伸ばした先で形が壊れて音域を突き抜けた。
+ */
+export function fitShape(raw, n) {
+  if (raw.length === n) return raw.slice();
+  const out = [];
+  for (let i = 0; i < n; i += 1) {
+    const t = n === 1 ? 0 : (i * (raw.length - 1)) / (n - 1);
+    const lo = Math.floor(t);
+    const hi = Math.min(raw.length - 1, lo + 1);
+    out.push(Math.round(raw[lo] + (raw[hi] - raw[lo]) * (t - lo)));
+  }
+  return out;
+}
 
 /** 動機をひとつ作る。 */
 export function makeMotif(rng) {
-  const rhythm = MOTIF_RHYTHMS[Math.floor(rng() * MOTIF_RHYTHMS.length)];
+  const rhythm = FLOWING_RHYTHMS[Math.floor(rng() * FLOWING_RHYTHMS.length)];
   const raw = MOTIF_SHAPES[Math.floor(rng() * MOTIF_SHAPES.length)];
-  // リズムの音数に形を合わせる（足りなければ最後の動きを繰り返して伸ばす）
-  const shape = [];
-  for (let i = 0; i < rhythm.length; i += 1) {
-    if (i < raw.length) shape.push(raw[i]);
-    else shape.push(raw[raw.length - 1] + (i - raw.length + 1) * -1);
-  }
+  // リズムの音数に形を合わせる。
+  // 足りなければ間引き、多ければ形を引き伸ばして補う（線の形は保つ）。
+  const shape = fitShape(raw, rhythm.length);
   return { rhythm: rhythm.map((r) => ({ ...r })), shape, tag: 'motif' };
 }
 
-// 変奏のリズム。元と同じ音数のものだけを使う（形を保つため）。
+// 変奏のリズム。
+//
+// 音数が変わってもよい。形（度数の相対列）は fitShape で伸縮できるので、
+// 輪郭は保たれる。同じ音数に縛っていたときは、7音の型が1つしか無いため
+// 変奏が毎回もとの型へ戻ってしまっていた。
+// 閉じる型は選ばない——フレーズの途中で息を継ぐことになるから。
 function otherRhythm(rng, motif) {
-  const same = MOTIF_RHYTHMS.filter((r) => r.length === motif.rhythm.length
-    && r.map((x) => x.b).join() !== motif.rhythm.map((x) => x.b).join());
-  if (same.length === 0) {
-    // 音数の合う別の型が無ければ、打点を後ろへずらして作る（弱起にする）
-    const shifted = motif.rhythm.map((r, i) => (i === 0
-      ? { b: r.b + 0.5, d: Math.max(0.25, r.d - 0.5) }
-      : { ...r }));
-    return shifted;
-  }
-  return same[Math.floor(rng() * same.length)].map((r) => ({ ...r }));
+  const key = (r) => r.map((x) => `${x.b}:${x.d}`).join();
+  const mine = key(motif.rhythm);
+  const others = FLOWING_RHYTHMS.filter((r) => key(r) !== mine);
+  if (others.length === 0) return motif.rhythm.map((r) => ({ ...r }));
+  return others[Math.floor(rng() * others.length)].map((r) => ({ ...r }));
 }
 
 /**
@@ -88,9 +124,7 @@ function otherRhythm(rng, motif) {
 export function varyMotif(motif, kind, rng) {
   if (kind === 'rhythm') {
     const rhythm = otherRhythm(rng, motif);
-    const shape = motif.shape.slice(0, rhythm.length);
-    while (shape.length < rhythm.length) shape.push(shape[shape.length - 1]);
-    return { rhythm, shape, tag: `var:rhythm` };
+    return { rhythm, shape: fitShape(motif.shape, rhythm.length), tag: 'var:rhythm' };
   }
   if (kind === 'mirror') {
     return {
@@ -135,4 +169,4 @@ export function augmentMotif(motif) {
   return { rhythm, shape: motif.shape.slice(0, rhythm.length), tag: 'var:augment' };
 }
 
-export { MOTIF_RHYTHMS, MOTIF_SHAPES };
+export { MOTIF_RHYTHMS, MOTIF_SHAPES, FLOWING_RHYTHMS, CLOSING_RHYTHMS };
