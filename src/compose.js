@@ -1986,6 +1986,34 @@ export function composeSong(seed, data, settings) {
         cells.push(ns.filter((n) => n.beat < 4).map((n) => ({ beat: n.beat, dur: n.dur })));
         cells.push(ns.filter((n) => n.beat >= 4).map((n) => ({ beat: n.beat - 4, dur: n.dur })));
       }
+
+      // 小節の頭を空ける（弱起）。
+      //
+      // !!! ここが「行進曲のよう」の正体だった !!!
+      // 実測すると、実際の J-POP は小節の頭から始まる小節が 27.0% しかないのに、
+      // こちらは 88.7% だった。毎小節が律儀に1拍目から始まると、どれだけ音価を
+      // 変えても行進曲に聴こえる。バラードは前の小節から音が伸びてきたり、
+      // 半拍・1拍遅れて歌い出したりする。
+      //
+      // 頭の音を後ろへずらすか、落として前の音を伸ばす。楽節の頭と、
+      // 曲の1音目は動かさない（そこは拍を示す役目がある）。
+      for (let b = 0; b < cells.length; b += 1) {
+        const cell = cells[b];
+        if (cell.length < 2) continue;
+        if (b % 4 === 0) continue;              // 楽節の頭は動かさない
+        if (s === 0 && b === 0) continue;       // 曲の1音目
+        if (cell[0].beat !== 0) continue;       // 既に弱起
+        if (rng() > 0.55) continue;
+        if (rng() < 0.5) {
+          // 頭の音を落とし、その長さを次の音の前の余白にする（前から伸びてくる形）
+          cells[b] = cell.slice(1);
+        } else {
+          // 頭の音を半拍〜1拍うしろへずらす
+          const shift = cell[1].beat - cell[0].beat >= 1 ? 1 : 0.5;
+          cells[b] = [{ beat: cell[0].beat + shift, dur: Math.max(0.25, cell[0].dur - shift) },
+            ...cell.slice(1)];
+        }
+      }
       // 輪郭。
       //
       // !!! セクションの開始を前のセクションの終わりから始めないこと !!!
