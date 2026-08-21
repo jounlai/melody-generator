@@ -21,6 +21,7 @@ import {
   splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
+import { composePhrase, archContour } from './melody.js';
 import {
   anticipateMelody, arpeggioIndex, arrangeSong, sustainPhraseEnds, BEATS_PER_BAR,
 } from './arrange.js';
@@ -385,6 +386,42 @@ export function riseFor(sectionIdx, slotIdx, climax) {
  * 変形後の記号が CHORD_VOCAB に無ければ、その変形は諦めて原形を残す
  * （語彙外のコードは断片の fit に載っていないので、選択が全滅する）。
  */
+// ---------------------------------------------------------------------------
+// 繰り返しごとの終止の差し替え（版2）
+//
+// 1セクションは4小節の進行を repeats 回まわして作る。従来はそれを**そのまま**
+// 繰り返していたので、32小節の曲で異なる4小節が 3.8 種類しかなかった:
+//
+//   0-3: IM7 → IM7/3 → IV → iv
+//   4-7: IM7 → IM7/3 → IV → iv   ← 同じ
+//
+// 旋律を1つの動機にまとめた（それ自体は正しい）うえで和声まで同じだと、
+// 曲全体が繰り返しだけになる。実際の歌は逆で、動機は1つのまま和声が動く。
+//
+// 古典的な楽節は「問いかけて（半終止で開く）→ 答える（全終止で閉じる）」の対で
+// できている。2周目の最終小節だけを差し替えて、その対を作る。
+// 差し替え先は語彙にあるものだけ。無ければ諦めて原形を残す。
+const REPEAT_CADENCE = {
+  major: ['V', 'V7', 'vi', 'IV', 'I'],
+  minor: ['V', 'V7', 'VI', 'iv', 'i'],
+};
+
+/**
+ * 2周目以降の終止を、1周目と違う和音へ差し替える。
+ * 乱数は1周につき1回だけ消費する（消費数が揺れると同じ曲が再現できない）。
+ */
+export function varyRepeat(bars, repeatIndex, mode, rng) {
+  if (repeatIndex === 0 || bars.length < 2) return bars;
+  const last = bars[bars.length - 1];
+  const options = (REPEAT_CADENCE[mode] ?? [])
+    .filter((sym) => sym !== last && chordIndex(mode, sym) >= 0);
+  const pickedSym = options.length > 0 ? pick(rng, options) : null;
+  if (pickedSym === null) return bars;
+  const out = bars.slice();
+  out[out.length - 1] = pickedSym;
+  return out;
+}
+
 export function varyProgression(prog, level) {
   const bars = prog.bars.map((b) => ({ ...b }));
   const out = { ...prog, bars };
@@ -1630,6 +1667,8 @@ export function composeSong(seed, data, settings) {
   const breathSlots = [];  // 息継ぎを置ける「A / A' のフレーズ末スロット」
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
   let prevDirection = 0;   // 直前の断片が進んでいた向き（方向の慣性に使う）
+  // 版2で、セクションをまたいで旋律の高さを引き継ぐための最後の度数。
+  let sectionStartDeg = null;
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -1638,7 +1677,13 @@ export function composeSong(seed, data, settings) {
 
     // 4小節の進行を repeats 回まわしてセクションの長さにする。
     const barChords = [];
-    for (let r = 0; r < repeats; r++) for (const b of prog.bars) barChords.push(b.chord);
+    for (let r = 0; r < repeats; r++) {
+      const cycle = prog.bars.map((b) => b.chord);
+      // 版2だけ、2周目以降の終止を差し替えて和声を動かす。
+      // 版1は従来どおり同じ4小節をそのまま繰り返す（曲コードの互換のため）。
+      const shaped = narrowFloor > 1 ? varyRepeat(cycle, r, mode, rng) : cycle;
+      for (const chord of shaped) barChords.push(chord);
+    }
 
     // つなぎ目。B の最終小節を、新しい調のドミナントに差し替える。
     // 記号は新しい調から見た V7（または V）で、その小節だけ新しい主音で描くので、
@@ -1867,7 +1912,11 @@ export function composeSong(seed, data, settings) {
 
       const slotStartBeat = (startBar + 2 * k) * 4;
       const slotTonics = [tonicAtBar(startBar + 2 * k), tonicAtBar(startBar + 2 * k + 1)];
-      for (const n of slotMelodyNotes(fragment, ctx, slotStartBeat, slotTonics)) melody.push(n);
+      // 版2は音の高さをあとでまとめて作る（下の「セクションぶんの旋律」を参照）。
+      // 断片はここまでで「リズムの型」として確定し、度数は使わない。
+      if (narrowFloor === 1) {
+        for (const n of slotMelodyNotes(fragment, ctx, slotStartBeat, slotTonics)) melody.push(n);
+      }
 
       slotRecords.push({
         fragmentId: fragment.id,
@@ -1901,6 +1950,57 @@ export function composeSong(seed, data, settings) {
     // 【変更後】和音の割り当てだけを記録して、配置と発音はループの外でやる。
     for (let b = 0; b < barChords.length; b++) {
       chordPlan[startBar + b] = { bar: startBar + b, symbol: barChords[b] };
+    }
+
+    // ---- 版2: セクションぶんの旋律を、音符単位で作る ----
+    //
+    // 断片カタログは「リズムの型」としてだけ使う。今日そこへ入れた16分・食い・
+    // 動機の反復はリズム側に残るが、**音の高さは1つずつ、和音と前の音を見て**
+    // 決め直す。従来は断片が持っていた度数をそのまま鳴らしていたので、どの音も
+    // 「前の音の続き」として選ばれていなかった。
+    if (narrowFloor > 1) {
+      // 小節ごとのリズム。断片の打点と長さだけを取り出す。
+      const cells = [];
+      for (let k = 0; k < slotCount; k += 1) {
+        const f = slotFragments[k];
+        const ns = f?.notes ?? [];
+        cells.push(ns.filter((n) => n.beat < 4).map((n) => ({ beat: n.beat, dur: n.dur })));
+        cells.push(ns.filter((n) => n.beat >= 4).map((n) => ({ beat: n.beat - 4, dur: n.dur })));
+      }
+      // 輪郭。セクションの役どころに応じて、登る／頂点／下りるを作る。
+      const peakDeg = s === 2 ? CLIMAX_MAX_PEAK : (s === 3 ? 10 : 11);
+      const startFrom = sectionStartDeg ?? 5;
+      const landOn = s === 3 ? 5 : 6;
+      const contour = archContour(barChords.length, startFrom, peakDeg, landOn,
+        s === 2 ? 0.75 : 0.6);
+      // 掛留を置く小節。陰りの和音（iv / bVI / bVII）の上がいちばん効くので、
+      // そこを全部拾う。無ければ頂点の直前に1つ置く。
+      const darkBars = barChords
+        .map((c, i) => (isDarkChord(c) ? i : -1))
+        .filter((i) => i > 0);
+      const susBars = darkBars.length > 0
+        ? darkBars
+        : [Math.max(1, Math.round(barChords.length * (s === 2 ? 0.75 : 0.6)) - 1)];
+      const composed = composePhrase({
+        chords: barChords,
+        mode,
+        rhythm: cells,
+        contour,
+        register: [3, peakDeg],
+        startDeg: sectionStartDeg,
+        suspendAtBars: susBars,
+        endDegrees: s === 3 ? [1] : [1, 3, 5],
+      });
+      for (const n of composed) {
+        const bar = Math.floor(n.beat / 4);
+        melody.push({
+          midi: degToMidi(n.deg, mode, tonicAtBar(startBar + bar)),
+          beat: startBar * 4 + n.beat,
+          dur: n.dur,
+          vel: 0.7 * MELODY_VEL_SCALE,
+        });
+        sectionStartDeg = n.deg;
+      }
     }
 
     sections.push({

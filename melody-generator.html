@@ -4334,6 +4334,258 @@ exports.MINOR_STEPS = MINOR_STEPS;
 exports.CHORD_VOCAB = CHORD_VOCAB;
 };
 
+// ===== src/melody.js =====
+__mods["melody.js"] = function (exports, require) {
+// 旋律を「音符単位で」作る層。
+//
+// ■ なぜ要るか
+//
+// この生成系は 2小節の断片999個をあらかじめ作っておき、曲を組むときは
+// 「その和音に乗るか」で断片を選んで並べていた。つまり **1つの音も
+// 「前の音の続きとして」選ばれていない**。断片の中の音の並びは断片が
+// 作られた時点で決まっていて、曲の文脈とは無関係だった。
+//
+// 歌のメロディは逆で、いまここまで来た線と、これから和音がどこへ行くかを見て
+// 次の音が決まる。その一点がこの系には無かったので、統計をどれだけ整えても
+// 「メロディとして成立しない」ままだった。
+//
+// ■ 作り方（対位法の骨格音＋装飾という古典的な手順）
+//
+//   1. 骨格音   小節ごとに1つ、その和音の構成音を置く。選ぶ基準は
+//               「前の骨格音から滑らかに繋がること」と「輪郭の目標に近いこと」
+//   2. 装飾     骨格音の間を、次の骨格音へ向かう順次進行で埋める。
+//               余った打点は刺繍音（隣へ行って戻る）にする
+//   3. 掛留     1フレーズに1回、強拍に非和声音を置いて順次下降で解決させる
+//   4. 終止     フレーズの最後は、その和音の安定音（1/3/5度）へ着地する
+//
+// リズムは渡された型をそのまま使う（動機の反復はリズム側が担う）。
+// ここが決めるのは音の高さだけ。
+const { isChordTone } = require('theory.js');
+
+const DEG_MIN = 1;
+const DEG_MAX = 15;
+
+/** その和音の構成音になるスケール度数を、音域の中から全部拾う。 */
+function chordToneDegrees(chord, mode, lo = DEG_MIN, hi = DEG_MAX) {
+  const out = [];
+  for (let d = Math.max(DEG_MIN, lo); d <= Math.min(DEG_MAX, hi); d += 1) {
+    if (isChordTone(d, mode, chord)) out.push(d);
+  }
+  return out;
+}
+
+/**
+ * 小節の骨格音を選ぶ。
+ *
+ * 「前の音から滑らかに」と「輪郭の目標へ」の two objectives を足して比べる。
+ * 順次（1度差）を最良とし、跳躍は輪郭がそれを求めるときだけ通す。
+ *
+ * @param {string} chord その小節の和音
+ * @param {number|null} prev 前の骨格音。曲の頭は null
+ * @param {number} target 輪郭が求める高さ
+ */
+function chooseStructural(chord, mode, prev, target, lo, hi) {
+  const tones = chordToneDegrees(chord, mode, lo, hi);
+  if (tones.length === 0) return prev ?? target;
+  let best = tones[0];
+  let bestScore = Infinity;
+  for (const d of tones) {
+    // 前の音からの距離。順次(1)は据え置き、跳躍は距離の2乗で急に高くつく。
+    const move = prev === null ? 0 : Math.abs(d - prev);
+    const smooth = move <= 1 ? 0 : (move - 1) ** 2;
+    // 輪郭からのずれ。骨格は輪郭に従うので、こちらの重みを大きめに取る。
+    const shape = Math.abs(d - target) * 2;
+    const score = smooth + shape;
+    if (score < bestScore) { bestScore = score; best = d; }
+  }
+  return best;
+}
+
+/**
+ * 2つの骨格音の間を n 個の音で埋める。
+ *
+ * 距離が音数に足りるなら順次で歩く（これが「跳躍を埋め戻す」形そのもの）。
+ * 余るぶんは刺繍音（隣へ行って戻る）で埋める。同じ音を続けて置かない。
+ *
+ * @returns {number[]} 長さ n の度数列（from は含まない、to も含まない）
+ */
+function fillBetween(from, to, n) {
+  if (n <= 0) return [];
+  const clamp = (d) => Math.min(DEG_MAX, Math.max(DEG_MIN, d));
+  const dir = Math.sign(to - from) || 1;
+  const dist = Math.abs(to - from);
+  const out = [];
+
+  // 距離が音数より大きい。順次では届かないので、等間隔に割って近づく。
+  // ここで生まれる跳躍は、次の音で必ず同じ向きへ続くので線が切れない。
+  if (dist - 1 > n) {
+    for (let i = 1; i <= n; i += 1) {
+      out.push(clamp(from + Math.round(((to - from) * i) / (n + 1))));
+    }
+    return out;
+  }
+
+  // 順次で歩く音数（to そのものは次の小節が持つので dist-1 歩）と、余るぶん。
+  const walk = Math.max(0, dist - 1);
+  const extra = n - walk;
+
+  // 余りは刺繍音。目標と**逆**へ振れて戻る。戻るときに目標へ向かう勢いがつく。
+  for (let i = 0; i < extra; i += 1) {
+    out.push(clamp(from + (i % 2 === 0 ? -dir : 0)));
+  }
+  let cur = from;
+  for (let i = 0; i < walk; i += 1) {
+    cur += dir;
+    out.push(clamp(cur));
+  }
+  return out;
+}
+
+/**
+ * フレーズを1つ作る。
+ *
+ * @param {object} spec
+ *   chords    小節ごとの和音記号
+ *   mode      'major' | 'minor'
+ *   rhythm    小節ごとの [{beat, dur}]（beat は小節内 0〜4）
+ *   contour   小節ごとの目標の高さ（度数）
+ *   startDeg  最初の骨格音。null なら輪郭に任せる
+ *   register  [lo, hi] 使ってよい度数
+ *   suspendAt 掛留を置く小節の番号。null なら置かない
+ *   endDegrees 最後の音に置きたい度数（スケール度数 1/3/5 など）
+ * @returns {Array<{deg:number, beat:number, dur:number}>} beat はフレーズ頭からの通し
+ */
+function composePhrase(spec) {
+  const {
+    chords, mode, rhythm, contour, register = [3, 13],
+    startDeg = null, suspendAt = null, suspendAtBars = null, endDegrees = null,
+  } = spec;
+  const [lo, hi] = register;
+  const suspendBars = new Set(
+    Array.isArray(suspendAtBars) ? suspendAtBars : (suspendAt === null ? [] : [suspendAt]),
+  );
+
+  // 1. 骨格音。小節ごとに1つ。
+  const structural = [];
+  let prev = startDeg;
+  for (let b = 0; b < chords.length; b += 1) {
+    const target = contour[b] ?? contour[contour.length - 1] ?? 8;
+    const deg = chooseStructural(chords[b], mode, prev, target, lo, hi);
+    structural.push(deg);
+    prev = deg;
+  }
+
+  // 2. 各小節を、その骨格音から次の骨格音へ向かって埋める。
+  const notes = [];
+  for (let b = 0; b < chords.length; b += 1) {
+    const cell = rhythm[b] ?? [];
+    if (cell.length === 0) continue;
+    const here = structural[b];
+    const next = b + 1 < structural.length ? structural[b + 1] : here;
+    const inner = fillBetween(here, next, cell.length - 1);
+    const degs = [here, ...inner];
+
+    // 3. 掛留（サスペンション）。強拍に非和声音を置き、次の音へ順次下降で解決させる。
+    //
+    // 「泣ける」瞬間はほぼこれが作っている。和音が変わった瞬間に、前の和音の音が
+    // 残って半拍ぶつかり、そこから一歩下がって収まる——その一歩が感情を動かす。
+    // 置く場所は指定された小節（陰りの和音 iv / bVI / bVII の上がいちばん効く）。
+    if (suspendBars.has(b) && degs.length >= 2) {
+      const sus = degs[0] + 1;
+      if (sus <= hi && sus <= DEG_MAX && !isChordTone(sus, mode, chords[b])
+        && isChordTone(sus - 1, mode, chords[b])) {
+        degs[0] = sus;
+        degs[1] = sus - 1;
+      }
+    }
+
+    // 3.5 強拍の始末。
+    //
+    // 対位法の原則は「強拍は和声音、非和声音は弱拍」。埋める工程は次の骨格音へ
+    // 向かって歩くだけで和音を見ていないので、通過音が強拍に居座ることがある。
+    // 解決しない非和声音が強拍にあると、耳にははっきり「外れた音」に聴こえる。
+    //
+    // 次の音へ順次で解決しているものは触らない（それが掛留・経過音であり、
+    // 陰りを作っている当のもの）。解決していないものだけ、いちばん近い和声音へ寄せる。
+    for (let i = 0; i < degs.length; i += 1) {
+      const at = cell[i]?.beat ?? 0;
+      const strong = at === 0 || at === 2;
+      if (!strong) continue;
+      if (isChordTone(degs[i], mode, chords[b])) continue;
+      const nx = degs[i + 1];
+      const resolves = nx !== undefined && Math.abs(nx - degs[i]) === 1
+        && isChordTone(nx, mode, chords[b]);
+      if (resolves) continue;
+      degs[i] = nearestChordTone(degs[i], mode, chords[b], lo, hi);
+    }
+
+    for (let i = 0; i < cell.length; i += 1) {
+      notes.push({ deg: degs[i], beat: b * 4 + cell[i].beat, dur: cell[i].dur });
+    }
+  }
+
+  // 4. 終止。最後の音は、その和音の安定音へ着地させる。
+  if (notes.length > 0 && Array.isArray(endDegrees) && endDegrees.length > 0) {
+    const last = notes[notes.length - 1];
+    const chord = chords[chords.length - 1];
+    const wanted = chordToneDegrees(chord, mode, lo, hi)
+      .filter((d) => endDegrees.includes(scaleDegreeOf(d)));
+    if (wanted.length > 0) {
+      // いちばん近いものへ。飛ばずに着地させる。
+      let best = wanted[0];
+      for (const d of wanted) if (Math.abs(d - last.deg) < Math.abs(best - last.deg)) best = d;
+      last.deg = best;
+    }
+  }
+  return notes;
+}
+
+/** その和音の構成音のうち、deg にいちばん近いもの。同点なら下を採る。 */
+function nearestChordTone(deg, mode, chord, lo, hi) {
+  const tones = chordToneDegrees(chord, mode, lo, hi);
+  if (tones.length === 0) return deg;
+  let best = tones[0];
+  for (const d of tones) {
+    if (Math.abs(d - deg) < Math.abs(best - deg)) best = d;
+  }
+  return best;
+}
+
+function scaleDegreeOf(deg) {
+  return ((((deg - 1) % 7) + 7) % 7) + 1;
+}
+
+/**
+ * 山なりの輪郭を作る。上って、頂点で解放し、下りてくる。
+ * @param {number} bars 小節数
+ * @param {number} from 開始の高さ
+ * @param {number} peak 頂点の高さ
+ * @param {number} to 着地の高さ
+ * @param {number} peakAt 頂点を置く位置（0〜1）
+ */
+function archContour(bars, from, peak, to, peakAt = 0.65) {
+  const out = [];
+  const top = Math.max(1, Math.round(bars * peakAt));
+  for (let b = 0; b < bars; b += 1) {
+    if (b <= top) {
+      const t = top === 0 ? 1 : b / top;
+      out.push(Math.round(from + (peak - from) * t));
+    } else {
+      const t = (b - top) / Math.max(1, bars - 1 - top);
+      out.push(Math.round(peak + (to - peak) * t));
+    }
+  }
+  return out;
+}
+
+// --- exports ---
+exports.chordToneDegrees = chordToneDegrees;
+exports.chooseStructural = chooseStructural;
+exports.fillBetween = fillBetween;
+exports.composePhrase = composePhrase;
+exports.archContour = archContour;
+};
+
 // ===== src/arrange.js =====
 __mods["arrange.js"] = function (exports, require) {
 //
@@ -4834,6 +5086,7 @@ __mods["compose.js"] = function (exports, require) {
 const { makeRng, seedFromString, randInt, pick } = require('rng.js');
 const { degToMidi, degToSemitone, chordVoicing, bassMidi, nearestChordToneDeg, chordIndex, splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB } = require('theory.js');
 const { normalizeSettings } = require('settings.js');
+const { composePhrase, archContour } = require('melody.js');
 const { anticipateMelody, arpeggioIndex, arrangeSong, sustainPhraseEnds, BEATS_PER_BAR } = require('arrange.js');
 
 // arpeggioIndex の定義は arrange.js にある。compose.js 自身はもう使わないが、
@@ -5196,6 +5449,42 @@ function riseFor(sectionIdx, slotIdx, climax) {
  * 変形後の記号が CHORD_VOCAB に無ければ、その変形は諦めて原形を残す
  * （語彙外のコードは断片の fit に載っていないので、選択が全滅する）。
  */
+// ---------------------------------------------------------------------------
+// 繰り返しごとの終止の差し替え（版2）
+//
+// 1セクションは4小節の進行を repeats 回まわして作る。従来はそれを**そのまま**
+// 繰り返していたので、32小節の曲で異なる4小節が 3.8 種類しかなかった:
+//
+//   0-3: IM7 → IM7/3 → IV → iv
+//   4-7: IM7 → IM7/3 → IV → iv   ← 同じ
+//
+// 旋律を1つの動機にまとめた（それ自体は正しい）うえで和声まで同じだと、
+// 曲全体が繰り返しだけになる。実際の歌は逆で、動機は1つのまま和声が動く。
+//
+// 古典的な楽節は「問いかけて（半終止で開く）→ 答える（全終止で閉じる）」の対で
+// できている。2周目の最終小節だけを差し替えて、その対を作る。
+// 差し替え先は語彙にあるものだけ。無ければ諦めて原形を残す。
+const REPEAT_CADENCE = {
+  major: ['V', 'V7', 'vi', 'IV', 'I'],
+  minor: ['V', 'V7', 'VI', 'iv', 'i'],
+};
+
+/**
+ * 2周目以降の終止を、1周目と違う和音へ差し替える。
+ * 乱数は1周につき1回だけ消費する（消費数が揺れると同じ曲が再現できない）。
+ */
+function varyRepeat(bars, repeatIndex, mode, rng) {
+  if (repeatIndex === 0 || bars.length < 2) return bars;
+  const last = bars[bars.length - 1];
+  const options = (REPEAT_CADENCE[mode] ?? [])
+    .filter((sym) => sym !== last && chordIndex(mode, sym) >= 0);
+  const pickedSym = options.length > 0 ? pick(rng, options) : null;
+  if (pickedSym === null) return bars;
+  const out = bars.slice();
+  out[out.length - 1] = pickedSym;
+  return out;
+}
+
 function varyProgression(prog, level) {
   const bars = prog.bars.map((b) => ({ ...b }));
   const out = { ...prog, bars };
@@ -6441,6 +6730,8 @@ function composeSong(seed, data, settings) {
   const breathSlots = [];  // 息継ぎを置ける「A / A' のフレーズ末スロット」
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
   let prevDirection = 0;   // 直前の断片が進んでいた向き（方向の慣性に使う）
+  // 版2で、セクションをまたいで旋律の高さを引き継ぐための最後の度数。
+  let sectionStartDeg = null;
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -6449,7 +6740,13 @@ function composeSong(seed, data, settings) {
 
     // 4小節の進行を repeats 回まわしてセクションの長さにする。
     const barChords = [];
-    for (let r = 0; r < repeats; r++) for (const b of prog.bars) barChords.push(b.chord);
+    for (let r = 0; r < repeats; r++) {
+      const cycle = prog.bars.map((b) => b.chord);
+      // 版2だけ、2周目以降の終止を差し替えて和声を動かす。
+      // 版1は従来どおり同じ4小節をそのまま繰り返す（曲コードの互換のため）。
+      const shaped = narrowFloor > 1 ? varyRepeat(cycle, r, mode, rng) : cycle;
+      for (const chord of shaped) barChords.push(chord);
+    }
 
     // つなぎ目。B の最終小節を、新しい調のドミナントに差し替える。
     // 記号は新しい調から見た V7（または V）で、その小節だけ新しい主音で描くので、
@@ -6678,7 +6975,11 @@ function composeSong(seed, data, settings) {
 
       const slotStartBeat = (startBar + 2 * k) * 4;
       const slotTonics = [tonicAtBar(startBar + 2 * k), tonicAtBar(startBar + 2 * k + 1)];
-      for (const n of slotMelodyNotes(fragment, ctx, slotStartBeat, slotTonics)) melody.push(n);
+      // 版2は音の高さをあとでまとめて作る（下の「セクションぶんの旋律」を参照）。
+      // 断片はここまでで「リズムの型」として確定し、度数は使わない。
+      if (narrowFloor === 1) {
+        for (const n of slotMelodyNotes(fragment, ctx, slotStartBeat, slotTonics)) melody.push(n);
+      }
 
       slotRecords.push({
         fragmentId: fragment.id,
@@ -6712,6 +7013,57 @@ function composeSong(seed, data, settings) {
     // 【変更後】和音の割り当てだけを記録して、配置と発音はループの外でやる。
     for (let b = 0; b < barChords.length; b++) {
       chordPlan[startBar + b] = { bar: startBar + b, symbol: barChords[b] };
+    }
+
+    // ---- 版2: セクションぶんの旋律を、音符単位で作る ----
+    //
+    // 断片カタログは「リズムの型」としてだけ使う。今日そこへ入れた16分・食い・
+    // 動機の反復はリズム側に残るが、**音の高さは1つずつ、和音と前の音を見て**
+    // 決め直す。従来は断片が持っていた度数をそのまま鳴らしていたので、どの音も
+    // 「前の音の続き」として選ばれていなかった。
+    if (narrowFloor > 1) {
+      // 小節ごとのリズム。断片の打点と長さだけを取り出す。
+      const cells = [];
+      for (let k = 0; k < slotCount; k += 1) {
+        const f = slotFragments[k];
+        const ns = f?.notes ?? [];
+        cells.push(ns.filter((n) => n.beat < 4).map((n) => ({ beat: n.beat, dur: n.dur })));
+        cells.push(ns.filter((n) => n.beat >= 4).map((n) => ({ beat: n.beat - 4, dur: n.dur })));
+      }
+      // 輪郭。セクションの役どころに応じて、登る／頂点／下りるを作る。
+      const peakDeg = s === 2 ? CLIMAX_MAX_PEAK : (s === 3 ? 10 : 11);
+      const startFrom = sectionStartDeg ?? 5;
+      const landOn = s === 3 ? 5 : 6;
+      const contour = archContour(barChords.length, startFrom, peakDeg, landOn,
+        s === 2 ? 0.75 : 0.6);
+      // 掛留を置く小節。陰りの和音（iv / bVI / bVII）の上がいちばん効くので、
+      // そこを全部拾う。無ければ頂点の直前に1つ置く。
+      const darkBars = barChords
+        .map((c, i) => (isDarkChord(c) ? i : -1))
+        .filter((i) => i > 0);
+      const susBars = darkBars.length > 0
+        ? darkBars
+        : [Math.max(1, Math.round(barChords.length * (s === 2 ? 0.75 : 0.6)) - 1)];
+      const composed = composePhrase({
+        chords: barChords,
+        mode,
+        rhythm: cells,
+        contour,
+        register: [3, peakDeg],
+        startDeg: sectionStartDeg,
+        suspendAtBars: susBars,
+        endDegrees: s === 3 ? [1] : [1, 3, 5],
+      });
+      for (const n of composed) {
+        const bar = Math.floor(n.beat / 4);
+        melody.push({
+          midi: degToMidi(n.deg, mode, tonicAtBar(startBar + bar)),
+          beat: startBar * 4 + n.beat,
+          dur: n.dur,
+          vel: 0.7 * MELODY_VEL_SCALE,
+        });
+        sectionStartDeg = n.deg;
+      }
     }
 
     sections.push({
@@ -6914,6 +7266,7 @@ exports.climaxSlot = climaxSlot;
 exports.rawTension = rawTension;
 exports.curveFor = curveFor;
 exports.riseFor = riseFor;
+exports.varyRepeat = varyRepeat;
 exports.varyProgression = varyProgression;
 exports.passesFilters = passesFilters;
 exports.isDarkChord = isDarkChord;
