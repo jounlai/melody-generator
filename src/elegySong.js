@@ -24,10 +24,13 @@ const PEAK_BAR_RANGE = [20, 23];   // 第21〜24小節（0始まり）
 
 // セクションの役割。anchor はそのセクションで旋律を置きたいおおよその高さ。
 const SECTIONS = [
-  { name: '提示', from: 0, anchor: 68, plan: ['motif', 'ending', 'rhythm', 'cadence'] },
-  { name: '喪失', from: 8, anchor: 67, plan: ['augment', 'mirror', 'motif', 'cadence'] },
-  { name: 'クライマックス', from: 16, anchor: 74, plan: ['motif', 'rhythm', 'peak', 'cadence'] },
-  { name: '回想', from: 24, anchor: 66, plan: ['fragment', 'motif', 'fragment', 'cadence'] },
+  // anchor は「そのセクションで旋律を置きたいおおよその高さ」。
+  // 提示は低く静かに、喪失で少し翳り、クライマックスで初めて登り、回想で戻る。
+  // 全体に低めに取る——「静かに受け入れる」曲なので、高いところで歌い続けない。
+  { name: '提示', from: 0, anchor: 66, plan: ['motif', 'ending', 'rhythm', 'cadence'] },
+  { name: '喪失', from: 8, anchor: 65, plan: ['augment', 'mirror', 'motif', 'cadence'] },
+  { name: 'クライマックス', from: 16, anchor: 72, plan: ['motif', 'rhythm', 'peak', 'cadence'] },
+  { name: '回想', from: 24, anchor: 64, plan: ['fragment', 'motif', 'fragment', 'cadence'] },
 ];
 
 /** 2小節ぶんの動機を、役割に応じて選ぶ。新しい音型は足さない。 */
@@ -68,9 +71,25 @@ function buildMelody(motif, rng) {
       const kind = sec.plan[p];
       const shaped = variantFor(kind, motif, rng);
       phraseHeads.add(bar);
-      // フレーズの中で高さを動かす。頂点のスロットだけ高く狙う。
-      const anchor = kind === 'peak' ? PEAK_MIDI - 2 : sec.anchor + (p === 1 ? 2 : 0);
-      const placed = placeMotif(shaped, bar, anchor, prev);
+      // フレーズの中で高さを動かす。
+      //
+      // !!! anchor を据え置きにすると音域が上がり続ける !!!
+      // 起点は「前の音から続くこと」を最優先に選ぶので、形が上行するたびに
+      // 少しずつ高い位置から始まり、梯子を上がる（実測で第1小節 G4 から
+      // 第11小節 G5 まで登りっぱなしになった）。
+      // フレーズごとに目標の高さを明示して、上って下りる山を作る。
+      const shape = [0, 2, 1, -2];           // 8小節の中での上下（五音の歩数）
+      const anchor = kind === 'peak'
+        ? PEAK_MIDI - 2
+        : sec.anchor + shape[p] * 2;
+      // セクションの頭では、前の音との連続を切って高さを取り直す。
+      //
+      // 起点は「前の音から続くこと」を最優先に選ぶので、そのままだと
+      // クライマックスの高さが回想へそのまま引き継がれ、いちばん低く収まる
+      // べき回想が提示より高くなっていた。役割の変わり目は、線を切ってよい
+      // ——というより、切るのが自然（そこが段落の境目だから）。
+      const atSectionHead = p === 0 && sec.from > 0;
+      const placed = placeMotif(shaped, bar, anchor, atSectionHead ? null : prev);
       for (const n of placed) {
         n.role = kind;
         notes.push(n);
@@ -288,6 +307,49 @@ export function inspect(song) {
   if (last && last.beat + last.dur < BARS * BEATS_PER_BAR - 1) {
     issues.push('最後の音が終わりまで伸びていない');
   }
+
+  // 同じ音が3つ以上続いていないか。動きの無い線は旋律に聴こえない。
+  let runs = 0;
+  for (let i = 2; i < mel.length; i += 1) {
+    if (mel[i].midi === mel[i - 1].midi && mel[i - 1].midi === mel[i - 2].midi) runs += 1;
+  }
+  if (runs > 0) issues.push(`同じ音が3つ続く箇所が ${runs}`);
+
+  // 「行って戻る」だけの往復。
+  //
+  // 一歩出て戻るのは音楽的に自然な収め方（刺繍音・フレーズの結び）なので、
+  // それ自体は排除しない。問題なのは**4音以上にわたって同じ2音を往復し続ける**
+  // 形で、そこは線が完全に止まる。長い往復だけを数える。
+  let stuck = 0;
+  for (let i = 3; i < mel.length; i += 1) {
+    const a = mel[i - 3].midi;
+    const b = mel[i - 2].midi;
+    if (a === b) continue;
+    if (mel[i - 1].midi === a && mel[i].midi === b) stuck += 1;
+  }
+  if (stuck > 1) issues.push(`同じ2音の往復が続く箇所が ${stuck}（1以下であること）`);
+
+  // 線が前へ進んでいるか。フレーズ（8小節）の始点と終点が同じ高さばかりだと、
+  // どれだけ音が動いても曲として進んでいない。
+  let moved = 0;
+  for (let sec = 0; sec < 4; sec += 1) {
+    const l = mel.filter((n) => n.beat >= sec * 8 * BEATS_PER_BAR
+      && n.beat < (sec + 1) * 8 * BEATS_PER_BAR);
+    if (l.length < 2) continue;
+    if (Math.abs(l[l.length - 1].midi - l[0].midi) >= 3) moved += 1;
+  }
+  if (moved < 2) issues.push(`線が動いているセクションが ${moved}（2つ以上であること）`);
+
+  // セクションの音域が役割どおりか。
+  // 提示は静かに、喪失は少し翳り、クライマックスで登り、回想はいちばん低く収まる。
+  const secAvg = SECTIONS.map((sec) => {
+    const l = mel.filter((n) => n.beat >= sec.from * BEATS_PER_BAR
+      && n.beat < (sec.from + 8) * BEATS_PER_BAR);
+    return l.length ? l.reduce((a, b) => a + b.midi, 0) / l.length : 0;
+  });
+  if (!(secAvg[2] > secAvg[0] + 2)) issues.push('クライマックスが提示より高くなっていない');
+  if (!(secAvg[3] < secAvg[0] + 1)) issues.push('回想が提示より低く収まっていない');
+  if (secAvg[0] > 71) issues.push(`提示の音域が高い（平均 ${secAvg[0].toFixed(1)} / 71以下）`);
 
   // すべての小節が小節頭から始まっていないか
   let heads = 0;

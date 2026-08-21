@@ -26,8 +26,19 @@ const LH_HI = 60;    // C4
 const TONIC = 60;    // C4 を主音の基準に取る（度数計算用）
 const BEATS_PER_BAR = 4;
 
-// C minor の自然短音階（主音からの半音）。
+// C minor の自然短音階（主音からの半音）。伴奏と和声はこちらで考える。
 const SCALE = [0, 2, 3, 5, 7, 8, 10];
+
+// 旋律も七音音階（自然的短音階）で書く。
+//
+// !!! 五音音階（C Eb F G Bb ＝ ヨナ抜き短音階）へ寄せてはいけない !!!
+// 一度そうしたが、それはまさに演歌・歌謡曲の音階で、狙いと逆方向だった。
+// 現代のポップ・バラードは七音が土台で、**第2音(D)と第6音(Ab)を使うこと**が
+// 演歌との違いそのものになっている。
+//
+// 「行って戻る」だけの往復は音階のせいではなく、動機の形と置き方の問題だった。
+// そちらは形の候補と起点の選び方で直してある。
+const MEL_SCALE = [0, 2, 3, 5, 7, 8, 10];
 
 /**
  * 和声。指定どおりに小節へ割る。
@@ -96,6 +107,36 @@ export function chordTones(chord, lo = MEL_LO, hi = MEL_HI) {
   return out;
 }
 
+/** 旋律の音階の上で1つ隣（上/下）の実音。 */
+export function melStep(midi, dir) {
+  let m = midi + dir;
+  for (let i = 0; i < 7; i += 1) {
+    const pc = ((m - TONIC) % 12 + 12) % 12;
+    if (MEL_SCALE.includes(pc)) return m;
+    m += dir;
+  }
+  return midi + dir * 2;
+}
+
+/** 旋律の音階上の距離（何歩動くか）。 */
+export function melDistance(a, b) {
+  const idx = (m) => {
+    const rel = m - TONIC;
+    const oct = Math.floor(rel / 12);
+    const pc = ((rel % 12) + 12) % 12;
+    let i = MEL_SCALE.indexOf(pc);
+    if (i < 0) i = MEL_SCALE.findIndex((s2) => s2 > pc);
+    if (i < 0) i = 0;
+    return oct * 7 + i;
+  };
+  return idx(b) - idx(a);
+}
+
+/** その実音が旋律の音階に含まれるか。 */
+export function inMelScale(midi) {
+  return MEL_SCALE.includes(((midi - TONIC) % 12 + 12) % 12);
+}
+
 /** 音階上で1つ隣（上/下）の実音。 */
 export function scaleStep(midi, dir) {
   let m = midi + dir;
@@ -122,4 +163,4 @@ export function scaleDistance(a, b) {
 }
 
 export const RANGE = { MEL_LO, MEL_HI, LH_LO, LH_HI, TONIC, BEATS_PER_BAR };
-export { CHORDS };
+export { CHORDS, MEL_SCALE, SCALE };

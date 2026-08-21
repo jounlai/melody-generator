@@ -11,6 +11,7 @@
 
 import {
   RANGE, chordAtBeat, isChordTone, chordTones, scaleStep, scaleDistance,
+  melStep, melDistance, inMelScale,
 } from './elegy.js';
 
 const { MEL_LO, MEL_HI, BEATS_PER_BAR } = RANGE;
@@ -37,38 +38,50 @@ function nearestChordTone(target, chord, lo = MEL_LO, hi = MEL_HI) {
  */
 export function placeMotif(motif, startBar, anchor, prev) {
   const firstChord = chordAtBeat(startBar, motif.rhythm[0].b % BEATS_PER_BAR);
-  // 起点は和音の構成音。狙った高さにいちばん近いものを採る。
-  let start = nearestChordTone(anchor, firstChord);
-  // 直前の音から離れすぎるなら、6度以内に収まる構成音へ寄せ直す。
-  if (prev !== null) {
-    const tones = chordTones(firstChord).filter((t) => Math.abs(scaleDistance(prev, t)) <= 5);
-    if (tones.length > 0) {
-      let best = tones[0];
-      for (const t of tones) if (Math.abs(t - anchor) < Math.abs(best - anchor)) best = t;
-      start = best;
-    }
+
+  // 起点は「前のフレーズの終わりから続く高さ」を最優先にする。
+  //
+  // !!! ここを anchor（そのセクションで置きたい高さ）で決めてはいけない !!!
+  // それをやると2小節ごとに線が飛び、各区画が独立した往復になって
+  // 曲全体の線が消える。実際に「行って戻る」だけの旋律になった。
+  // 前の音との距離を第一、狙った高さを第二にして選ぶ。
+  const tones = chordTones(firstChord).filter(inMelScale);
+  const pool = tones.length > 0 ? tones : chordTones(firstChord);
+  let start = pool[0];
+  let bestScore = Infinity;
+  for (const t of pool) {
+    // 前の音から五音で2歩以内が理想。3歩以上は急に高くつく。
+    const steps = prev === null ? 0 : Math.abs(melDistance(prev, t));
+    const jumpCost = steps <= 2 ? steps : 6 + (steps - 2) * 4;
+    // 狙った高さからのずれ。
+    //
+    // !!! ここを軽くしすぎると音域が制御できない !!!
+    // 0.35 にしていたら連続性だけで起点が決まり、セクションごとの音域が
+    // まったく効かなかった（提示も回想もクライマックスと同じ高さになった）。
+    // 半音1つぶんを、五音1歩ぶんと同程度に重く見る。
+    const aimCost = Math.abs(t - anchor) * 0.9;
+    const score = jumpCost + aimCost;
+    if (score < bestScore) { bestScore = score; start = t; }
   }
 
-  // 起点を、形が音域に収まる高さへ持ち上げる。
+  // 形が音域に収まる高さへ起点を持ち上げる。
   //
-  // !!! ここを怠ると動機が潰れる !!!
-  // 形が下降するとき、起点が低いと下限で頭打ちになり、clamp で全部同じ音に
-  // なる（実例: 形 -2 -3 -4 が Eb4 Eb4 Eb4 に潰れた）。同音の連打に聴こえる
-  // 正体はこれ。形が要求する上下の幅を先に見て、収まる位置へ起点を移す。
+  // 形が下降するとき起点が低いと下限で頭打ちになり、clamp で全部同じ音に
+  // 潰れる（形 -2 -3 -4 が Eb4 Eb4 Eb4 になった）。同音の連打の正体はこれ。
   const lowSteps = Math.min(0, ...motif.shape);
   const highSteps = Math.max(0, ...motif.shape);
   const shiftBy = (base, steps) => {
     let m = base;
-    for (let k = 0; k < Math.abs(steps); k += 1) m = scaleStep(m, Math.sign(steps));
+    for (let k = 0; k < Math.abs(steps); k += 1) m = melStep(m, Math.sign(steps));
     return m;
   };
   for (let guard = 0; guard < 8; guard += 1) {
-    if (shiftBy(start, lowSteps) < MEL_LO) start = scaleStep(start, 1);
-    else if (shiftBy(start, highSteps) > MEL_HI) start = scaleStep(start, -1);
+    if (shiftBy(start, lowSteps) < MEL_LO) start = melStep(start, 1);
+    else if (shiftBy(start, highSteps) > MEL_HI) start = melStep(start, -1);
     else break;
   }
 
-  // 形を実音へ。shape は度数の相対値なので、音階上で動かす。
+  // 形を実音へ。五音音階の上で動かす。
   const notes = [];
   for (let i = 0; i < motif.rhythm.length; i += 1) {
     const r = motif.rhythm[i];
@@ -116,7 +129,16 @@ export function resolveNonChordTones(notes) {
     // 強拍でも、3段階が揃っていれば掛留として残す
     if (strong && prepared && resolved) continue;
 
-    n.midi = nearestChordTone(n.midi, chord);
+    // 和声音へ寄せる。
+    //
+    // !!! 寄せ先が直前の音と同じになると往復が生まれる !!!
+    // 七音音階は隣り合う音が近いので、丸めると前後が同じ場所へ集まりやすい。
+    // 実測で往復が 47% まで増えた。直前と同じ音になる候補は外す。
+    const tones = chordTones(chord).filter((t) => !prev || t !== prev.midi);
+    if (tones.length === 0) { n.midi = nearestChordTone(n.midi, chord); continue; }
+    let best = tones[0];
+    for (const t of tones) if (Math.abs(t - n.midi) < Math.abs(best - n.midi)) best = t;
+    n.midi = best;
   }
   return notes;
 }
@@ -128,12 +150,12 @@ export function resolveNonChordTones(notes) {
  */
 export function fixLeaps(notes) {
   for (let i = 1; i < notes.length; i += 1) {
-    const jump = scaleDistance(notes[i - 1].midi, notes[i].midi);
+    const jump = melDistance(notes[i - 1].midi, notes[i].midi);
     const size = Math.abs(jump);
-    if (size > 5) {
-      // 6度（＝音階上5歩）を超えた。5歩に収める
+    if (size > 3) {
+      // 五音で3歩（おおよそ6度）を超えた。3歩に収める
       let m = notes[i - 1].midi;
-      for (let k = 0; k < 5; k += 1) m = scaleStep(m, Math.sign(jump));
+      for (let k = 0; k < 3; k += 1) m = melStep(m, Math.sign(jump));
       const bar = Math.floor(notes[i].beat / BEATS_PER_BAR);
       const inBar = notes[i].beat - bar * BEATS_PER_BAR;
       notes[i].midi = nearestChordTone(m, chordAtBeat(bar, inBar));
@@ -141,11 +163,11 @@ export function fixLeaps(notes) {
     // 4度以上（音階上3歩以上）跳んだら、次は反対向きの順次
     const after = notes[i + 1];
     if (!after) continue;
-    const j2 = scaleDistance(notes[i - 1].midi, notes[i].midi);
-    if (Math.abs(j2) < 3) continue;
+    const j2 = melDistance(notes[i - 1].midi, notes[i].midi);
+    if (Math.abs(j2) < 2) continue;
     // 頂点の音の直後は、別途下行解決させるので触らない
     if (notes[i].isPeak) continue;
-    const back = scaleStep(notes[i].midi, -Math.sign(j2));
+    const back = melStep(notes[i].midi, -Math.sign(j2));
     if (back < MEL_LO || back > MEL_HI) continue;
     // 埋め戻した先が、その前後の音と同じ高さになるなら動かさない。
     // ここを無条件に書き換えていたせいで同音の連続が 24.3% まで増えていた。
