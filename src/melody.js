@@ -98,8 +98,19 @@ export function fillBetween(from, to, n, prevStep = 0) {
       next = cur + Math.sign(remain); // ちょうど順次で届く
     } else {
       // 音数が余る。刺繍音。輪郭の向きへ触れ、直前と同じ音は置かない。
+      //
+      // ただし導音（第7音）へは触れない。導音は主音へ解決したがる音なので、
+      // 刺繍音として主音との間を往復させると、解決しないまま半音で揺れ続けて
+      // 濁って聴こえる。実測で半音進行の28%が 7→1 と 1→7 の往復だった。
+      // 導音へ行きそうなら、反対側へ触れる。
       const away = cur + swing;
-      next = (out.length > 0 && away === out[out.length - 1]) ? cur - swing : away;
+      const isLeading = (d) => (((d - 1) % 7) + 7) % 7 === 6;
+      let cand = (out.length > 0 && away === out[out.length - 1]) ? cur - swing : away;
+      if (isLeading(cand) && !isLeading(cur)) {
+        const other = cur - (cand - cur);
+        if (!isLeading(other) && other >= DEG_MIN && other <= DEG_MAX) cand = other;
+      }
+      next = cand;
     }
 
     if (next === cur) next = cur + swing;   // 同じ音を続けない

@@ -4436,8 +4436,19 @@ function fillBetween(from, to, n, prevStep = 0) {
       next = cur + Math.sign(remain); // ちょうど順次で届く
     } else {
       // 音数が余る。刺繍音。輪郭の向きへ触れ、直前と同じ音は置かない。
+      //
+      // ただし導音（第7音）へは触れない。導音は主音へ解決したがる音なので、
+      // 刺繍音として主音との間を往復させると、解決しないまま半音で揺れ続けて
+      // 濁って聴こえる。実測で半音進行の28%が 7→1 と 1→7 の往復だった。
+      // 導音へ行きそうなら、反対側へ触れる。
       const away = cur + swing;
-      next = (out.length > 0 && away === out[out.length - 1]) ? cur - swing : away;
+      const isLeading = (d) => (((d - 1) % 7) + 7) % 7 === 6;
+      let cand = (out.length > 0 && away === out[out.length - 1]) ? cur - swing : away;
+      if (isLeading(cand) && !isLeading(cur)) {
+        const other = cur - (cand - cur);
+        if (!isLeading(other) && other >= DEG_MIN && other <= DEG_MAX) cand = other;
+      }
+      next = cand;
     }
 
     if (next === cur) next = cur + swing;   // 同じ音を続けない
@@ -6636,7 +6647,19 @@ function withoutRub(midis, melody, bar) {
     if (n.beat >= to || n.beat + n.dur <= from) continue;
     // 食った音は無条件に表扱い。拍3.5にあって短くても、聴き手には
     // 次の小節の頭の音として聴こえている。
-    if (n.anticipated || n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) exposed.push(n.midi);
+    //
+    // 版2は旋律の頭を意図的に強拍から外している（毎小節が1拍目から始まると
+    // 行進曲に聴こえるため）。その結果「強拍にあるか1.5拍以上」という判定では
+    // ほとんどの音が表扱いにならず、パッドが守られなくなった。実測でパッドとの
+    // 半音のぶつかりが 11.8% → 14.6% に増えていた。
+    // 版2では**その小節で最初に鳴る音**も表扱いにする。弱起でもそれが
+    // 旋律の入りであり、聴き手はそこを聴いている。
+    const isFirstInBar = n.beat >= from && !melody.some(
+      (o) => o !== n && o.beat >= from && o.beat < n.beat,
+    );
+    if (n.anticipated || isFirstInBar || n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) {
+      exposed.push(n.midi);
+    }
   }
   if (exposed.length === 0) return midis;
   const rubs = (m) => exposed.some((x) => {
@@ -6644,7 +6667,11 @@ function withoutRub(midis, melody, bar) {
     return d === 1 || d === 11;
   });
   const kept = midis.filter((m) => !rubs(m));
-  return kept.length >= 2 ? kept : midis;
+  if (kept.length >= 2) return kept;
+  // 2音を切るところまでは削らない（和音が和音でなくなる）。
+  // ただし濁ったまま鳴らすよりは、ぶつかる音だけを**オクターブ下げて**
+  // 旋律から離すほうがよい。音名は変えないので和音は保たれる。
+  return midis.map((m) => (rubs(m) ? m - 12 : m));
 }
 
 /**

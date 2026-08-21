@@ -1481,7 +1481,19 @@ export function withoutRub(midis, melody, bar) {
     if (n.beat >= to || n.beat + n.dur <= from) continue;
     // 食った音は無条件に表扱い。拍3.5にあって短くても、聴き手には
     // 次の小節の頭の音として聴こえている。
-    if (n.anticipated || n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) exposed.push(n.midi);
+    //
+    // 版2は旋律の頭を意図的に強拍から外している（毎小節が1拍目から始まると
+    // 行進曲に聴こえるため）。その結果「強拍にあるか1.5拍以上」という判定では
+    // ほとんどの音が表扱いにならず、パッドが守られなくなった。実測でパッドとの
+    // 半音のぶつかりが 11.8% → 14.6% に増えていた。
+    // 版2では**その小節で最初に鳴る音**も表扱いにする。弱起でもそれが
+    // 旋律の入りであり、聴き手はそこを聴いている。
+    const isFirstInBar = n.beat >= from && !melody.some(
+      (o) => o !== n && o.beat >= from && o.beat < n.beat,
+    );
+    if (n.anticipated || isFirstInBar || n.beat % 2 === 0 || n.dur >= EXPOSED_DUR) {
+      exposed.push(n.midi);
+    }
   }
   if (exposed.length === 0) return midis;
   const rubs = (m) => exposed.some((x) => {
@@ -1489,7 +1501,11 @@ export function withoutRub(midis, melody, bar) {
     return d === 1 || d === 11;
   });
   const kept = midis.filter((m) => !rubs(m));
-  return kept.length >= 2 ? kept : midis;
+  if (kept.length >= 2) return kept;
+  // 2音を切るところまでは削らない（和音が和音でなくなる）。
+  // ただし濁ったまま鳴らすよりは、ぶつかる音だけを**オクターブ下げて**
+  // 旋律から離すほうがよい。音名は変えないので和音は保たれる。
+  return midis.map((m) => (rubs(m) ? m - 12 : m));
 }
 
 /**
