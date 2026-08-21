@@ -21,7 +21,7 @@ import {
   splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB,
 } from './theory.js';
 import { normalizeSettings } from './settings.js';
-import { composePhrase, archContour } from './melody.js';
+import { composePhrase, fallingContour } from './melody.js';
 import {
   anticipateMelody, arpeggioIndex, arrangeSong, sustainPhraseEnds, BEATS_PER_BAR,
 } from './arrange.js';
@@ -1967,12 +1967,29 @@ export function composeSong(seed, data, settings) {
         cells.push(ns.filter((n) => n.beat < 4).map((n) => ({ beat: n.beat, dur: n.dur })));
         cells.push(ns.filter((n) => n.beat >= 4).map((n) => ({ beat: n.beat - 4, dur: n.dur })));
       }
-      // 輪郭。セクションの役どころに応じて、登る／頂点／下りるを作る。
-      const peakDeg = s === 2 ? CLIMAX_MAX_PEAK : (s === 3 ? 10 : 11);
-      const startFrom = sectionStartDeg ?? 5;
-      const landOn = s === 3 ? 5 : 6;
-      const contour = archContour(barChords.length, startFrom, peakDeg, landOn,
-        s === 2 ? 0.75 : 0.6);
+      // 輪郭。
+      //
+      // !!! セクションの開始を前のセクションの終わりから始めないこと !!!
+      // それをやると、各セクションが前の高さから始まってまた頂点まで登るので、
+      // 梯子を上がり続ける形になる。実測でセクションの平均音高が
+      // 10.8 → 12.0 → 15.0 → 13.5 と上がりっぱなしで、A'' で帰ってこなかった
+      // （版1は 6.4 → 7.1 → 10.0 → 6.1 でちゃんと帰る）。
+      // セクションの開始は役どころで決め打ち、前の音とは繋げない。
+      //
+      // そして登りは短く、下りは長く取る。旋律が下りていく形は昔から
+      // 美しさの型で（G線上のアリア、嘆きの下行音型）、Huron の「下降傾斜」も
+      // 同じことを統計として言っている。頂点は 3割の位置に置く。
+      // 頂点は早く、着地は低く。登りは短く、下りを長く取る。
+      //
+      // 実測で、輪郭の収支が 0 / -1 / -1 / -5 と下降側なのに、実際の旋律の
+      // 上下の収支は +168 半音になっていた。骨格が下りていても、各小節が
+      // 骨格音から始まって次の骨格音の手前で終わるので、小節の中で上へ触れた
+      // ぶんが積み上がる。輪郭の下降幅そのものを広げて相殺する。
+      const peakDeg = s === 2 ? CLIMAX_MAX_PEAK : (s === 3 ? 9 : 10);
+      const startFrom = [6, 7, 8, 7][s];
+      const landOn = [3, 3, 4, 1][s];
+      const contour = fallingContour(barChords.length, startFrom, peakDeg, landOn,
+        s === 2 ? 0.4 : 0.25);
       // 掛留を置く小節。陰りの和音（iv / bVI / bVII）の上がいちばん効くので、
       // そこを全部拾う。無ければ頂点の直前に1つ置く。
       const darkBars = barChords
@@ -1987,7 +2004,7 @@ export function composeSong(seed, data, settings) {
         rhythm: cells,
         contour,
         register: [3, peakDeg],
-        startDeg: sectionStartDeg,
+        startDeg: startFrom,
         suspendAtBars: susBars,
         endDegrees: s === 3 ? [1] : [1, 3, 5],
       });

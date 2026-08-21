@@ -74,31 +74,37 @@ export function chooseStructural(chord, mode, prev, target, lo, hi) {
 export function fillBetween(from, to, n) {
   if (n <= 0) return [];
   const clamp = (d) => Math.min(DEG_MAX, Math.max(DEG_MIN, d));
-  const dir = Math.sign(to - from) || 1;
-  const dist = Math.abs(to - from);
+  const dir = Math.sign(to - from) || -1;
   const out = [];
-
-  // 距離が音数より大きい。順次では届かないので、等間隔に割って近づく。
-  // ここで生まれる跳躍は、次の音で必ず同じ向きへ続くので線が切れない。
-  if (dist - 1 > n) {
-    for (let i = 1; i <= n; i += 1) {
-      out.push(clamp(from + Math.round(((to - from) * i) / (n + 1))));
-    }
-    return out;
-  }
-
-  // 順次で歩く音数（to そのものは次の小節が持つので dist-1 歩）と、余るぶん。
-  const walk = Math.max(0, dist - 1);
-  const extra = n - walk;
-
-  // 余りは刺繍音。目標と**逆**へ振れて戻る。戻るときに目標へ向かう勢いがつく。
-  for (let i = 0; i < extra; i += 1) {
-    out.push(clamp(from + (i % 2 === 0 ? -dir : 0)));
-  }
   let cur = from;
-  for (let i = 0; i < walk; i += 1) {
-    cur += dir;
-    out.push(clamp(cur));
+
+  // 目標へ向かって歩く。残りの音数で届かないぶんは歩幅を広げ、
+  // 音数が余るぶんは刺繍音（隣へ出て戻る）で時間を稼ぐ。
+  //
+  // !!! 同じ音を続けて置かないこと !!!
+  // 「隣へ出て戻る」を素直に書くと戻り先が直前と同じ音になり、実測で同音が
+  // 22.4% まで増えた（版1は 5.8%）。同音が多いと動きが乏しくなり、残った
+  // 動きの偏りがそのまま「上がっていく」「下がっていく」の印象になる。
+  // 刺繍音は必ず**別の音**を経由させる。
+  for (let i = 0; i < n; i += 1) {
+    const left = n - i;              // これから置ける音の数
+    const remain = to - cur;         // 目標までの符号つき距離
+    const need = Math.abs(remain);
+
+    let next;
+    if (need > left) {
+      // 届かない。残りの音数で割って歩幅を決める。
+      next = cur + Math.sign(remain) * Math.max(1, Math.round(need / left));
+    } else if (need === left) {
+      next = cur + Math.sign(remain); // ちょうど順次で届く
+    } else {
+      // 音数が余る。輪郭の向きへ1つ出るか、直前と違う側へ触れる。
+      const away = cur + dir;
+      next = (out.length > 0 && away === out[out.length - 1]) ? cur - dir : away;
+    }
+    if (next === cur) next = cur + dir; // 同じ音は置かない
+    cur = clamp(next);
+    out.push(cur);
   }
   return out;
 }
@@ -238,4 +244,17 @@ export function archContour(bars, from, peak, to, peakAt = 0.65) {
     }
   }
   return out;
+}
+
+/**
+ * 下降する輪郭。頂点を早めに置き、そこから長く下りてくる。
+ *
+ * 「G線上のアリア」のように、旋律が下りていく形は昔から美しさの型として
+ * 使われてきた（嘆きの下行音型 passus duriusculus）。Huron の言う「下降傾斜」
+ * ——旋律は上行より下行の順次が多い——も同じことを統計として言っている。
+ *
+ * 登りは短く、下りは長く。これが「上がって力み、下りて解ける」形を作る。
+ */
+export function fallingContour(bars, from, peak, to, peakAt = 0.3) {
+  return archContour(bars, from, peak, to, peakAt);
 }

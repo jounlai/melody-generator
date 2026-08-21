@@ -4412,31 +4412,37 @@ function chooseStructural(chord, mode, prev, target, lo, hi) {
 function fillBetween(from, to, n) {
   if (n <= 0) return [];
   const clamp = (d) => Math.min(DEG_MAX, Math.max(DEG_MIN, d));
-  const dir = Math.sign(to - from) || 1;
-  const dist = Math.abs(to - from);
+  const dir = Math.sign(to - from) || -1;
   const out = [];
-
-  // 距離が音数より大きい。順次では届かないので、等間隔に割って近づく。
-  // ここで生まれる跳躍は、次の音で必ず同じ向きへ続くので線が切れない。
-  if (dist - 1 > n) {
-    for (let i = 1; i <= n; i += 1) {
-      out.push(clamp(from + Math.round(((to - from) * i) / (n + 1))));
-    }
-    return out;
-  }
-
-  // 順次で歩く音数（to そのものは次の小節が持つので dist-1 歩）と、余るぶん。
-  const walk = Math.max(0, dist - 1);
-  const extra = n - walk;
-
-  // 余りは刺繍音。目標と**逆**へ振れて戻る。戻るときに目標へ向かう勢いがつく。
-  for (let i = 0; i < extra; i += 1) {
-    out.push(clamp(from + (i % 2 === 0 ? -dir : 0)));
-  }
   let cur = from;
-  for (let i = 0; i < walk; i += 1) {
-    cur += dir;
-    out.push(clamp(cur));
+
+  // 目標へ向かって歩く。残りの音数で届かないぶんは歩幅を広げ、
+  // 音数が余るぶんは刺繍音（隣へ出て戻る）で時間を稼ぐ。
+  //
+  // !!! 同じ音を続けて置かないこと !!!
+  // 「隣へ出て戻る」を素直に書くと戻り先が直前と同じ音になり、実測で同音が
+  // 22.4% まで増えた（版1は 5.8%）。同音が多いと動きが乏しくなり、残った
+  // 動きの偏りがそのまま「上がっていく」「下がっていく」の印象になる。
+  // 刺繍音は必ず**別の音**を経由させる。
+  for (let i = 0; i < n; i += 1) {
+    const left = n - i;              // これから置ける音の数
+    const remain = to - cur;         // 目標までの符号つき距離
+    const need = Math.abs(remain);
+
+    let next;
+    if (need > left) {
+      // 届かない。残りの音数で割って歩幅を決める。
+      next = cur + Math.sign(remain) * Math.max(1, Math.round(need / left));
+    } else if (need === left) {
+      next = cur + Math.sign(remain); // ちょうど順次で届く
+    } else {
+      // 音数が余る。輪郭の向きへ1つ出るか、直前と違う側へ触れる。
+      const away = cur + dir;
+      next = (out.length > 0 && away === out[out.length - 1]) ? cur - dir : away;
+    }
+    if (next === cur) next = cur + dir; // 同じ音は置かない
+    cur = clamp(next);
+    out.push(cur);
   }
   return out;
 }
@@ -4578,12 +4584,26 @@ function archContour(bars, from, peak, to, peakAt = 0.65) {
   return out;
 }
 
+/**
+ * 下降する輪郭。頂点を早めに置き、そこから長く下りてくる。
+ *
+ * 「G線上のアリア」のように、旋律が下りていく形は昔から美しさの型として
+ * 使われてきた（嘆きの下行音型 passus duriusculus）。Huron の言う「下降傾斜」
+ * ——旋律は上行より下行の順次が多い——も同じことを統計として言っている。
+ *
+ * 登りは短く、下りは長く。これが「上がって力み、下りて解ける」形を作る。
+ */
+function fallingContour(bars, from, peak, to, peakAt = 0.3) {
+  return archContour(bars, from, peak, to, peakAt);
+}
+
 // --- exports ---
 exports.chordToneDegrees = chordToneDegrees;
 exports.chooseStructural = chooseStructural;
 exports.fillBetween = fillBetween;
 exports.composePhrase = composePhrase;
 exports.archContour = archContour;
+exports.fallingContour = fallingContour;
 };
 
 // ===== src/arrange.js =====
@@ -5086,7 +5106,7 @@ __mods["compose.js"] = function (exports, require) {
 const { makeRng, seedFromString, randInt, pick } = require('rng.js');
 const { degToMidi, degToSemitone, chordVoicing, bassMidi, nearestChordToneDeg, chordIndex, splitBars, fitsBar, hasSuspension, chordSemitones, chordPitchClasses, CHORD_VOCAB } = require('theory.js');
 const { normalizeSettings } = require('settings.js');
-const { composePhrase, archContour } = require('melody.js');
+const { composePhrase, fallingContour } = require('melody.js');
 const { anticipateMelody, arpeggioIndex, arrangeSong, sustainPhraseEnds, BEATS_PER_BAR } = require('arrange.js');
 
 // arpeggioIndex の定義は arrange.js にある。compose.js 自身はもう使わないが、
@@ -7030,12 +7050,29 @@ function composeSong(seed, data, settings) {
         cells.push(ns.filter((n) => n.beat < 4).map((n) => ({ beat: n.beat, dur: n.dur })));
         cells.push(ns.filter((n) => n.beat >= 4).map((n) => ({ beat: n.beat - 4, dur: n.dur })));
       }
-      // 輪郭。セクションの役どころに応じて、登る／頂点／下りるを作る。
-      const peakDeg = s === 2 ? CLIMAX_MAX_PEAK : (s === 3 ? 10 : 11);
-      const startFrom = sectionStartDeg ?? 5;
-      const landOn = s === 3 ? 5 : 6;
-      const contour = archContour(barChords.length, startFrom, peakDeg, landOn,
-        s === 2 ? 0.75 : 0.6);
+      // 輪郭。
+      //
+      // !!! セクションの開始を前のセクションの終わりから始めないこと !!!
+      // それをやると、各セクションが前の高さから始まってまた頂点まで登るので、
+      // 梯子を上がり続ける形になる。実測でセクションの平均音高が
+      // 10.8 → 12.0 → 15.0 → 13.5 と上がりっぱなしで、A'' で帰ってこなかった
+      // （版1は 6.4 → 7.1 → 10.0 → 6.1 でちゃんと帰る）。
+      // セクションの開始は役どころで決め打ち、前の音とは繋げない。
+      //
+      // そして登りは短く、下りは長く取る。旋律が下りていく形は昔から
+      // 美しさの型で（G線上のアリア、嘆きの下行音型）、Huron の「下降傾斜」も
+      // 同じことを統計として言っている。頂点は 3割の位置に置く。
+      // 頂点は早く、着地は低く。登りは短く、下りを長く取る。
+      //
+      // 実測で、輪郭の収支が 0 / -1 / -1 / -5 と下降側なのに、実際の旋律の
+      // 上下の収支は +168 半音になっていた。骨格が下りていても、各小節が
+      // 骨格音から始まって次の骨格音の手前で終わるので、小節の中で上へ触れた
+      // ぶんが積み上がる。輪郭の下降幅そのものを広げて相殺する。
+      const peakDeg = s === 2 ? CLIMAX_MAX_PEAK : (s === 3 ? 9 : 10);
+      const startFrom = [6, 7, 8, 7][s];
+      const landOn = [3, 3, 4, 1][s];
+      const contour = fallingContour(barChords.length, startFrom, peakDeg, landOn,
+        s === 2 ? 0.4 : 0.25);
       // 掛留を置く小節。陰りの和音（iv / bVI / bVII）の上がいちばん効くので、
       // そこを全部拾う。無ければ頂点の直前に1つ置く。
       const darkBars = barChords
@@ -7050,7 +7087,7 @@ function composeSong(seed, data, settings) {
         rhythm: cells,
         contour,
         register: [3, peakDeg],
-        startDeg: sectionStartDeg,
+        startDeg: startFrom,
         suspendAtBars: susBars,
         endDegrees: s === 3 ? [1] : [1, 3, 5],
       });
