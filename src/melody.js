@@ -71,39 +71,41 @@ export function chooseStructural(chord, mode, prev, target, lo, hi) {
  *
  * @returns {number[]} 長さ n の度数列（from は含まない、to も含まない）
  */
-export function fillBetween(from, to, n) {
+export function fillBetween(from, to, n, prevStep = 0) {
   if (n <= 0) return [];
   const clamp = (d) => Math.min(DEG_MAX, Math.max(DEG_MIN, d));
-  const dir = Math.sign(to - from) || -1;
+  const swing = Math.sign(to - from) || -1;
   const out = [];
   let cur = from;
+  let last = prevStep;   // 直前の動き（符号つき）。跳んだ直後かを見るのに使う
 
-  // 目標へ向かって歩く。残りの音数で届かないぶんは歩幅を広げ、
-  // 音数が余るぶんは刺繍音（隣へ出て戻る）で時間を稼ぐ。
-  //
-  // !!! 同じ音を続けて置かないこと !!!
-  // 「隣へ出て戻る」を素直に書くと戻り先が直前と同じ音になり、実測で同音が
-  // 22.4% まで増えた（版1は 5.8%）。同音が多いと動きが乏しくなり、残った
-  // 動きの偏りがそのまま「上がっていく」「下がっていく」の印象になる。
-  // 刺繍音は必ず**別の音**を経由させる。
   for (let i = 0; i < n; i += 1) {
     const left = n - i;              // これから置ける音の数
     const remain = to - cur;         // 目標までの符号つき距離
     const need = Math.abs(remain);
-
     let next;
-    if (need > left) {
-      // 届かない。残りの音数で割って歩幅を決める。
-      next = cur + Math.sign(remain) * Math.max(1, Math.round(need / left));
+
+    if (Math.abs(last) >= 3 && need < left) {
+      // ギャップフィル。直前が跳躍で、かつ目標まで余裕があるときは、
+      // まず逆向きに1つ戻す。旋律分析でもっとも頑健な発見で、これが無いと
+      // 跳んだきり線が切れて聴こえる。余裕が無いときは目標を優先する。
+      next = cur - Math.sign(last);
+    } else if (need > left) {
+      // 届かない。歩幅は2度まで。ここを広げると「跳んで、そのまま同じ向きへ
+      // 跳び続ける」形になり、埋め戻しが成り立たなくなる。
+      next = cur + Math.sign(remain) * Math.min(2, Math.max(1, Math.round(need / left)));
     } else if (need === left) {
       next = cur + Math.sign(remain); // ちょうど順次で届く
     } else {
-      // 音数が余る。輪郭の向きへ1つ出るか、直前と違う側へ触れる。
-      const away = cur + dir;
-      next = (out.length > 0 && away === out[out.length - 1]) ? cur - dir : away;
+      // 音数が余る。刺繍音。輪郭の向きへ触れ、直前と同じ音は置かない。
+      const away = cur + swing;
+      next = (out.length > 0 && away === out[out.length - 1]) ? cur - swing : away;
     }
-    if (next === cur) next = cur + dir; // 同じ音は置かない
-    cur = clamp(next);
+
+    if (next === cur) next = cur + swing;   // 同じ音を続けない
+    const stepped = clamp(next);
+    last = stepped - cur;
+    cur = stepped;
     out.push(cur);
   }
   return out;
@@ -143,14 +145,34 @@ export function composePhrase(spec) {
     prev = deg;
   }
 
+  // 1.5 跳躍の埋め戻し（ギャップフィル）。
+  //
+  // 骨格音どうしが大きく離れると、小節の変わり目で跳んだきり埋め戻されない。
+  // 旋律分析でもっとも頑健な発見は「大きく跳んだら逆向きに順次で埋める」で、
+  // ここが崩れると線が繋がって聴こえない（実測で埋め戻し率が 23.1% まで落ちた）。
+  // 跳んだ次の小節の骨格音を、跳んだ向きと逆へ1つ寄せる。
+  for (let b = 1; b < structural.length - 1; b += 1) {
+    const jump = structural[b] - structural[b - 1];
+    if (Math.abs(jump) < 3) continue;
+    const back = structural[b] - Math.sign(jump);
+    if (back < lo || back > hi) continue;
+    // 寄せた先も和声音でなければならない（強拍に置く音だから）。
+    if (isChordTone(back, mode, chords[b + 1])) structural[b + 1] = back;
+  }
+
   // 2. 各小節を、その骨格音から次の骨格音へ向かって埋める。
   const notes = [];
   for (let b = 0; b < chords.length; b += 1) {
-    const cell = rhythm[b] ?? [];
-    if (cell.length === 0) continue;
+    let cell = rhythm[b] ?? [];
+    // 断片が小節を空けていることがある。そのまま通すと旋律に穴が開く
+    // （実測で32小節のうち何小節かが無音になっていた）。
+    // 全音符1つで埋める。退屈でも、音楽が止まるよりよい。
+    if (cell.length === 0) cell = [{ beat: 0, dur: 4 }];
     const here = structural[b];
     const next = b + 1 < structural.length ? structural[b + 1] : here;
-    const inner = fillBetween(here, next, cell.length - 1);
+    // 直前の小節からの動き。跳んで入ってきたなら、この小節の頭で埋め戻す。
+    const enter = b > 0 ? here - structural[b - 1] : 0;
+    const inner = fillBetween(here, next, cell.length - 1, enter);
     const degs = [here, ...inner];
 
     // 3. 掛留（サスペンション）。強拍に非和声音を置き、次の音へ順次下降で解決させる。

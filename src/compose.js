@@ -1702,6 +1702,8 @@ export function composeSong(seed, data, settings) {
     const isPhraseEnd = phraseEndFlags(phrasing, slotCount);
 
     const slotRecords = [];
+    // 版2でリズムを別の断片から借りるときに使う、スロットごとの文脈。
+    const ctxBySlot = [];
     const slotFragments = [];   // このセクションで実際に使った断片（導出のコピー元）
     const phraseOffset = [];    // 楽節ごとに a' が使った平行移動量（a'' で避ける）
     for (let k = 0; k < slotCount; k++) {
@@ -1785,6 +1787,8 @@ export function composeSong(seed, data, settings) {
         // （＝出だしが天井に着いていると、上に動かせる量がそのぶん消える）。
         headroom: role.anchor === null && s === 2 && k < cs ? maxPeak - 3 : null,
       };
+
+      ctxBySlot[k] = ctx;
 
       let fragment = null;
       let reusedFrom = null;
@@ -1960,10 +1964,25 @@ export function composeSong(seed, data, settings) {
     // 「前の音の続き」として選ばれていなかった。
     if (narrowFloor > 1) {
       // 小節ごとのリズム。断片の打点と長さだけを取り出す。
+      //
+      // !!! ここで断片を反復させないこと !!!
+      // 版2は音の高さを作り直すので、動機の統一は**輪郭**が担っている。
+      // それなのに断片の選び方（動機を反復させる仕組み）をそのまま使うと、
+      // 統一の要らない側＝リズムだけが繰り返される。実測で1曲32小節の
+      // 異なるリズムが 4.47 種類しかなく、「同じリズムが永遠に繰り返される」
+      // という結果になった。
+      //
+      // そこで版2は、スロットごとに別の断片からリズムを borrowing する。
+      // 楽節の頭（2スロットに1回）だけは同じ型を使って、リズム上の
+      // 手がかりも残す。
       const cells = [];
       for (let k = 0; k < slotCount; k += 1) {
-        const f = slotFragments[k];
-        const ns = f?.notes ?? [];
+        // 偶数スロットは楽節の頭。奇数スロットは別の断片から借りて変化をつける。
+        const src = k % 2 === 0
+          ? slotFragments[k]
+          : (selectFragment(rng, melodies, { ...ctxBySlot[k], preferPenta: false })
+            ?? slotFragments[k]);
+        const ns = src?.notes ?? [];
         cells.push(ns.filter((n) => n.beat < 4).map((n) => ({ beat: n.beat, dur: n.dur })));
         cells.push(ns.filter((n) => n.beat >= 4).map((n) => ({ beat: n.beat - 4, dur: n.dur })));
       }
@@ -1987,7 +2006,7 @@ export function composeSong(seed, data, settings) {
       // ぶんが積み上がる。輪郭の下降幅そのものを広げて相殺する。
       const peakDeg = s === 2 ? CLIMAX_MAX_PEAK : (s === 3 ? 9 : 10);
       const startFrom = [6, 7, 8, 7][s];
-      const landOn = [3, 3, 4, 1][s];
+      const landOn = [4, 4, 5, 1][s];
       const contour = fallingContour(barChords.length, startFrom, peakDeg, landOn,
         s === 2 ? 0.4 : 0.25);
       // 掛留を置く小節。陰りの和音（iv / bVI / bVII）の上がいちばん効くので、
