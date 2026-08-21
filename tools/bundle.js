@@ -368,3 +368,31 @@ function main() {
 }
 
 main();
+
+// 「別れ」のページ（tools/makeElegyPage.js）が同じ畳み方を使うために公開する。
+// エントリを差し替えられるよう、名前を引数で受ける版も出す。
+export { ENTRY, readSrc, transformModule, buildBundleScript, escapeJsonForHtml };
+
+export function collectFrom(entry) {
+  const mods = new Map();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const name = queue.shift();
+    if (mods.has(name)) continue;
+    const mod = transformModule(name, readSrc(name));
+    mods.set(name, mod);
+    for (const d of mod.deps) if (!mods.has(d)) queue.push(d);
+  }
+  const order = [];
+  const state = new Map();
+  const visit = (name) => {
+    const st = state.get(name);
+    if (st === 'done' || st === 'visiting') return;
+    state.set(name, 'visiting');
+    for (const d of mods.get(name).deps) visit(d);
+    state.set(name, 'done');
+    order.push(name);
+  };
+  visit(entry);
+  return { mods, order };
+}

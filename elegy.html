@@ -1,0 +1,3145 @@
+<!doctype html>
+<html lang="ja"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>別れ — C minor</title>
+<style>
+ body{background:#12141a;color:#e8e6e3;font:16px/1.7 system-ui,-apple-system,sans-serif;
+      display:flex;flex-direction:column;align-items:center;gap:1.2rem;padding:2rem 1rem;margin:0}
+ h1{font-size:1.15rem;font-weight:600;letter-spacing:.1em;margin:0}
+ p{margin:0;color:#9aa0a6;font-size:.82rem;text-align:center;max-width:34rem}
+ button{background:#e8e6e3;color:#12141a;border:0;border-radius:999px;
+        padding:.7rem 2.4rem;font-size:1rem;cursor:pointer}
+ button:disabled{opacity:.45;cursor:default}
+ #score{background:#fff;border-radius:8px;max-width:100%;overflow-x:auto}
+</style>
+<h1>別れ</h1>
+<p>C minor ／ 4/4 ／ 68 BPM ／ 32小節 ／ ピアノ独奏<br>
+提示 — 喪失 — クライマックス — 回想</p>
+<button id="play">再生</button>
+<div id="score"></div>
+<script id="song" type="application/json">{"seed":"36","mode":"minor","instrument":"piano","tonicMidi":60,"tempo":68,"bars":32,"totalBeats":128,"climaxBeat":88,"breathBar":null,"modulation":null,"sections":[{"name":"提示","startBar":0,"tonicMidi":60,"slots":[],"progressionId":"elegy-0"},{"name":"喪失","startBar":8,"tonicMidi":60,"slots":[],"progressionId":"elegy-1"},{"name":"クライマックス","startBar":16,"tonicMidi":60,"slots":[],"progressionId":"elegy-2"},{"name":"回想","startBar":24,"tonicMidi":60,"slots":[],"progressionId":"elegy-3"}],"chords":[{"bar":0,"symbol":"Cm","rootPc":0,"bassPc":0,"pcs":[0,3,7]},{"bar":1,"symbol":"Cm","rootPc":0,"bassPc":0,"pcs":[0,3,7]},{"bar":2,"symbol":"Ab/Eb","rootPc":8,"bassPc":3,"pcs":[0,3,8]},{"bar":3,"symbol":"Ab/Eb","rootPc":8,"bassPc":3,"pcs":[0,3,8]},{"bar":4,"symbol":"Fm7","rootPc":5,"bassPc":5,"pcs":[0,3,5,8]},{"bar":5,"symbol":"Fm7","rootPc":5,"bassPc":5,"pcs":[0,3,5,8]},{"bar":6,"symbol":"Gsus4","rootPc":7,"bassPc":7,"pcs":[0,2,7]},{"bar":7,"symbol":"Gsus4","rootPc":7,"bassPc":7,"pcs":[0,2,7]},{"bar":8,"symbol":"Cm/Eb","rootPc":0,"bassPc":3,"pcs":[0,3,7]},{"bar":9,"symbol":"Cm/Eb","rootPc":0,"bassPc":3,"pcs":[0,3,7]},{"bar":10,"symbol":"Abmaj7","rootPc":8,"bassPc":8,"pcs":[0,3,7,8]},{"bar":11,"symbol":"Abmaj7","rootPc":8,"bassPc":8,"pcs":[0,3,7,8]},{"bar":12,"symbol":"Fm9","rootPc":5,"bassPc":5,"pcs":[0,3,5,7,8]},{"bar":13,"symbol":"Fm9","rootPc":5,"bassPc":5,"pcs":[0,3,5,7,8]},{"bar":14,"symbol":"G7","rootPc":7,"bassPc":7,"pcs":[2,5,7,11]},{"bar":15,"symbol":"G7","rootPc":7,"bassPc":7,"pcs":[2,5,7,11]},{"bar":16,"symbol":"Abmaj7","rootPc":8,"bassPc":8,"pcs":[0,3,7,8]},{"bar":17,"symbol":"Bb","rootPc":10,"bassPc":10,"pcs":[2,5,10]},{"bar":18,"symbol":"Gm7","rootPc":7,"bassPc":7,"pcs":[2,5,7,10]},{"bar":19,"symbol":"Cm","rootPc":0,"bassPc":0,"pcs":[0,3,7]},{"bar":20,"symbol":"Fm7","rootPc":5,"bassPc":5,"pcs":[0,3,5,8]},{"bar":21,"symbol":"Ab/G","rootPc":8,"bassPc":7,"pcs":[0,3,8]},{"bar":22,"symbol":"G7","rootPc":7,"bassPc":7,"pcs":[2,5,7,11]},{"bar":23,"symbol":"Cm(add9)","rootPc":0,"bassPc":0,"pcs":[0,2,3,7]},{"bar":24,"symbol":"Cm/Eb","rootPc":0,"bassPc":3,"pcs":[0,3,7]},{"bar":25,"symbol":"Abmaj7","rootPc":8,"bassPc":8,"pcs":[0,3,7,8]},{"bar":26,"symbol":"Fm7","rootPc":5,"bassPc":5,"pcs":[0,3,5,8]},{"bar":27,"symbol":"G7sus4","rootPc":7,"bassPc":7,"pcs":[0,2,5,7]},{"bar":28,"symbol":"Cm/G","rootPc":0,"bassPc":7,"pcs":[0,3,7]},{"bar":29,"symbol":"Abmaj7","rootPc":8,"bassPc":8,"pcs":[0,3,7,8]},{"bar":30,"symbol":"G7","rootPc":7,"bassPc":7,"pcs":[2,5,7,11]},{"bar":31,"symbol":"Cm(add9)","rootPc":0,"bassPc":0,"pcs":[0,2,3,7]}],"melody":[{"midi":67,"beat":0,"dur":1.5,"vel":0.62},{"midi":65,"beat":1.5,"dur":0.5,"vel":0.62},{"midi":67,"beat":2,"dur":1.5,"vel":0.62},{"midi":67,"beat":4.5,"dur":0.5,"vel":0.62},{"midi":63,"beat":5,"dur":2,"vel":0.62},{"midi":68,"beat":8,"dur":1.5,"vel":0.62},{"midi":63,"beat":9.5,"dur":0.5,"vel":0.62},{"midi":68,"beat":10,"dur":1.5,"vel":0.62},{"midi":68,"beat":12,"dur":1,"vel":0.62},{"midi":70,"beat":13,"dur":2,"vel":0.62},{"midi":68,"beat":16,"dur":1,"vel":0.62},{"midi":65,"beat":17,"dur":0.5,"vel":0.62},{"midi":67,"beat":17.5,"dur":1.5,"vel":0.62},{"midi":68,"beat":21,"dur":1,"vel":0.62},{"midi":63,"beat":22,"dur":1.5,"vel":0.62},{"midi":67,"beat":24,"dur":1.5,"vel":0.62},{"midi":67,"beat":25.5,"dur":0.5,"vel":0.62},{"midi":65,"beat":26,"dur":1.5,"vel":0.62},{"midi":67,"beat":28,"dur":1,"vel":0.62},{"midi":72,"beat":29,"dur":2,"vel":0.62},{"midi":67,"beat":32,"dur":2.25,"vel":0.62},{"midi":65,"beat":34.25,"dur":0.75,"vel":0.62},{"midi":67,"beat":35,"dur":2.25,"vel":0.62},{"midi":67,"beat":38,"dur":1.5,"vel":0.62},{"midi":63,"beat":39.5,"dur":0.5,"vel":0.62},{"midi":63,"beat":40,"dur":1.5,"vel":0.62},{"midi":72,"beat":41.5,"dur":0.5,"vel":0.62},{"midi":70,"beat":42,"dur":1.5,"vel":0.62},{"midi":68,"beat":44,"dur":1,"vel":0.62},{"midi":75,"beat":45,"dur":2,"vel":0.62},{"midi":72,"beat":48,"dur":1.5,"vel":0.62},{"midi":65,"beat":49.5,"dur":0.5,"vel":0.62},{"midi":67,"beat":50,"dur":1.5,"vel":0.62},{"midi":68,"beat":52,"dur":1,"vel":0.62},{"midi":63,"beat":53,"dur":2,"vel":0.62},{"midi":65,"beat":56,"dur":1.5,"vel":0.62},{"midi":63,"beat":57.5,"dur":0.5,"vel":0.62},{"midi":65,"beat":58,"dur":1.5,"vel":0.62},{"midi":67,"beat":60.5,"dur":0.5,"vel":0.62},{"midi":71,"beat":61,"dur":2,"vel":0.62},{"midi":75,"beat":64,"dur":1.5,"vel":0.62},{"midi":72,"beat":65.5,"dur":0.5,"vel":0.62},{"midi":75,"beat":66,"dur":1.5,"vel":0.62},{"midi":74,"beat":68,"dur":1,"vel":0.62},{"midi":70,"beat":69,"dur":2,"vel":0.62},{"midi":72,"beat":72.5,"dur":1.5,"vel":0.62},{"midi":74,"beat":74,"dur":1,"vel":0.62},{"midi":74,"beat":75,"dur":1,"vel":0.62},{"midi":75,"beat":76.5,"dur":1.5,"vel":0.62},{"midi":72,"beat":78,"dur":1.5,"vel":0.62},{"midi":77,"beat":80,"dur":1.5,"vel":0.62},{"midi":75,"beat":81.5,"dur":0.5,"vel":0.62},{"midi":75,"beat":82,"dur":1.5,"vel":0.62},{"midi":77,"beat":84,"dur":1,"vel":0.62},{"midi":75,"beat":85,"dur":2,"vel":0.62},{"midi":80,"beat":88,"dur":1.5,"vel":0.78},{"midi":79,"beat":89.5,"dur":0.5,"vel":0.62},{"midi":71,"beat":90,"dur":1.5,"vel":0.62},{"midi":74,"beat":92.5,"dur":0.5,"vel":0.62},{"midi":75,"beat":93,"dur":2,"vel":0.62},{"midi":72,"beat":96,"dur":1.5,"vel":0.62},{"midi":75,"beat":97.5,"dur":0.5,"vel":0.62},{"midi":72,"beat":98,"dur":1.5,"vel":0.62},{"midi":72,"beat":100.5,"dur":0.5,"vel":0.62},{"midi":75,"beat":101,"dur":2,"vel":0.62},{"midi":68,"beat":104,"dur":1.5,"vel":0.62},{"midi":68,"beat":105.5,"dur":0.5,"vel":0.62},{"midi":68,"beat":106,"dur":1.5,"vel":0.62},{"midi":67,"beat":108.5,"dur":0.5,"vel":0.62},{"midi":65,"beat":109,"dur":2,"vel":0.62},{"midi":65,"beat":112,"dur":1.5,"vel":0.62},{"midi":63,"beat":113.5,"dur":0.5,"vel":0.62},{"midi":63,"beat":114,"dur":1.5,"vel":0.62},{"midi":67,"beat":116.5,"dur":0.5,"vel":0.62},{"midi":68,"beat":117,"dur":2,"vel":0.62},{"midi":67,"beat":120,"dur":1.5,"vel":0.62},{"midi":65,"beat":121.5,"dur":0.5,"vel":0.62},{"midi":65,"beat":122,"dur":1.5,"vel":0.62},{"midi":67,"beat":124,"dur":1,"vel":0.62},{"midi":67,"beat":125,"dur":3,"vel":0.62}],"accomp":[{"midi":43,"midis":[43,48,51],"beat":2,"dur":2,"vel":0.28},{"midi":43,"midis":[43,48,51],"beat":6,"dur":2,"vel":0.28},{"midi":48,"midis":[48,51,56],"beat":10,"dur":2,"vel":0.28},{"midi":48,"midis":[48,51,56],"beat":14,"dur":2,"vel":0.28},{"midi":48,"midis":[48,51,53,56],"beat":18,"dur":2,"vel":0.28},{"midi":48,"midis":[48,51,53,56],"beat":22,"dur":2,"vel":0.28},{"midi":50,"midis":[50,55,60],"beat":26,"dur":2,"vel":0.28},{"midi":48,"midis":[48],"beat":33.5,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48,51,55],"beat":34,"dur":1,"vel":0.28},{"midi":48,"midis":[48],"beat":35,"dur":1,"vel":0.28},{"midi":48,"midis":[48],"beat":37.5,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48,51,55],"beat":38,"dur":1,"vel":0.28},{"midi":48,"midis":[48],"beat":39,"dur":1,"vel":0.28},{"midi":51,"midis":[51],"beat":41.5,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51,55,56,60],"beat":42,"dur":1,"vel":0.28},{"midi":51,"midis":[51],"beat":43,"dur":1,"vel":0.28},{"midi":51,"midis":[51],"beat":45.5,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51,55,56,60],"beat":46,"dur":1,"vel":0.28},{"midi":51,"midis":[51],"beat":47,"dur":1,"vel":0.28},{"midi":48,"midis":[48],"beat":49.5,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48,51,53,55,56],"beat":50,"dur":1,"vel":0.28},{"midi":48,"midis":[48],"beat":51,"dur":1,"vel":0.28},{"midi":48,"midis":[48],"beat":53.5,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48,51,53,55,56],"beat":54,"dur":1,"vel":0.28},{"midi":48,"midis":[48],"beat":55,"dur":1,"vel":0.28},{"midi":50,"midis":[50],"beat":57.5,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50,53,55,59],"beat":58,"dur":1,"vel":0.28},{"midi":50,"midis":[50],"beat":59,"dur":1,"vel":0.28},{"midi":50,"midis":[50],"beat":61.5,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50,53,55,59],"beat":62,"dur":1,"vel":0.28},{"midi":50,"midis":[50],"beat":63,"dur":1,"vel":0.28},{"midi":51,"midis":[51],"beat":65,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51,55,56,60],"beat":65.5,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51],"beat":67,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51,55,56,60],"beat":67.5,"dur":0.5,"vel":0.28},{"midi":53,"midis":[53],"beat":69,"dur":0.5,"vel":0.28},{"midi":53,"midis":[53,58],"beat":69.5,"dur":0.5,"vel":0.28},{"midi":53,"midis":[53],"beat":71,"dur":0.5,"vel":0.28},{"midi":53,"midis":[53,58],"beat":71.5,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50],"beat":73,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50,53,55,58],"beat":73.5,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50],"beat":75,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50,53,55,58],"beat":75.5,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43],"beat":77,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43,48,51],"beat":77.5,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43],"beat":79,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43,48,51],"beat":79.5,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48],"beat":81,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48,51,53,56],"beat":81.5,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48],"beat":83,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48,51,53,56],"beat":83.5,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51],"beat":85,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51,56,60],"beat":85.5,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51],"beat":87,"dur":0.5,"vel":0.28},{"midi":51,"midis":[51,56,60],"beat":87.5,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50],"beat":89,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50,53,55,59],"beat":89.5,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50],"beat":91,"dur":0.5,"vel":0.28},{"midi":50,"midis":[50,53,55,59],"beat":91.5,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43],"beat":93,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43,48,50,51],"beat":93.5,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43],"beat":95,"dur":0.5,"vel":0.28},{"midi":43,"midis":[43,48,50,51],"beat":95.5,"dur":0.5,"vel":0.28},{"midi":48,"midis":[48,51,55],"beat":99,"dur":1,"vel":0.28},{"midi":51,"midis":[51,55,56,60],"beat":103,"dur":1,"vel":0.28},{"midi":48,"midis":[48,51,53,56],"beat":107,"dur":1,"vel":0.28},{"midi":50,"midis":[50,53,55,60],"beat":111,"dur":1,"vel":0.28},{"midi":51,"midis":[51,55,60],"beat":115,"dur":1,"vel":0.28},{"midi":51,"midis":[51,55,56,60],"beat":119,"dur":1,"vel":0.28},{"midi":50,"midis":[50,53,55,59],"beat":123,"dur":1,"vel":0.28},{"midi":43,"midis":[43,48,50,51],"beat":127,"dur":1,"vel":0.28}],"bass":[{"midi":36,"beat":0,"dur":4,"vel":0.42},{"midi":36,"beat":4,"dur":4,"vel":0.42},{"midi":39,"beat":8,"dur":4,"vel":0.42},{"midi":39,"beat":12,"dur":4,"vel":0.42},{"midi":41,"beat":16,"dur":4,"vel":0.42},{"midi":41,"beat":20,"dur":4,"vel":0.42},{"midi":43,"beat":24,"dur":4,"vel":0.42},{"midi":43,"beat":28,"dur":2,"vel":0.42},{"midi":43,"beat":30,"dur":2,"vel":0.42},{"midi":39,"beat":32,"dur":4,"vel":0.42},{"midi":39,"beat":36,"dur":4,"vel":0.42},{"midi":44,"beat":40,"dur":4,"vel":0.42},{"midi":44,"beat":44,"dur":4,"vel":0.42},{"midi":41,"beat":48,"dur":4,"vel":0.42},{"midi":41,"beat":52,"dur":4,"vel":0.42},{"midi":43,"beat":56,"dur":4,"vel":0.42},{"midi":43,"beat":60,"dur":4,"vel":0.42},{"midi":44,"beat":64,"dur":4,"vel":0.42},{"midi":46,"beat":68,"dur":4,"vel":0.42},{"midi":43,"beat":72,"dur":4,"vel":0.42},{"midi":36,"beat":76,"dur":4,"vel":0.42},{"midi":41,"beat":80,"dur":4,"vel":0.42},{"midi":43,"beat":84,"dur":4,"vel":0.42},{"midi":43,"beat":88,"dur":4,"vel":0.42},{"midi":36,"beat":92,"dur":4,"vel":0.42},{"midi":39,"beat":96,"dur":4,"vel":0.42},{"midi":44,"beat":100,"dur":4,"vel":0.42},{"midi":41,"beat":104,"dur":4,"vel":0.42},{"midi":43,"beat":108,"dur":4,"vel":0.42},{"midi":43,"beat":112,"dur":4,"vel":0.42},{"midi":44,"beat":116,"dur":4,"vel":0.42},{"midi":43,"beat":120,"dur":4,"vel":0.42},{"midi":36,"beat":124,"dur":4,"vel":0.42}],"pad":[],"pedal":[{"beat":0,"dur":4},{"beat":4,"dur":4},{"beat":8,"dur":4},{"beat":12,"dur":4},{"beat":16,"dur":4},{"beat":20,"dur":4},{"beat":24,"dur":4},{"beat":28,"dur":2},{"beat":30,"dur":2},{"beat":32,"dur":4},{"beat":36,"dur":4},{"beat":40,"dur":4},{"beat":44,"dur":4},{"beat":48,"dur":4},{"beat":52,"dur":4},{"beat":56,"dur":4},{"beat":60,"dur":4},{"beat":64,"dur":4},{"beat":68,"dur":4},{"beat":72,"dur":4},{"beat":76,"dur":4},{"beat":80,"dur":4},{"beat":84,"dur":4},{"beat":88,"dur":4},{"beat":92,"dur":4},{"beat":96,"dur":4},{"beat":100,"dur":4},{"beat":104,"dur":4},{"beat":108,"dur":4},{"beat":112,"dur":4},{"beat":116,"dur":4},{"beat":120,"dur":4},{"beat":124,"dur":4}],"motifTag":"motif"}</script>
+<script>
+(function () {
+'use strict';
+// --- 最小モジュールレジストリ（ES モジュールの import/export の代わり） ---
+var __mods = {};
+var __cache = {};
+function __req(name) {
+  if (Object.prototype.hasOwnProperty.call(__cache, name)) return __cache[name];
+  var mod = { exports: {} };
+  __cache[name] = mod.exports;
+  if (!__mods[name]) throw new Error("module not found: " + name);
+  __mods[name](mod.exports, __req);
+  return mod.exports;
+}
+
+// ===== src/instrument.js =====
+__mods["instrument.js"] = function (exports, require) {
+/**
+ * 楽器の組（アンサンブル）の唯一の定義。
+ *
+ * 曲そのものは楽器を知らない。compose.js が組むのは常に「標準の長調・短調の音」で、
+ * ここで決まるのは**それを何で鳴らすか**だけである。だから楽器を変えても
+ * 楽節構造も和音も転調も1ミリも動かず、同じ曲コードは同じ曲のまま鳴る。
+ *
+ *   key      設定に保存される値。曲コードにも載る
+ *   label    画面に出す名前の i18n キー（実体は i18n.js）
+ *   layers   声部ごとの音色。実体は synth.js の TIMBRES / PADS
+ *   midi     書き出す MIDI の音色番号（General MIDI）
+ *
+ * 声部は melody（主旋律）/ accomp（伴奏の分散和音）/ bass / pad の4つ。
+ * ベースをピアノに寄せてある組が多いのは、撥弦の低音は減衰が速すぎて
+ * 土台が抜けるため。低音だけは伸びる楽器に持たせたほうが曲が立つ。
+ */
+
+const INSTRUMENTS = [
+  {
+    key: 'piano',
+    label: 'inst.piano',
+    layers: { melody: 'piano', accomp: 'piano', bass: 'piano', pad: 'warm' },
+    midi: { melody: 0, accomp: 0 },          // Acoustic Grand Piano
+  },
+  {
+    key: 'epiano',
+    label: 'inst.epiano',
+    layers: { melody: 'epiano', accomp: 'epiano', bass: 'epiano', pad: 'warm' },
+    midi: { melody: 4, accomp: 4 },          // Electric Piano 1
+  },
+  {
+    key: 'harp',
+    label: 'inst.harp',
+    layers: { melody: 'harp', accomp: 'harp', bass: 'piano', pad: 'air' },
+    midi: { melody: 46, accomp: 46 },        // Orchestral Harp
+  },
+  {
+    key: 'guitar',
+    label: 'inst.guitar',
+    layers: { melody: 'guitar', accomp: 'guitar', bass: 'guitar', pad: 'warm' },
+    midi: { melody: 24, accomp: 24 },        // Nylon String Guitar
+  },
+  {
+    key: 'koto',
+    label: 'inst.koto',
+    layers: { melody: 'koto', accomp: 'koto', bass: 'piano', pad: 'air' },
+    midi: { melody: 107, accomp: 107 },      // Koto
+  },
+  {
+    key: 'flute',
+    label: 'inst.flute',
+    layers: { melody: 'shakuhachi', accomp: 'koto', bass: 'piano', pad: 'air' },
+    midi: { melody: 77, accomp: 107 },       // Shakuhachi / Koto
+  },
+  {
+    key: 'strings',
+    label: 'inst.strings',
+    layers: { melody: 'strings', accomp: 'harp', bass: 'piano', pad: 'bowed' },
+    midi: { melody: 110, accomp: 46 },       // Fiddle / Orchestral Harp
+  },
+  {
+    key: 'santur',
+    label: 'inst.santur',
+    layers: { melody: 'santur', accomp: 'oud', bass: 'piano', pad: 'bowed' },
+    midi: { melody: 15, accomp: 24 },        // Dulcimer / Nylon Guitar
+  },
+];
+
+const BY_KEY = new Map(INSTRUMENTS.map((i) => [i.key, i]));
+
+const DEFAULT_INSTRUMENT = INSTRUMENTS[0];
+
+/** 未知のキーはピアノへ落とす。設定が壊れていても曲は鳴らす。 */
+function resolveInstrument(key) {
+  return BY_KEY.get(String(key ?? '')) ?? DEFAULT_INSTRUMENT;
+}
+
+/** settings.js の choice 用 [[値, 表示], ...] */
+function instrumentOptions() {
+  return INSTRUMENTS.map((i) => [i.key, i.label]);
+}
+
+/** 声部 → 音色名。synth.js が発音のたびに引く。 */
+function layersFor(key) {
+  return resolveInstrument(key).layers;
+}
+
+/**
+ * 書き出す MIDI の音色番号（General MIDI のプログラム番号）。
+ * 画面で鳴っている楽器に、GM のなかでいちばん近いものを当てる。
+ */
+function midiProgramsFor(key) {
+  const midi = resolveInstrument(key).midi;
+  return { melody: midi?.melody ?? 0, accomp: midi?.accomp ?? 0 };
+}
+
+// --- exports ---
+exports.resolveInstrument = resolveInstrument;
+exports.instrumentOptions = instrumentOptions;
+exports.layersFor = layersFor;
+exports.midiProgramsFor = midiProgramsFor;
+exports.INSTRUMENTS = INSTRUMENTS;
+exports.DEFAULT_INSTRUMENT = DEFAULT_INSTRUMENT;
+};
+
+// ===== src/synth.js =====
+__mods["synth.js"] = function (exports, require) {
+// Web Audio による音源。サンプルファイルは一切使わず、
+// すべてオシレータと手続き生成のインパルス応答・ノイズで合成する。
+//
+// シグナルチェーン:
+//   メロディー/伴奏/パッド → 各レイヤーゲイン → バス
+//     → ドライ ─────────────┐
+//     → コンボルバー → ウェット ┴→ リミッタ → マスターゲイン → destination
+//
+// 音色は TIMBRES に、その組み合わせ（どの声部に何を使うか）は instrument.js にある。
+//
+// 本ファイル内に限り Math.random() の使用を許可する（リバーブIR・ノイズ・デチューン）。
+// 作曲・演奏の経路はシード由来のPRNGを使うため、ここでの乱数は曲の再現性に影響しない。
+const { layersFor } = require('instrument.js');
+
+// --- 定数（音作りの骨格。ユーザーが触る値は settings 側にある） ---
+
+const MIN_GAIN = 0.0001; // exponentialRampToValueAtTime に 0 は渡せないため、実質無音のこの値を使う
+const TAIL_SEC = 0.05; // stop() をリリース終端よりわずかに後ろへ置く余裕
+
+// silence() で音を落とす時間。短すぎると波形の途中で切れてプツッと鳴る
+const SILENCE_FADE_SEC = 0.06;
+// 無音のあとに音量を戻す時間。一瞬で戻すと戻した瞬間が段差として聴こえる
+const RESTORE_SEC = 0.04;
+
+const REVERB_SECONDS = 3.5;
+const REVERB_DECAY_POWER = 2.6; // 大きいほど尾が速く消える
+const REVERB_TONE = 0.28; // 1極ローパスの係数。小さいほど暗い残響
+const WET_MAX = 1.1; // reverbAmount = 100 のときのウェットゲイン
+const DRY_GAIN = 1.0;
+
+// 出力の底上げ。
+//
+// 実測すると、書き出した音のピークは -11〜-15 dBFS しかなく、
+// 使える音量を10dB以上余らせていた。据え置きのスピーカーやヘッドホンでは
+// 「静かな曲」で済むが、スマートフォンの内蔵スピーカーではそのまま
+// 「聴こえない」になる。小さい音を小さく鳴らすのと、
+// 小さい音しか出せないのは別のことである。
+//
+// リミッタの手前で持ち上げるので、突出したところはリミッタが受け止める。
+// 値は実測で選んだ（音量つまみ85・30秒・3曲平均）。
+//   1.0  ピーク -5.3 / RMS -24.8 / 曲中の抑揚 11.6 dB   ← 元。小さすぎる
+//   2.4  ピーク -1.5 / RMS -19.7 / 抑揚 11.4 dB
+//   3.0  ピーク -0.7 / RMS -17.7 / 抑揚 11.6 dB          ← 採用。抑揚は無傷
+//   3.6  ピーク -1.7 / RMS -16.2 / 抑揚 11.5 dB（伸びが止まる）
+const OUTPUT_MAKEUP = 3.0;
+
+// 出力の天井。音量つまみを最大にしても 0 dBFS を越えないための余裕。
+//
+// リミッタは音楽的に効かせたい圧縮器であって、ぴったり止まる壁ではない。
+// 実測では、つまみ最大でピークが +1.1 dBFS まで出て歪む。
+// リミッタを固くして止めると抑揚まで潰れる（実測: しきい値 -6 で
+// 曲中の抑揚が 12.0 → 10.8 dB へ落ちた）ので、圧縮ではなく
+// 最後に一律で下げるほうを選ぶ。0.8 は -1.9 dB。
+const MASTER_CEILING = 0.8;
+
+const PAD_FILTER_Q = 0.5;
+const PAD_MIN_RELEASE_SEC = 2.0;
+const PAD_DETUNE_CENTS = 4; // ±4セントのランダムデチューンで厚みを出す
+
+// 各レイヤーの1音あたりのピーク振幅。レイヤーゲイン(=設定値)の手前に掛ける。
+//
+// ここは compose 側のベロシティ（伴奏0.3前後・ベース0.5）と設定側の音量が
+// さらに掛かるため、控えめにしすぎると伴奏が聴こえなくなる。
+// 実測でメロディー比 伴奏 -7dB / ベース -6dB / パッド -18dB を狙った値。
+const MELODY_PEAK = 0.30;
+const ACCOMP_PEAK = 0.34;
+const BASS_PEAK = 0.26;
+const PAD_PEAK = 0.24; // 和音の音数でさらに割るので、単音換算ではこれでも控えめ
+
+// ---------------------------------------------------------------------------
+// 音色
+//
+// 倍音とアタックの数値だけを変えても、楽器は別の楽器にならない。
+// 正弦波を足して指数関数で減衰させる、という作り方がピアノそのものだからで、
+// その枠の中で数値を動かしても「少し違うピアノ」にしかならない。
+// 楽器の正体を決めているのは、実際にはもっと乱暴な3つである。
+//
+//   1. アタックの雑音   爪が弦を弾く音、息が管の縁に当たる音。楽器の名刺。
+//   2. 音色の時間変化   撥弦は弾いた瞬間だけ明るく、すぐ暗くなる（フィルタの掃引）。
+//                      ピアノはペダルで伸ばすので、この落ち方が根本的に違う。
+//   3. 減衰の速さ       撥弦は書かれた音価に関係なく先に消える。
+//                      ここをピアノと同じに保つと、何を鳴らしてもピアノに聴こえる。
+//
+//   partials     倍音構成。decay は基音のリリースに対する倍率で、
+//                倍音ほど速く減衰させる。mul が整数でないものは非整数倍音
+//                （打弦楽器の金属的な響きはこれで出る）
+//   wave         基本波形。'sine' 以外にすると倍音は波形が持つので partials は1つでよい
+//   attack       立ち上がり秒
+//   releaseRatio 音価に対するリリースの倍率
+//   minRelease   最短リリース。ピアノのサステインペダル相当
+//   sustain      true なら音価のあいだ音量を保つ（吹奏・擦弦）。
+//                false なら弾いた瞬間から減衰し続ける（打鍵・撥弦）
+//   inharmonic   倍音を上へずらす係数。完全整数倍だと合成臭くなる
+//   gain         音色ごとの音量合わせ
+//   filter       { hz, q, to, time } 音全体に掛けるローパス。to があれば
+//                hz から to へ time 秒かけて閉じる（撥弦の「弾いた直後だけ明るい」）
+//   vibrato      { hz, cents, delay } 遅れて掛かるビブラート
+//   tremolo      { hz, depth } 音量の揺れ。エレピの指紋
+//   noise        { gain, decay, hz, q } 爪の音・息の音。帯域を絞った雑音を頭に足す
+//
+// partials は melody の1組だけ書けばよい。伴奏とベースには自動で高倍音を落とす
+// （下支えに回る声部で高倍音が要らないのは、どの楽器でも変わらない）。
+// ピアノだけは3組を明示する。既存の音を1ミリも変えないため。
+// ---------------------------------------------------------------------------
+
+const TIMBRES = {
+  // アコースティックピアノ。この曲生成器の原点で、標準スタイルの音。
+  piano: {
+    partials: {
+      melody: [
+        { mul: 1, gain: 1.00, decay: 1.00 },
+        { mul: 2, gain: 0.50, decay: 0.55 },
+        { mul: 3, gain: 0.26, decay: 0.34 },
+        { mul: 4, gain: 0.15, decay: 0.22 },
+      ],
+      accomp: [
+        { mul: 1, gain: 1.00, decay: 1.00 },
+        { mul: 2, gain: 0.34, decay: 0.45 },
+        { mul: 3, gain: 0.12, decay: 0.26 },
+        { mul: 4, gain: 0.05, decay: 0.16 },
+      ],
+      // 低音は基音だけだと小型スピーカーで消えるため2倍音は残す
+      bass: [
+        { mul: 1, gain: 1.00, decay: 1.00 },
+        { mul: 2, gain: 0.22, decay: 0.40 },
+        { mul: 3, gain: 0.06, decay: 0.20 },
+      ],
+    },
+    attack: 0.008, releaseRatio: 0.9, minRelease: 1.6, inharmonic: 0.0004, gain: 1,
+  },
+
+  // エレクトリックピアノ。14倍音の短い減衰が鐘のようなアタックを作り、
+  // 音量の揺れ（トレモロ）がこの楽器の指紋。
+  epiano: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.30, decay: 0.55 },
+      { mul: 4, gain: 0.18, decay: 0.30 },
+      { mul: 6, gain: 0.10, decay: 0.20 },
+      { mul: 14, gain: 0.07, decay: 0.07 },
+    ],
+    attack: 0.004, releaseRatio: 0.5, minRelease: 0.9, inharmonic: 0.001, gain: 1.05,
+    filter: { hz: 4200, q: 0.6 },
+    tremolo: { hz: 5.2, depth: 0.38 },
+  },
+
+  // 古筝。絹弦を義甲で弾く。倍音が高くまで並び、弾いた直後だけ明るい。
+  guzheng: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.55, decay: 0.55 },
+      { mul: 3, gain: 0.42, decay: 0.40 },
+      { mul: 4, gain: 0.26, decay: 0.30 },
+      { mul: 5, gain: 0.16, decay: 0.22 },
+      { mul: 6, gain: 0.10, decay: 0.16 },
+    ],
+    attack: 0.001, releaseRatio: 0.28, minRelease: 0.55, inharmonic: 0.0012, gain: 0.95,
+    filter: { hz: 6500, to: 1200, time: 0.5, q: 1.0 },
+    noise: { gain: 0.45, decay: 0.05, hz: 3000, q: 0.9 },
+  },
+
+  // 箏。古筝より暗く、余韻を少し長めに残す。
+  koto: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.46, decay: 0.60 },
+      { mul: 3, gain: 0.30, decay: 0.42 },
+      { mul: 4, gain: 0.16, decay: 0.30 },
+      { mul: 5, gain: 0.08, decay: 0.20 },
+    ],
+    attack: 0.002, releaseRatio: 0.32, minRelease: 0.7, inharmonic: 0.0010, gain: 0.95,
+    filter: { hz: 4800, to: 900, time: 0.7, q: 1.0 },
+    noise: { gain: 0.35, decay: 0.06, hz: 2200, q: 0.9 },
+  },
+
+  // 三線。蛇皮の胴が作る鼻にかかった響きと、爪弾きの強い当たり。
+  // 撥弦のなかで最も短く切れるのがこの楽器の性格。
+  sanshin: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.62, decay: 0.50 },
+      { mul: 3, gain: 0.50, decay: 0.35 },
+      { mul: 4, gain: 0.34, decay: 0.25 },
+      { mul: 5, gain: 0.20, decay: 0.18 },
+    ],
+    attack: 0.001, releaseRatio: 0.22, minRelease: 0.4, inharmonic: 0.0015, gain: 0.92,
+    filter: { hz: 5200, to: 1400, time: 0.35, q: 1.4 },
+    noise: { gain: 0.60, decay: 0.05, hz: 1600, q: 0.7 },
+  },
+
+  // サントゥール。金属弦を撥で打つので倍音が整数倍から外れ、頭が硬く光る。
+  santur: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.50, decay: 0.50 },
+      { mul: 3, gain: 0.30, decay: 0.35 },
+      { mul: 4.2, gain: 0.22, decay: 0.25 },
+      { mul: 5.4, gain: 0.14, decay: 0.18 },
+      { mul: 7.1, gain: 0.08, decay: 0.12 },
+    ],
+    attack: 0.001, releaseRatio: 0.3, minRelease: 0.6, inharmonic: 0.002, gain: 0.9,
+    filter: { hz: 8000, to: 2000, time: 0.5, q: 1.0 },
+    noise: { gain: 0.50, decay: 0.03, hz: 4200, q: 1.2 },
+  },
+
+  // ウード。フレットの無い撥弦。ナイロン弦より暗く、胴が大きい。
+  oud: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.40, decay: 0.55 },
+      { mul: 3, gain: 0.22, decay: 0.40 },
+      { mul: 4, gain: 0.10, decay: 0.28 },
+    ],
+    attack: 0.003, releaseRatio: 0.3, minRelease: 0.6, inharmonic: 0.0008, gain: 0.95,
+    filter: { hz: 3200, to: 700, time: 0.6, q: 0.9 },
+    noise: { gain: 0.35, decay: 0.06, hz: 1200, q: 0.7 },
+  },
+
+  // ナイロン弦のギター。3倍音が強いのがガット弦らしさ。
+  guitar: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.42, decay: 0.60 },
+      { mul: 3, gain: 0.30, decay: 0.45 },
+      { mul: 4, gain: 0.16, decay: 0.30 },
+      { mul: 5, gain: 0.08, decay: 0.20 },
+    ],
+    attack: 0.003, releaseRatio: 0.35, minRelease: 0.8, inharmonic: 0.0006, gain: 1.0,
+    filter: { hz: 3800, to: 900, time: 0.8, q: 0.9 },
+    noise: { gain: 0.30, decay: 0.06, hz: 1600, q: 0.8 },
+  },
+
+  // ハープ。撥弦のなかでは最も余韻が長く、倍音は素直。
+  harp: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.40, decay: 0.70 },
+      { mul: 3, gain: 0.22, decay: 0.50 },
+      { mul: 4, gain: 0.12, decay: 0.35 },
+      { mul: 5, gain: 0.06, decay: 0.25 },
+    ],
+    attack: 0.002, releaseRatio: 0.5, minRelease: 1.2, inharmonic: 0.0005, gain: 1.0,
+    filter: { hz: 5200, to: 1500, time: 1.2, q: 0.8 },
+    noise: { gain: 0.20, decay: 0.04, hz: 2400, q: 0.9 },
+  },
+
+  // 尺八。息の音が音色の半分を占める。倍音はほとんど無く、
+  // 代わりに帯域の広い息が鳴り続ける。ビブラートは遅れて掛かる。
+  shakuhachi: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.18, decay: 1.00 },
+      { mul: 3, gain: 0.07, decay: 1.00 },
+    ],
+    attack: 0.13, releaseRatio: 0.3, minRelease: 0.3, sustain: true, inharmonic: 0, gain: 1.1,
+    vibrato: { hz: 4.4, cents: 22, delay: 0.30 },
+    noise: { gain: 0.55, decay: 0.9, hz: 1800, q: 0.35 },
+  },
+
+  // バンスリ。尺八より息が細く、ビブラートが速い。
+  bansuri: {
+    partials: [
+      { mul: 1, gain: 1.00, decay: 1.00 },
+      { mul: 2, gain: 0.22, decay: 1.00 },
+      { mul: 3, gain: 0.07, decay: 1.00 },
+    ],
+    attack: 0.07, releaseRatio: 0.3, minRelease: 0.3, sustain: true, inharmonic: 0, gain: 1.1,
+    vibrato: { hz: 5.8, cents: 18, delay: 0.18 },
+    noise: { gain: 0.35, decay: 0.8, hz: 2800, q: 0.5 },
+  },
+
+  // 擦弦。ノコギリ波をローパスで削って作る。倍音を足して作る音とは
+  // 出自から違うので、加算合成の楽器と並べたときにいちばん遠くに聴こえる。
+  strings: {
+    partials: [{ mul: 1, gain: 1.00, decay: 1.00 }],
+    wave: 'sawtooth',
+    attack: 0.28, releaseRatio: 0.4, minRelease: 0.5, sustain: true, inharmonic: 0, gain: 0.42,
+    filter: { hz: 2000, q: 0.9 },
+    vibrato: { hz: 4.4, cents: 10, delay: 0.35 },
+  },
+};
+
+/** パッドの音色。持続音なので倍音構成ではなく波形とフィルタで作る。 */
+const PADS = {
+  warm: { wave: 'triangle', hz: 1400, attack: 2.0, gain: 1.0 },
+  air: { wave: 'sine', hz: 900, attack: 2.6, gain: 1.15 },
+  bowed: { wave: 'sawtooth', hz: 1050, attack: 2.2, gain: 0.55 },
+};
+
+const DEFAULT_LAYERS = { melody: 'piano', accomp: 'piano', bass: 'piano', pad: 'warm' };
+
+/** 楽器のキーから声部ごとの音色を引く。未知のキーはピアノへ落ちる。 */
+function ensembleFor(instrumentKey) {
+  return layersFor(instrumentKey) ?? DEFAULT_LAYERS;
+}
+
+// settings.js の PARAM_DEFS における既定値の写し。
+// settings が未指定・欠損でも音が出なくならないための保険であり、正は settings.js 側。
+const FALLBACK = {
+  masterVolume: 85,
+  melodyVolume: 100,
+  accompVolume: 45,
+  padVolume: 35,
+  reverbAmount: 45,
+  brightness: 50,
+};
+
+// --- 小道具 ---
+
+function clamp(v, min, max) {
+  return v < min ? min : v > max ? max : v;
+}
+
+// 0〜100 の設定値を 0〜1 のゲインへ。数値でない値は既定値へ落とす。
+function pct(settings, key) {
+  const raw = settings == null ? undefined : settings[key];
+  const n = Number(raw);
+  return clamp(Number.isFinite(n) ? n : FALLBACK[key], 0, 100) / 100;
+}
+
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+// 高い倍音ほど耳につくため、周波数が上がるにつれ穏やかに削る。
+function highTilt(freq) {
+  return Math.min(1, 2000 / freq);
+}
+
+// 伴奏とベースの倍音構成。melody の組から高倍音を落として作り、覚えておく。
+const LAYER_TILT = { accomp: 0.7, bass: 0.45 };
+const PARTIAL_CACHE = new Map();
+
+function partialsOf(timbre, name, layer) {
+  const table = timbre.partials;
+  if (!Array.isArray(table)) return table[layer] ?? table.melody;
+  if (layer === 'melody') return table;
+  const key = `${name}:${layer}`;
+  const hit = PARTIAL_CACHE.get(key);
+  if (hit) return hit;
+  const cut = LAYER_TILT[layer] ?? 1;
+  const out = table.map((p, i) => (i === 0 ? p : { ...p, gain: p.gain * Math.pow(cut, i) }));
+  PARTIAL_CACHE.set(key, out);
+  return out;
+}
+
+// ノイズ×指数減衰のステレオIR。ヒーリング系はリバーブが音色の半分を作る。
+function buildImpulseResponse(ctx) {
+  const rate = ctx.sampleRate;
+  const length = Math.max(1, Math.floor(rate * REVERB_SECONDS));
+  const ir = ctx.createBuffer(2, length, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = ir.getChannelData(ch);
+    let lp = 0; // 1極ローパス。生の白色ノイズのままだと残響が硬く痩せて聴こえる
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1;
+      lp += REVERB_TONE * (white - lp);
+      const decay = Math.pow(1 - i / length, REVERB_DECAY_POWER);
+      // 頭の数msだけ立ち上げ、初期反射がクリック状に飛び出すのを防ぐ
+      const fadeIn = Math.min(1, i / (rate * 0.005));
+      data[i] = (lp * 0.75 + white * 0.25) * decay * fadeIn;
+    }
+  }
+  return ir;
+}
+
+/** 爪の音・息の音に使う白色ノイズ。1つ作って全音で使い回す。 */
+function buildNoiseBuffer(ctx) {
+  const length = Math.max(1, Math.floor(ctx.sampleRate));
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  return buffer;
+}
+
+/**
+ * Web Audio 音源を作る。
+ *
+ * @param {BaseAudioContext} audioCtx
+ * @param {object} settings settings.js のサウンド系キーを持つオブジェクト
+ * @returns {{
+ *   playPiano: (time: number, midi: number, durSec: number, vel: number, layer: 'melody'|'accomp'|'bass') => void,
+ *   playPad: (time: number, midis: number[], durSec: number, vel: number) => void,
+ *   applySettings: (next: object) => void,
+ *   dispose: () => void,
+ * }}
+ */
+function createEngine(audioCtx, settings) {
+  const ctx = audioCtx;
+
+  // --- 固定ノード（applySettings では作り直さず、値だけ書き換える） ---
+  const master = ctx.createGain();
+  const limiter = ctx.createDynamicsCompressor();
+  const bus = ctx.createGain();
+  const dry = ctx.createGain();
+  const wet = ctx.createGain();
+  const convolver = ctx.createConvolver();
+  const melodyGain = ctx.createGain();
+  const accompGain = ctx.createGain();
+  const padGain = ctx.createGain();
+
+  // しきい値 -8 では、リミッタが音楽的なピークまで削っていた。
+  // 実測（makeup 3.0）: -8 で曲中の抑揚が 11.6 → 8.6 dB へ潰れ、
+  // -3 なら 11.6 dB のまま。突発的な山だけを受け止める高さに置く。
+  limiter.threshold.value = -3;
+  limiter.knee.value = 6;
+  limiter.ratio.value = 12;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.25;
+
+  convolver.normalize = true;
+  convolver.buffer = buildImpulseResponse(ctx);
+
+  bus.gain.value = OUTPUT_MAKEUP;
+  dry.gain.value = DRY_GAIN;
+
+  melodyGain.connect(bus);
+  accompGain.connect(bus);
+  padGain.connect(bus);
+  bus.connect(dry);
+  bus.connect(convolver);
+  convolver.connect(wet);
+  dry.connect(limiter);
+  wet.connect(limiter);
+  limiter.connect(master);
+  master.connect(ctx.destination);
+
+  // ベースは伴奏バスに合流させる。伴奏音量ひとつで下支え全体が動くようにするため。
+  const layerGains = { melody: melodyGain, accomp: accompGain, bass: accompGain };
+  const layerPeaks = { melody: MELODY_PEAK, accomp: ACCOMP_PEAK, bass: BASS_PEAK };
+
+  // 発音のたびに引く値は保持しておき、applySettings では書き換えるだけにする。
+  let brightScale = 1;
+  let ensemble = DEFAULT_LAYERS;
+  let noiseBuffer = null; // ノイズを使う音色が来たときに初めて作る
+  let disposed = false;
+
+  // 鳴っている最中のノード。dispose のときに確実に止めて切断するため保持する。
+  const voices = new Set();
+
+  function track(source, nodes) {
+    if (disposed) return;
+    const voice = { source, nodes };
+    voices.add(voice);
+    source.onended = () => {
+      voices.delete(voice);
+      release(voice);
+    };
+  }
+
+  function release(voice) {
+    try {
+      voice.source.disconnect();
+    } catch (_) { /* 二重切断は無視 */ }
+    for (const node of voice.nodes) {
+      try {
+        node.disconnect();
+      } catch (_) { /* 同上 */ }
+    }
+  }
+
+  /** 音量つまみと出力の天井を掛けた、実際のマスターゲイン */
+  function masterGain() {
+    return Math.max(pct(settings, 'masterVolume') * MASTER_CEILING, MIN_GAIN);
+  }
+
+  function applySettings(next) {
+    if (next) settings = next;
+    // ノードは作り直さない。既存のゲインノードの値を書き換えるだけ。
+    master.gain.value = masterGain();
+    melodyGain.gain.value = pct(settings, 'melodyVolume');
+    accompGain.gain.value = pct(settings, 'accompVolume');
+    padGain.gain.value = pct(settings, 'padVolume');
+    wet.gain.value = pct(settings, 'reverbAmount') * WET_MAX;
+    // 0 で基音のみに近く、100 で明るくきらびやか（2倍音以上を 0〜2倍にスケール）
+    brightScale = pct(settings, 'brightness') * 2;
+    // 楽器は「次の曲から」の設定なので、曲が変わるたびに player から呼ばれる。
+    ensemble = ensembleFor(settings?.instrument);
+  }
+
+  applySettings(settings);
+
+  // time は audioCtx.currentTime 基準の絶対秒。過去に落ちたときだけ現在時刻へ寄せる。
+  function startAt(time) {
+    const t = Number(time);
+    const now = ctx.currentTime;
+    return Number.isFinite(t) ? Math.max(t, now) : now;
+  }
+
+  /** 爪・息の音。帯域を絞った雑音を、音の頭に足す。 */
+  function addNoise(spec, t0, amp, dest) {
+    if (!noiseBuffer) noiseBuffer = buildNoiseBuffer(ctx);
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+    src.loop = true;
+
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(spec.hz, t0);
+    band.Q.value = spec.q;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(MIN_GAIN, t0);
+    env.gain.linearRampToValueAtTime(amp * spec.gain, t0 + 0.003);
+    env.gain.exponentialRampToValueAtTime(MIN_GAIN, t0 + 0.003 + spec.decay);
+
+    src.connect(band);
+    band.connect(env);
+    env.connect(dest);
+    src.start(t0);
+    src.stop(t0 + 0.003 + spec.decay + TAIL_SEC);
+    // !!! ここに共有ノード（フィルタ・トレモロ）を渡してはいけない !!!
+    // 雑音は 50ms ほどで終わる。その onended で共有ノードまで切断すると、
+    // まだ鳴っているはずの倍音が行き場を失って、音が頭だけで消える。
+    track(src, [band, env]);
+  }
+
+  /**
+   * 撥弦の「弾いた瞬間だけ明るい」を作るローパス。
+   * to があれば hz から to へ閉じていく。これが無いと、どんな倍音構成でも
+   * 一定の明るさで鳴り続けてしまい、ピアノとの違いが出ない。
+   */
+  function makeFilter(spec, t0) {
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.Q.value = spec.q ?? 0.7;
+    const top = Math.min(spec.hz, ctx.sampleRate * 0.45);
+    filter.frequency.setValueAtTime(top, t0);
+    if (spec.to) {
+      filter.frequency.exponentialRampToValueAtTime(
+        Math.max(60, Math.min(spec.to, top)), t0 + (spec.time ?? 0.5));
+    }
+    return filter;
+  }
+
+  /** 音量の揺れ。エレピの指紋なので、ここだけは音そのものより先に耳が気づく。 */
+  function makeTremolo(spec, t0, stopAt) {
+    const trem = ctx.createGain();
+    trem.gain.setValueAtTime(1 - spec.depth / 2, t0);
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(spec.hz, t0);
+    const depth = ctx.createGain();
+    depth.gain.setValueAtTime(spec.depth / 2, t0);
+    lfo.connect(depth);
+    depth.connect(trem.gain); // GainNode の gain へ足し込む
+    lfo.start(t0);
+    lfo.stop(stopAt);
+    track(lfo, [depth]);
+    return trem;
+  }
+
+  /** ビブラート。1音につき1本の LFO を作り、全倍音のデチューンへ配る。 */
+  function makeVibrato(spec, t0, stopAt) {
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(spec.hz, t0);
+    const depth = ctx.createGain();
+    // 掛かり始めるまでは深さ 0。遅れて掛かるから「歌っている」ように聴こえる。
+    depth.gain.setValueAtTime(0, t0);
+    depth.gain.setValueAtTime(0, t0 + spec.delay);
+    depth.gain.linearRampToValueAtTime(spec.cents, t0 + spec.delay + 0.25);
+    lfo.connect(depth);
+    lfo.start(t0);
+    lfo.stop(stopAt);
+    track(lfo, [depth]);
+    return depth;
+  }
+
+  /**
+   * 単音を1つ鳴らす。倍音を足し合わせて作る（加算合成）。
+   *
+   * 名前が playPiano なのは、この関数がピアノ専用だった頃からの呼び出し規約。
+   * 実際に鳴る楽器は layer とアンサンブルで決まる。
+   */
+  function playPiano(time, midi, durSec, vel, layer) {
+    if (disposed) return;
+    const dest = layerGains[layer] ?? melodyGain;
+    const name = ensemble[layer] ?? ensemble.melody;
+    const timbre = TIMBRES[name] ?? TIMBRES.piano;
+    const partials = partialsOf(timbre, name, layer);
+    const t0 = startAt(time);
+    const dur = Math.max(0.05, Number(durSec) || 0.05);
+    const v = clamp(Number(vel) || 0, 0, 1.2);
+    if (v <= 0) return;
+
+    const attack = Math.min(timbre.attack, dur * 0.5);
+    const releaseSec = Math.max(dur * timbre.releaseRatio, timbre.minRelease);
+    // 保つ音色は「音価のあいだ鳴って、そこから減衰」。撥弦・打鍵は最初から減衰し続ける。
+    const holdUntil = timbre.sustain ? t0 + Math.max(attack, dur) : t0 + attack;
+    const stopAt = holdUntil + releaseSec + TAIL_SEC;
+    const peak = (layerPeaks[layer] ?? MELODY_PEAK) * (timbre.gain ?? 1) * v;
+    // 実際の楽器同様、強く鳴らした音ほど倍音が出る
+    const velBright = 0.6 + 0.4 * v;
+    const f0 = midiToFreq(Number(midi));
+    const nyquist = ctx.sampleRate * 0.45;
+
+    // 音全体を通す枝。フィルタ → トレモロ → レイヤーのゲイン、の順に繋ぐ。
+    // どちらも無ければ倍音は直接レイヤーへ挿す（標準のピアノは従来どおり）。
+    const shared = [];
+    let sink = dest;
+    if (timbre.tremolo) {
+      const trem = makeTremolo(timbre.tremolo, t0, stopAt);
+      trem.connect(sink);
+      shared.push(trem);
+      sink = trem;
+    }
+    if (timbre.filter) {
+      const filter = makeFilter(timbre.filter, t0);
+      filter.connect(sink);
+      shared.push(filter);
+      sink = filter;
+    }
+
+    // 爪の音・息の音もフィルタを通す。頭の雑音だけが素通しだと張り付いて聴こえる。
+    if (timbre.noise) addNoise(timbre.noise, t0, peak, sink);
+    const vibrato = timbre.vibrato ? makeVibrato(timbre.vibrato, t0, stopAt) : null;
+
+    // 共有ノードを片付ける役は、倍音のうち1本だけに持たせる。
+    // 倍音はすべて同じ stopAt で止まるので、どれに持たせても結果は同じ。
+    let anchored = false;
+
+    for (const p of partials) {
+      // 完全整数倍だと合成臭くなるため、実際の弦に倣ってごく僅かに上へずらす（決定論的）
+      const freq = f0 * p.mul * (1 + (timbre.inharmonic ?? 0) * p.mul * p.mul);
+      if (freq >= nyquist) continue;
+
+      const harmonic = p.mul > 1;
+      const amp = peak * p.gain * (harmonic ? brightScale * velBright * highTilt(freq) : 1);
+      if (amp <= MIN_GAIN) continue;
+
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0, t0);
+      env.gain.linearRampToValueAtTime(amp, t0 + attack);
+      if (timbre.sustain) {
+        // 保つあいだは倍音も一緒に保ち、離してから一斉に減衰させる。
+        env.gain.setValueAtTime(amp, holdUntil);
+        env.gain.exponentialRampToValueAtTime(MIN_GAIN, holdUntil + releaseSec);
+      } else {
+        // 倍音ほど短い減衰時間を与える。0 は渡せないので MIN_GAIN まで落とす。
+        const decaySec = Math.max(0.05, releaseSec * p.decay);
+        env.gain.exponentialRampToValueAtTime(MIN_GAIN, t0 + attack + decaySec);
+      }
+
+      const osc = ctx.createOscillator();
+      osc.type = timbre.wave ?? 'sine';
+      osc.frequency.setValueAtTime(freq, t0);
+      if (vibrato) vibrato.connect(osc.detune);
+      osc.connect(env);
+      env.connect(sink);
+      osc.start(t0);
+      osc.stop(stopAt); // 全オシレータを必ず止め、ノードをリークさせない
+      track(osc, anchored ? [env] : [env, ...shared]);
+      anchored = true;
+    }
+
+    // 倍音が1本も作られなかった（全部ナイキストを超えた等）ときの後始末。
+    // 誰も片付けないまま残すとノードがリークする。
+    if (!anchored) {
+      for (const n of shared) {
+        try {
+          n.disconnect();
+        } catch (_) { /* 未接続なら無視 */ }
+      }
+    }
+  }
+
+  /**
+   * パッド和音。ゆっくり立ち上げて空間を埋める。
+   * 波形とフィルタはアンサンブルごと（PADS）。
+   */
+  function playPad(time, midis, durSec, vel) {
+    if (disposed) return;
+    if (!Array.isArray(midis) || midis.length === 0) return;
+    const preset = PADS[ensemble.pad] ?? PADS.warm;
+    const t0 = startAt(time);
+    const dur = Math.max(0.2, Number(durSec) || 0.2);
+    const v = clamp(Number(vel) || 0, 0, 1.2);
+    if (v <= 0) return;
+
+    const attackSec = Math.min(preset.attack, Math.max(0.05, dur * 0.5));
+    const releaseSec = Math.max(dur * 0.5, PAD_MIN_RELEASE_SEC);
+    const endAt = t0 + dur;
+    const stopAt = endAt + releaseSec + TAIL_SEC;
+    const amp = (PAD_PEAK * preset.gain * v) / Math.sqrt(midis.length);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(preset.hz, t0);
+    filter.Q.value = PAD_FILTER_Q;
+    filter.connect(padGain);
+
+    for (const midi of midis) {
+      const freq = midiToFreq(Number(midi));
+      if (!Number.isFinite(freq)) continue;
+
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0, t0);
+      env.gain.linearRampToValueAtTime(amp, t0 + attackSec); // ゆっくり
+      env.gain.setValueAtTime(amp, endAt); // attackSec <= dur*0.5 なので必ず立ち上がり後
+      env.gain.exponentialRampToValueAtTime(MIN_GAIN, endAt + releaseSec);
+
+      const osc = ctx.createOscillator();
+      osc.type = preset.wave;
+      osc.frequency.setValueAtTime(freq, t0);
+      // ±4セント。個々の音をわずかにずらすことで厚みが出る（本ファイル限定の Math.random）
+      osc.detune.setValueAtTime((Math.random() * 2 - 1) * PAD_DETUNE_CENTS, t0);
+      osc.connect(env);
+      env.connect(filter);
+      osc.start(t0);
+      osc.stop(stopAt);
+      track(osc, [env, filter]);
+    }
+  }
+
+  /**
+   * 鳴っている音を全部消して、gapSec 秒の無音をはさんでから音量を戻す。
+   *
+   * 曲を手で切り替えるときに使う。何もしないと、前の曲の減衰とリバーブの尾
+   * （最長3.5秒）が次の曲の頭に重なって、2曲が一瞬混ざって聴こえる。
+   *
+   * 予約済みのオシレータを止めるだけではリバーブの尾が残るので、
+   * マスターごと落とす。落とす前に数十ミリ秒かけるのは、
+   * 波形の途中で切るとプツッというクリックノイズが出るため。
+   *
+   * @param {number} gapSec 無音にしておく秒数
+   */
+  function silence(gapSec = 1) {
+    if (disposed) return;
+    const now = ctx.currentTime;
+    const fade = Math.max(0.02, Math.min(SILENCE_FADE_SEC, gapSec * 0.4));
+    const target = masterGain();
+
+    master.gain.cancelScheduledValues(now);
+    master.gain.setValueAtTime(Math.max(master.gain.value, MIN_GAIN), now);
+    master.gain.exponentialRampToValueAtTime(MIN_GAIN, now + fade);
+    // 無音のあいだに次の曲の頭が来ても、戻すのは gapSec ちょうど。
+    master.gain.setValueAtTime(MIN_GAIN, now + gapSec);
+    master.gain.exponentialRampToValueAtTime(target, now + gapSec + RESTORE_SEC);
+
+    // 予約済みの音は、フェードが終わったところで止める。
+    // 止めておかないと、音量を戻した瞬間に前の曲の続きが鳴り出す。
+    for (const voice of voices) {
+      try {
+        voice.source.stop(now + fade);
+      } catch (_) { /* 既に停止済み */ }
+    }
+  }
+
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    const now = ctx.currentTime;
+    for (const voice of voices) {
+      voice.source.onended = null;
+      try {
+        voice.source.stop(now);
+      } catch (_) { /* 既に停止済み */ }
+      release(voice);
+    }
+    voices.clear();
+    for (const node of [melodyGain, accompGain, padGain, bus, dry, wet, convolver, limiter, master]) {
+      try {
+        node.disconnect();
+      } catch (_) { /* 同上 */ }
+    }
+  }
+
+  return { playPiano, playPad, applySettings, silence, dispose };
+}
+
+// --- exports ---
+exports.ensembleFor = ensembleFor;
+exports.createEngine = createEngine;
+};
+
+// ===== src/rng.js =====
+__mods["rng.js"] = function (exports, require) {
+// mulberry32: 32bit状態の高速PRNG。同じシードから常に同じ列を生む。
+function makeRng(seed) {
+  let a = seed >>> 0;
+  return function rng() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// FNV-1a 32bit
+function seedFromString(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function randInt(rng, min, max) {
+  return min + Math.floor(rng() * (max - min + 1));
+}
+
+function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+function shuffle(rng, arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// --- exports ---
+exports.makeRng = makeRng;
+exports.seedFromString = seedFromString;
+exports.randInt = randInt;
+exports.pick = pick;
+exports.shuffle = shuffle;
+};
+
+// ===== src/perform.js =====
+__mods["perform.js"] = function (exports, require) {
+// 拍単位のクオンタイズされた曲を、秒単位の「人間味のある演奏イベント列」に変換する。
+// Web Audio には一切依存しない純関数モジュール。
+//
+// ここでやることは大きく2つある。
+//
+// 1. 揺らぎ（humanize）: タイミング・ベロシティの微小なばらつき、頂点音のテヌート、
+//    終盤のリタルダンド。設定でON/OFFできる「味付け」。
+// 2. 強弱設計（dynamics）: フレーズごとの膨らみと収め、セクションごとの基準レベル、
+//    クライマックスへのクレッシェンドとその直後の脱力。
+//
+// 2 は味付けではなく音楽の骨格なので、設定に関係なく常に適用する。
+// 強弱が平坦な演奏は、旋律がどれほど良くても人の心を動かさない。
+// 人間のピアニストは1フレーズごとに必ず膨らませて収める。ここを機械がサボると
+// 「上手いが感動しない」演奏になる。
+const { makeRng, seedFromString } = require('rng.js');
+
+/**
+ * @typedef {{ kind: 'piano', layer: 'melody'|'accomp'|'bass', at: number, midi: number, dur: number, vel: number }} PianoEvent
+ * @typedef {{ kind: 'pad', at: number, midis: number[], dur: number, vel: number }} PadEvent
+ * @typedef {PianoEvent | PadEvent} PerfEvent
+ */
+
+// ピアノ系レイヤーの処理順。乱数を1本の列から消費するので、
+// この順序を変えると同じシードでも再現できなくなる。
+const PIANO_LAYERS = ['melody', 'accomp', 'bass'];
+
+// メロディーは揺らぎを全量、伴奏とベースは半量。
+// 伴奏まで大きく揺らすと土台がぐらついて不安に聴こえる。
+const JITTER_SCALE = { melody: 1, accomp: 0.5, bass: 0.5 };
+
+// ベロシティの下限・上限。0 だと無音、1 超えは歪みの原因になる。
+const VEL_MIN = 0.05;
+const VEL_MAX = 1.0;
+
+// テヌート時の「ため」と音価の伸ばし率。
+const TENUTO_DELAY_SEC = 0.03;
+const TENUTO_DUR_RATIO = 1.15;
+
+// リタルダンドの範囲（最後の2小節＝8拍）と最大の遅れ（0.5拍ぶん）。
+const RIT_BEATS = 8;
+const RIT_MAX_BEATS = 0.5;
+
+// ---- 強弱設計 ----
+
+// 2小節（8拍）を1フレーズと見なす。ヒーリング系の緩いテンポでは
+// これが「ひと息」の長さにちょうど合う。
+const PHRASE_BEATS = 8;
+
+// フレーズ内スウェルの深さ。頂点で 1.0、フレーズの端で 1-0.18 = 0.82 程度。
+// これ以上深くすると弱拍が痩せて旋律線が途切れて聴こえる。
+const SWELL_DEPTH = 0.18;
+// 頂点がフレーズの端に来たときのゼロ除算よけ兼、深さの上限調整。
+const SWELL_MIN_SPAN = 0.25;
+
+// セクションごとの基準レベル [開始, 終了]。
+// A で提示し、A' で少し前へ出て、B で最も鳴らし、A'' で静かに閉じる。
+// A'' だけはセクション内を線形に下げて、曲の終わりに向かって収める。
+const SECTION_LEVEL = {
+  A: [0.85, 0.85],
+  "A'": [0.95, 0.95],
+  B: [1.1, 1.1],
+  "A''": [0.8, 0.55],
+};
+
+// クライマックスへの大きなクレッシェンドと、その直後の解放。
+const CRESC_BEATS = 8;      // 手前2小節かけて持ち上げる
+const CRESC_FROM = 0.88;    // その入口のレベル
+const CLIMAX_LEVEL = 1.2;   // 頂点
+const RELEASE_BEATS = 4;    // 直後1小節で
+const RELEASE_TO = 0.75;    // 一気に落とす。この落差が「サビの後の脱力」になる
+
+// 伴奏・ベース・パッドは同じ強弱カーブを深さ60%で追う。
+// メロディーだけが強弱を持つとテクスチャが分離して不自然に聴こえる。
+const ACCOMP_DEPTH = 0.6;
+
+// ---- ルバート ----
+
+// クライマックス手前2拍の「ためらい」。最大0.1拍ぶん引き伸ばす。
+const HESITATE_BEATS = 2;
+const HESITATE_MAX_BEATS = 0.1;
+
+// フレーズ末の呼吸。息継ぎの前にわずかに伸ばす。
+const BREATH_DELAY_SEC = 0.015;
+const BREATH_DUR_RATIO = 1.08;
+
+const SETTING_DEFAULTS = {
+  timingJitterMs: 10,
+  velocityJitter: 8,
+  tenuto: true,
+  ritardando: true,
+};
+
+function clamp(v, min, max) {
+  return Math.min(max, Math.max(min, v));
+}
+
+function numOr(raw, fallback, min, max) {
+  const n = Number(raw);
+  return Number.isFinite(n) ? clamp(n, min, max) : fallback;
+}
+
+function boolOr(raw, fallback) {
+  return raw === undefined || raw === null ? fallback : !!raw;
+}
+
+// settings.js の PARAM_DEFS と同じ範囲に丸める。
+// 部分的な settings オブジェクトを渡しても既定値で埋まる。
+function resolveSettings(settings) {
+  const s = settings ?? {};
+  return {
+    timingJitterMs: numOr(s.timingJitterMs, SETTING_DEFAULTS.timingJitterMs, 0, 30),
+    velocityJitter: numOr(s.velocityJitter, SETTING_DEFAULTS.velocityJitter, 0, 25),
+    tenuto: boolOr(s.tenuto, SETTING_DEFAULTS.tenuto),
+    ritardando: boolOr(s.ritardando, SETTING_DEFAULTS.ritardando),
+  };
+}
+
+// セクションを [開始拍, 終了拍) の並びに直す。
+// startBar しか持たないので、次のセクションの頭までを自分の範囲とみなす。
+function sectionRanges(song) {
+  const raw = Array.isArray(song.sections) ? song.sections : [];
+  const secs = raw
+    .filter((s) => s && Number.isFinite(Number(s.startBar)))
+    .sort((a, b) => Number(a.startBar) - Number(b.startBar));
+  if (secs.length === 0) return [];
+
+  const totalBeats = Number.isFinite(Number(song.totalBeats))
+    ? Number(song.totalBeats)
+    : Number(song.bars) * 4;
+
+  return secs.map((s, i) => {
+    const startBeat = Number(s.startBar) * 4;
+    const next = secs[i + 1];
+    const rawEnd = next ? Number(next.startBar) * 4 : totalBeats;
+    // 長さ0のセクションは割り算を壊すので、最低1拍は確保する。
+    const endBeat = Number.isFinite(rawEnd) && rawEnd > startBeat ? rawEnd : startBeat + 1;
+    return { name: s.name, startBeat, endBeat };
+  });
+}
+
+// 各フレーズの「最高音の位置」を 0〜1 で返す表。ここがスウェルの山になる。
+// 同じ高さが複数あれば先に出てきた方を頂点にする（決定論性のため）。
+function phrasePeaks(melody) {
+  const best = new Map();
+  for (const n of melody) {
+    const ph = Math.floor(n.beat / PHRASE_BEATS);
+    const cur = best.get(ph);
+    if (cur === undefined || n.midi > cur.midi) best.set(ph, { midi: n.midi, beat: n.beat });
+  }
+  const peaks = new Map();
+  for (const [ph, b] of best) peaks.set(ph, (b.beat - ph * PHRASE_BEATS) / PHRASE_BEATS);
+  return peaks;
+}
+
+// 各フレーズで最後に鳴るメロディー音の index 集合。フレーズ末の呼吸を掛ける対象。
+// 同時刻に複数あれば後ろの音を「最後」とする。
+function phraseLastIndexes(melody) {
+  const last = new Map();
+  for (let i = 0; i < melody.length; i++) {
+    const ph = Math.floor(melody[i].beat / PHRASE_BEATS);
+    const cur = last.get(ph);
+    if (cur === undefined || melody[i].beat >= melody[cur].beat) last.set(ph, i);
+  }
+  return new Set(last.values());
+}
+
+/**
+ * 曲を演奏イベント列に変換する。
+ * @param {object} song compose.js が生成した曲オブジェクト
+ * @param {object} [settings] humanize 系の設定（欠けたキーは既定値）
+ * @returns {{ events: PerfEvent[], durationSec: number }}
+ */
+function buildPerformance(song, settings) {
+  const cfg = resolveSettings(settings);
+  const spb = 60 / song.tempo; // 1拍の秒数
+  // 乱数は1本だけ。曲シードから派生させるので、同じ曲コードなら演奏まで完全に再現する。
+  const rng = makeRng(seedFromString(String(song.seed) + ':perf'));
+
+  const melodyNotes = song.melody ?? [];
+  const ranges = sectionRanges(song);
+  const peaks = phrasePeaks(melodyNotes);
+  const lastOfPhrase = phraseLastIndexes(melodyNotes);
+  const climaxBeat = Number(song.climaxBeat);
+  const hasClimax = Number.isFinite(climaxBeat);
+
+  // 第1層: セクションの基準レベル。A'' だけはセクション内で下降する。
+  const sectionLevel = (beat) => {
+    if (ranges.length === 0) return 1;
+    let idx = 0;
+    for (let i = 0; i < ranges.length; i++) if (beat >= ranges[i].startBeat) idx = i;
+    const r = ranges[idx];
+    const lv = SECTION_LEVEL[r.name];
+    if (!lv) return 1;
+    if (lv[0] === lv[1]) return lv[0];
+    const t = clamp((beat - r.startBeat) / (r.endBeat - r.startBeat), 0, 1);
+    return lv[0] + (lv[1] - lv[0]) * t;
+  };
+
+  // 第2層: フレーズ内のスウェル。フレーズの最高音を山にして膨らませ、端で収める。
+  const swell = (beat) => {
+    const ph = Math.floor(beat / PHRASE_BEATS);
+    const q = peaks.get(ph);
+    if (q === undefined) return 1; // メロディーの無いフレーズは平坦のまま
+    const p = (beat - ph * PHRASE_BEATS) / PHRASE_BEATS;
+    // 頂点が端に寄っていても割り算が壊れないよう、分母に下限を入れる。
+    const span = Math.max(q, 1 - q, SWELL_MIN_SPAN);
+    return 1 - (SWELL_DEPTH * Math.abs(p - q)) / span;
+  };
+
+  // 第3層: クライマックスへのクレッシェンドと、その直後の脱力。
+  const climaxCurve = (beat) => {
+    if (!hasClimax) return 1;
+    if (beat === climaxBeat) return CLIMAX_LEVEL;
+    if (beat >= climaxBeat - CRESC_BEATS && beat < climaxBeat) {
+      const u = (beat - (climaxBeat - CRESC_BEATS)) / CRESC_BEATS;
+      return CRESC_FROM + (CLIMAX_LEVEL - CRESC_FROM) * u;
+    }
+    if (beat > climaxBeat && beat <= climaxBeat + RELEASE_BEATS) {
+      const v = (beat - climaxBeat) / RELEASE_BEATS;
+      return CLIMAX_LEVEL + (RELEASE_TO - CLIMAX_LEVEL) * v;
+    }
+    return 1;
+  };
+
+  // メロディーの強弱係数。伴奏系はこれを 60% の深さで追う。
+  const dynMelody = (beat) => sectionLevel(beat) * swell(beat) * climaxCurve(beat);
+  const dynAccomp = (beat) => 1 + (dynMelody(beat) - 1) * ACCOMP_DEPTH;
+
+  const ritStart = (song.bars - 2) * 4;
+  // 終盤の遅れ。全レイヤーに同じ値を掛けないとレイヤー同士がばらける。
+  const ritDelay = (beat) => {
+    if (!cfg.ritardando || !(beat >= ritStart)) return 0;
+    const t = clamp((beat - ritStart) / RIT_BEATS, 0, 1);
+    return t * t * RIT_MAX_BEATS * spb;
+  };
+
+  // クライマックス手前の「ためらい」。頂点に向かって少しずつ引き伸ばす。
+  // メロディーだけ遅らせるとバラバラに聴こえるので、パッドを含む全レイヤーに掛ける。
+  const hesitate = (beat) => {
+    if (!hasClimax) return 0;
+    if (!(beat >= climaxBeat - HESITATE_BEATS && beat < climaxBeat)) return 0;
+    const u = (beat - (climaxBeat - HESITATE_BEATS)) / HESITATE_BEATS;
+    return u * u * HESITATE_MAX_BEATS * spb;
+  };
+
+  /** @type {PerfEvent[]} */
+  const events = [];
+
+  // melody → accomp → bass → pad の順で乱数を消費する（順序厳守）。
+  for (const layer of PIANO_LAYERS) {
+    const notes = song[layer] ?? [];
+    const scale = JITTER_SCALE[layer];
+    const dyn = layer === 'melody' ? dynMelody : dynAccomp;
+    for (let i = 0; i < notes.length; i++) {
+      const n = notes[i];
+      // 揺らぎ幅が 0 でも必ず乱数を1つずつ引く。設定を変えても列がずれない。
+      const timing = (rng() - 0.5) * 2 * (cfg.timingJitterMs / 1000) * scale;
+      const jittered = n.vel * (1 + (rng() - 0.5) * 2 * (cfg.velocityJitter / 100));
+      const vel = clamp(jittered * dyn(n.beat), VEL_MIN, VEL_MAX);
+
+      let at = n.beat * spb + timing;
+      let dur = n.dur * spb;
+
+      const isClimaxNote = layer === 'melody' && hasClimax && n.beat === climaxBeat;
+
+      // 頂点音だけ、ほんの少し遅らせて長めに鳴らす。曲中で最も効く揺らぎ。
+      if (cfg.tenuto && isClimaxNote) {
+        at += TENUTO_DELAY_SEC;
+        dur *= TENUTO_DUR_RATIO;
+      }
+
+      // フレーズ末の呼吸。息継ぎの前にわずかに伸ばす、ピアニストが必ずやる動作。
+      // 頂点音はテヌートと二重に掛かるので除く。
+      if (layer === 'melody' && !isClimaxNote && lastOfPhrase.has(i)) {
+        at += BREATH_DELAY_SEC;
+        dur *= BREATH_DUR_RATIO;
+      }
+
+      at += hesitate(n.beat);
+      at += ritDelay(n.beat);
+      const start = Math.max(0, at);
+
+      // 曲の最終小節だけ、伴奏は刻みをやめて和音を保持する。compose 側が
+      // その1イベントに midis（全構成音）を入れてくるので、ここで和音に開く。
+      // 乱数は1イベントにつき2つのまま（音数で消費が変わると再現性が壊れる）。
+      const chord = Array.isArray(n.midis) && n.midis.length > 0 ? n.midis : null;
+      if (chord) {
+        for (const midi of chord) {
+          events.push({ kind: 'piano', layer, at: start, midi, dur, vel });
+        }
+      } else {
+        events.push({ kind: 'piano', layer, at: start, midi: n.midi, dur, vel });
+      }
+    }
+  }
+
+  // パッドはゆっくり立ち上がるので、タイミングもベロシティも揺らさない。
+  // ただし強弱とルバートはテクスチャ全体で揃える。
+  for (const p of song.pad ?? []) {
+    const at = p.beat * spb + hesitate(p.beat) + ritDelay(p.beat);
+    events.push({
+      kind: 'pad',
+      at: Math.max(0, at),
+      midis: p.midis.slice(),
+      dur: p.dur * spb,
+      vel: clamp(p.vel * dynAccomp(p.beat), VEL_MIN, VEL_MAX),
+    });
+  }
+
+  // Array#sort は安定なので、同時刻のイベントはレイヤー順のまま残る。
+  events.sort((a, b) => a.at - b.at);
+
+  let durationSec = 0;
+  for (const e of events) {
+    const end = e.at + e.dur;
+    if (end > durationSec) durationSec = end;
+  }
+
+  return { events, durationSec };
+}
+
+// ---------------------------------------------------------------------------
+// 演奏設計の書き出し
+//
+// 上の buildPerformance は、この設計を「秒とベロシティ」に変換して音にする。
+// 楽譜には同じ設計を「記号」として書く必要があるが、そこで数字を書き写すと
+// 音と楽譜が別々に育ってしまう。だから設計そのものをここから返し、
+// export.js は受け取った設計を記号に置き換えるだけにする。
+//
+// 実際、これを用意する前の書き出しには強弱記号もクレッシェンドもスラーも
+// ペダルも1つも入っていなかった。音では鳴っているのに楽譜には無い、という
+// 状態で、楽譜だけを読むと実際より遥かに平板な曲に見えていた。
+// ---------------------------------------------------------------------------
+
+/** 強弱の係数を記号名に直す。境目は SECTION_LEVEL の値が散らばる位置に置く。 */
+function dynamicName(level) {
+  if (!Number.isFinite(level)) return 'mf';
+  if (level < 0.7) return 'p';
+  if (level < 0.9) return 'mp';
+  if (level < 1.05) return 'mf';
+  return 'f';
+}
+
+/**
+ * 曲の演奏設計を、楽譜に書ける形で返す。位置はすべて拍。
+ *
+ * @param {object} song composeSong の戻り値
+ * @param {object} [settings]
+ * @returns {{
+ *   dynamics: Array<{ beat: number, mark: string }>,
+ *   wedges: Array<{ from: number, to: number, type: 'crescendo'|'diminuendo' }>,
+ *   words: Array<{ beat: number, text: string }>,
+ *   slurs: Array<{ from: number, to: number }>,
+ *   tenutoBeat: number | null,
+ *   pedalBars: number[],
+ * }}
+ */
+function describePerformance(song, settings) {
+  const cfg = resolveSettings(settings);
+  const bars = Number(song?.bars) || 0;
+  const totalBeats = Number(song?.totalBeats) || bars * 4;
+  const melody = (Array.isArray(song?.melody) ? song.melody : [])
+    .slice().sort((a, b) => a.beat - b.beat);
+
+  // ---- セクションごとの強弱 ----
+  const ranges = sectionRanges(song);
+  const dynamics = [];
+  for (const r of ranges) {
+    const lv = SECTION_LEVEL[r.name];
+    if (!lv) continue;
+    const mark = dynamicName(lv[0]);
+    if (dynamics.length === 0 || dynamics[dynamics.length - 1].mark !== mark) {
+      dynamics.push({ beat: r.startBeat, mark });
+    }
+  }
+
+  // ---- 松葉（クレッシェンドとディミヌエンド） ----
+  const wedges = [];
+  const words = [];
+  const climaxBeat = Number(song?.climaxBeat);
+  if (Number.isFinite(climaxBeat) && climaxBeat > 0) {
+    wedges.push({ from: Math.max(0, climaxBeat - CRESC_BEATS), to: climaxBeat, type: 'crescendo' });
+    wedges.push({ from: climaxBeat, to: Math.min(totalBeats, climaxBeat + RELEASE_BEATS), type: 'diminuendo' });
+  }
+  // 最終セクションはセクションの中で下がり切る。松葉ではなく dim. の語で示す
+  // （4小節以上に渡る松葉は読みにくい、という記譜の作法に従う）。
+  const last = ranges[ranges.length - 1];
+  if (last && SECTION_LEVEL[last.name] && SECTION_LEVEL[last.name][0] !== SECTION_LEVEL[last.name][1]) {
+    words.push({ beat: last.startBeat, text: 'dim.' });
+    dynamics.push({ beat: Math.max(last.startBeat, totalBeats - 8), mark: dynamicName(SECTION_LEVEL[last.name][1]) });
+  }
+  if (cfg.ritardando && bars >= 3) words.push({ beat: (bars - 2) * 4, text: 'rit.' });
+
+  // ---- スラー（フレーズ＝8拍のまとまり） ----
+  const slurs = [];
+  const byPhrase = new Map();
+  for (const n of melody) {
+    const ph = Math.floor(n.beat / PHRASE_BEATS);
+    if (!byPhrase.has(ph)) byPhrase.set(ph, []);
+    byPhrase.get(ph).push(n.beat);
+  }
+  for (const beats of byPhrase.values()) {
+    // 1音しかないフレーズにスラーは掛けられない（始点と終点が同じ音になる）。
+    if (beats.length >= 2) slurs.push({ from: beats[0], to: beats[beats.length - 1] });
+  }
+
+  return {
+    dynamics: dynamics.sort((a, b) => a.beat - b.beat),
+    wedges,
+    words: words.sort((a, b) => a.beat - b.beat),
+    slurs,
+    // 頂点の音だけテヌート。音では「少し遅らせて長めに」鳴らしている。
+    tenutoBeat: cfg.tenuto && Number.isFinite(climaxBeat) ? climaxBeat : null,
+    // 和音は小節ごとに変わる。ペダルもそれに合わせて踏み替える。
+    pedalBars: Array.from({ length: bars }, (_, i) => i),
+  };
+}
+
+// --- exports ---
+exports.buildPerformance = buildPerformance;
+exports.dynamicName = dynamicName;
+exports.describePerformance = describePerformance;
+};
+
+// ===== src/i18n.js =====
+__mods["i18n.js"] = function (exports, require) {
+/**
+ * 表示文字列の多言語化。日本語・英語・中国語（簡体）。
+ *
+ * 文字列をここに集めてあるのは、翻訳のためだけではない。
+ * UI の言い回しが1か所に並んでいると、
+ * 「同じことを別の場所で違う言葉で言っている」がすぐ見つかる。
+ *
+ * ここに無いもの（音名・コードネーム・BPM）は翻訳しない。
+ * C や Am7 は世界共通の記号で、訳すとかえって読めなくなる。
+ */
+
+const LOCALES = [
+  ['ja', '日本語'],
+  ['en', 'English'],
+  ['zh', '中文'],
+];
+
+const STORAGE_KEY = 'melodyGenerator.locale';
+const DEFAULT_LOCALE = 'ja';
+
+const MESSAGES = {
+  ja: {
+    'app.title': '無限ヒーリングピアノ',
+    'app.description': '静かなピアノ曲を、途切れることなく生成し続けます。',
+    'app.tagline': '無限ヒーリングピアノ',
+
+    'transport.group': '再生操作',
+    'transport.prev': '前の曲へ戻る',
+    'transport.play': '再生する',
+    'transport.pause': '停止する',
+    'transport.next': '次の曲へ進む',
+
+    'nowplaying.idle': '再生ボタンで、一曲目が生まれます',
+    'song.bars': '{n}小節',
+    'meta.sep': ' ・ ',
+
+    'score.empty': '再生すると、ここに楽譜が出ます',
+    'score.region': '楽譜（横にスクロールできます）',
+    'score.failed': 'この曲の楽譜は表示できませんでした',
+    'score.show': '楽譜を出す',
+    'score.hide': '楽譜を隠す',
+
+    'tools.label': '道具',
+    'tool.score': '楽譜',
+    'tool.settings': '設定',
+    'tool.export': '保存',
+    'tool.share': '共有',
+
+    'sheet.close': '閉じる',
+    'sheet.settings': '設定',
+    'sheet.settingsNote': '変えた設定は、その場で鳴り直して反映されます。',
+    'sheet.export': '保存',
+    'sheet.exportNote':
+      'MusicXML は MuseScore などで五線譜として開けます。MIDI は DAW で編集できます。',
+
+    'settings.language': '言語',
+    'settings.reset': '既定値に戻す',
+
+    'group.sound': '音',
+    'group.compose': '曲',
+    'group.humanize': '演奏',
+
+    'param.masterVolume': '音量',
+    'param.instrument': '楽器',
+    'param.mood': '曲の雰囲気',
+    'param.tempoFeel': 'テンポ',
+    'hint.instrument': '曲の作りはそのまま、鳴らす楽器だけが変わります',
+    'hint.mood': '長調と短調のどちらを多く引くか',
+
+    'opt.mood.bright': '明るめ',
+    'opt.mood.balanced': 'バランス',
+    'opt.mood.wistful': '切なめ',
+    'opt.tempo.slow': 'ゆっくり',
+    'opt.tempo.normal': 'ふつう',
+    'opt.tempo.flowing': '少し速め',
+
+    'inst.piano': 'ピアノ',
+    'inst.epiano': 'エレクトリックピアノ',
+    'inst.harp': 'ハープ',
+    'inst.guitar': 'ガットギター',
+    'inst.koto': '箏（こと）',
+    'inst.flute': '笛と箏',
+    'inst.strings': '弦楽（擦弦とハープ）',
+    'inst.santur': 'ダルシマー（打弦）',
+
+    'status.copied': 'URL をコピーしました',
+    'status.copyFail': 'コピーできませんでした。アドレス欄の URL を控えてください',
+    'status.noSong': '再生すると、共有できる URL になります',
+    'status.noPrev': 'これより前に聴いた曲はまだありません',
+    'status.loading': 'データを読み込んでいます…',
+    'status.loadFail':
+      'データを読み込めませんでした（{message}）。ローカルサーバー経由で開いてください（npm start）。',
+    'status.audioFail': '音声を初期化できませんでした: {message}',
+    'status.playFail': '再生を開始できませんでした: {message}',
+    'status.noData': 'データを読み込めていないため再生できません',
+    'status.exportFail': '書き出せませんでした: {message}',
+
+    'foot.algorithm': 'アルゴリズム解説',
+    'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
+    'foot.company': 'ヒューロン株式会社',
+    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+
+    'key.major': '長調',
+    'key.minor': '短調',
+  },
+
+  en: {
+    'app.title': 'Endless Healing Piano',
+    'app.description': 'Quiet piano music, composed continuously and never repeating.',
+    'app.tagline': 'Endless Healing Piano',
+
+    'transport.group': 'Playback controls',
+    'transport.prev': 'Previous piece',
+    'transport.play': 'Play',
+    'transport.pause': 'Pause',
+    'transport.next': 'Next piece',
+
+    'nowplaying.idle': 'Press play — the first piece is composed on the spot',
+    'song.bars': '{n} bars',
+    'meta.sep': ' · ',
+
+    'score.empty': 'The score appears here once playback starts',
+    'score.region': 'Score (scrolls horizontally)',
+    'score.failed': 'The score for this piece could not be drawn',
+    'score.show': 'Show score',
+    'score.hide': 'Hide score',
+
+    'tools.label': 'Tools',
+    'tool.score': 'Score',
+    'tool.settings': 'Settings',
+    'tool.export': 'Save',
+    'tool.share': 'Share',
+
+    'sheet.close': 'Close',
+    'sheet.settings': 'Settings',
+    'sheet.settingsNote': 'Changes apply at once — the piece restarts with the new setting.',
+    'sheet.export': 'Save',
+    'sheet.exportNote':
+      'MusicXML opens as staff notation in MuseScore and similar. MIDI can be edited in a DAW.',
+
+    'settings.language': 'Language',
+    'settings.reset': 'Reset to defaults',
+
+    'group.sound': 'Sound',
+    'group.compose': 'Music',
+    'group.humanize': 'Performance',
+
+    'param.masterVolume': 'Volume',
+    'param.instrument': 'Instrument',
+    'param.mood': 'Mood',
+    'param.tempoFeel': 'Tempo',
+    'hint.instrument': 'Only the sound changes; the music itself stays the same',
+    'hint.mood': 'How often major keys are drawn over minor',
+
+    'opt.mood.bright': 'Brighter',
+    'opt.mood.balanced': 'Balanced',
+    'opt.mood.wistful': 'Wistful',
+    'opt.tempo.slow': 'Slow',
+    'opt.tempo.normal': 'Moderate',
+    'opt.tempo.flowing': 'Flowing',
+
+    'inst.piano': 'Piano',
+    'inst.epiano': 'Electric piano',
+    'inst.harp': 'Harp',
+    'inst.guitar': 'Nylon-string guitar',
+    'inst.koto': 'Koto',
+    'inst.flute': 'Shakuhachi and koto',
+    'inst.strings': 'Strings and harp',
+    'inst.santur': 'Hammered dulcimer',
+
+    'status.copied': 'URL copied',
+    'status.copyFail': 'Could not copy. Please take the URL from the address bar.',
+    'status.noSong': 'Start playback to get a shareable URL',
+    'status.noPrev': 'Nothing played before this one yet',
+    'status.loading': 'Loading data…',
+    'status.loadFail':
+      'Could not load the data ({message}). Please open it through a local server (npm start).',
+    'status.audioFail': 'Could not start audio: {message}',
+    'status.playFail': 'Could not start playback: {message}',
+    'status.noData': 'Cannot play — the data has not loaded',
+    'status.exportFail': 'Could not export: {message}',
+
+    'foot.algorithm': 'How it works',
+    'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
+    'foot.company': 'Heuron Inc.',
+    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+
+    'key.major': 'major',
+    'key.minor': 'minor',
+  },
+
+  zh: {
+    'app.title': '无限疗愈钢琴',
+    'app.description': '不间断地生成安静的钢琴曲。',
+    'app.tagline': '无限疗愈钢琴',
+
+    'transport.group': '播放控制',
+    'transport.prev': '上一首',
+    'transport.play': '播放',
+    'transport.pause': '暂停',
+    'transport.next': '下一首',
+
+    'nowplaying.idle': '按下播放键，第一首乐曲就此诞生',
+    'song.bars': '{n}小节',
+    'meta.sep': ' ・ ',
+
+    'score.empty': '播放后，乐谱会显示在这里',
+    'score.region': '乐谱（可横向滚动）',
+    'score.failed': '无法显示这首乐曲的乐谱',
+    'score.show': '显示乐谱',
+    'score.hide': '隐藏乐谱',
+
+    'tools.label': '工具',
+    'tool.score': '乐谱',
+    'tool.settings': '设置',
+    'tool.export': '保存',
+    'tool.share': '分享',
+
+    'sheet.close': '关闭',
+    'sheet.settings': '设置',
+    'sheet.settingsNote': '更改会立即生效，乐曲将以新设置重新播放。',
+    'sheet.export': '保存',
+    'sheet.exportNote':
+      'MusicXML 可用 MuseScore 等软件打开为五线谱，MIDI 可在 DAW 中编辑。',
+
+    'settings.language': '语言',
+    'settings.reset': '恢复默认',
+
+    'group.sound': '声音',
+    'group.compose': '乐曲',
+    'group.humanize': '演奏',
+
+    'param.masterVolume': '音量',
+    'param.instrument': '乐器',
+    'param.mood': '曲风',
+    'param.tempoFeel': '速度',
+    'hint.instrument': '乐曲本身不变，只改变演奏的乐器',
+    'hint.mood': '大调与小调的抽取比例',
+
+    'opt.mood.bright': '明亮',
+    'opt.mood.balanced': '均衡',
+    'opt.mood.wistful': '忧伤',
+    'opt.tempo.slow': '缓慢',
+    'opt.tempo.normal': '适中',
+    'opt.tempo.flowing': '稍快',
+
+    'inst.piano': '钢琴',
+    'inst.epiano': '电钢琴',
+    'inst.harp': '竖琴',
+    'inst.guitar': '尼龙弦吉他',
+    'inst.koto': '筝',
+    'inst.flute': '尺八与筝',
+    'inst.strings': '弦乐与竖琴',
+    'inst.santur': '扬琴',
+
+    'status.copied': '已复制链接',
+    'status.copyFail': '复制失败，请从地址栏复制链接。',
+    'status.noSong': '播放后即可获得可分享的链接',
+    'status.noPrev': '此前还没有播放过其他乐曲',
+    'status.loading': '正在加载数据…',
+    'status.loadFail': '无法加载数据（{message}）。请通过本地服务器打开（npm start）。',
+    'status.audioFail': '无法初始化音频：{message}',
+    'status.playFail': '无法开始播放：{message}',
+    'status.noData': '数据尚未加载，无法播放',
+    'status.exportFail': '导出失败：{message}',
+
+    'foot.algorithm': '旋律生成算法说明',
+    'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
+    'foot.company': 'Heuron 株式会社',
+    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+
+    'key.major': '大调',
+    'key.minor': '小调',
+  },
+};
+
+const KNOWN = new Set(LOCALES.map(([code]) => code));
+let current = DEFAULT_LOCALE;
+const listeners = new Set();
+
+/**
+ * 使う言語を決める。優先順は URL の ?lang → 保存された選択 → ブラウザの設定。
+ * 中国語は zh-Hans / zh-TW などいろいろな書き方で来るので、先頭2文字で見る。
+ */
+function detectLocale() {
+  try {
+    const url = new URL(globalThis.location?.href ?? 'http://x/');
+    const asked = url.searchParams.get('lang');
+    if (asked && KNOWN.has(asked)) return asked;
+  } catch (_) { /* location が無い環境 */ }
+  try {
+    const saved = globalThis.localStorage?.getItem(STORAGE_KEY);
+    if (saved && KNOWN.has(saved)) return saved;
+  } catch (_) { /* プライベートモード */ }
+  const langs = globalThis.navigator?.languages ?? [globalThis.navigator?.language ?? ''];
+  for (const raw of langs) {
+    const head = String(raw ?? '').slice(0, 2).toLowerCase();
+    if (KNOWN.has(head)) return head;
+  }
+  return DEFAULT_LOCALE;
+}
+
+function getLocale() {
+  return current;
+}
+
+/** 言語を切り替え、購読している側へ知らせる。保存できなくても切り替えは続ける。 */
+function setLocale(next) {
+  const value = KNOWN.has(next) ? next : DEFAULT_LOCALE;
+  if (value === current) return current;
+  current = value;
+  try {
+    globalThis.localStorage?.setItem(STORAGE_KEY, value);
+  } catch (_) { /* 保存できなくても表示は切り替わる */ }
+  try {
+    if (globalThis.document) globalThis.document.documentElement.lang = value;
+  } catch (_) { /* DOM が無い環境 */ }
+  for (const cb of listeners) {
+    try {
+      cb(value);
+    } catch (err) {
+      console.error('言語の切り替えに失敗しました', err);
+    }
+  }
+  return current;
+}
+
+function onLocaleChange(cb) {
+  if (typeof cb !== 'function') return () => {};
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
+/**
+ * 文字列を引く。`{name}` を vars で差し替える。
+ * 訳が無いキーは日本語へ、それも無ければキーそのものを返す
+ * （画面が空白になるより、キーが見えたほうが直せる）。
+ */
+function t(key, vars) {
+  const table = MESSAGES[current] ?? MESSAGES[DEFAULT_LOCALE];
+  const text = table[key] ?? MESSAGES[DEFAULT_LOCALE][key] ?? key;
+  if (!vars) return text;
+  return text.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
+}
+
+// 調名の綴り。日本語だけが音名を訳す（ハニホヘトイロ）。
+const JP_LETTER = { C: 'ハ', D: 'ニ', E: 'ホ', F: 'ヘ', G: 'ト', A: 'イ', B: 'ロ' };
+
+/**
+ * 調の名前。'Bb' + 'major' から、その言語での呼び方を作る。
+ *
+ *   ja  変ロ長調
+ *   en  B♭ major
+ *   zh  降B大调
+ */
+function keyLabel(tonicName, mode) {
+  const name = String(tonicName ?? 'C');
+  const letter = name[0];
+  const sign = name.length > 1 ? name[1] : '';
+  const quality = t(mode === 'minor' ? 'key.minor' : 'key.major');
+
+  if (current === 'ja') {
+    const prefix = sign === '#' ? '嬰' : sign === 'b' ? '変' : '';
+    return `${prefix}${JP_LETTER[letter] ?? letter}${quality}`;
+  }
+  if (current === 'zh') {
+    const prefix = sign === '#' ? '升' : sign === 'b' ? '降' : '';
+    return `${prefix}${letter}${quality}`;
+  }
+  const pretty = sign === '#' ? '♯' : sign === 'b' ? '♭' : '';
+  return `${letter}${pretty} ${quality}`;
+}
+
+/**
+ * data-i18n / data-i18n-attr が付いた要素へ訳を流し込む。
+ *
+ *   <span data-i18n="tool.score">楽譜</span>
+ *   <button data-i18n-attr="aria-label:transport.next">
+ *
+ * HTML 側に日本語を書いたまま属性を足せるので、印付けを1つずつ確かめられる。
+ */
+function applyI18n(root = globalThis.document) {
+  if (!root) return;
+  for (const el of root.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.dataset.i18n);
+  }
+  for (const el of root.querySelectorAll('[data-i18n-attr]')) {
+    for (const pair of el.dataset.i18nAttr.split(/\s*,\s*/)) {
+      const [attr, key] = pair.split(':');
+      if (attr && key) el.setAttribute(attr.trim(), t(key.trim()));
+    }
+  }
+  const title = root.querySelector?.('title[data-i18n-title]');
+  if (title) title.textContent = t(title.dataset.i18nTitle);
+}
+
+// --- exports ---
+exports.detectLocale = detectLocale;
+exports.getLocale = getLocale;
+exports.setLocale = setLocale;
+exports.onLocaleChange = onLocaleChange;
+exports.t = t;
+exports.keyLabel = keyLabel;
+exports.applyI18n = applyI18n;
+exports.LOCALES = LOCALES;
+};
+
+// ===== src/notation.js =====
+__mods["notation.js"] = function (exports, require) {
+/**
+ * 大譜表（ト音記号＋ヘ音記号の2段）の楽譜をSVG文字列として描く。
+ *
+ * このファイルは DOM にも Web Audio にも触らない純関数だけで構成する。
+ * 入力は compose.js が返す曲オブジェクト、出力は文字列と数値だけ。
+ * 再生位置に追従したスクロールやハイライトは呼び出し側の担当で、
+ * ここではそのための座標（barX / beatToX）と目印（data-* 属性）を提供する。
+ *
+ * 色は一切書かない。すべて currentColor で描き、ルート要素の color に
+ * var(--score-ink, #ddd) を当ててあるので、ページ側は --score-ink か
+ * .score { color: ... } のどちらでも色を変えられる。
+ *
+ * 記譜の方針:
+ *   - メロディーはト音記号の段、伴奏とベースはヘ音記号の段。
+ *   - pad は「音色のための持続音」であって声部ではないので描かない。
+ *   - 音価は次の音までの間隔で頭打ちにする（伴奏の dur は 0.75 だが
+ *     0.5 間隔で並ぶので、付点8分ではなく8分として描く）。
+ */
+
+// ---------------------------------------------------------------------------
+// 音名まわりの基本表
+// ---------------------------------------------------------------------------
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+/** 幹音（変化記号なし）のピッチクラス */
+const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+/** C を 0 とする音名の通し番号（diatonicIndex の下1桁ぶん） */
+const LETTER_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+
+/** 調号のシャープが付く順 */
+const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+/** 調号のフラットが付く順 */
+const FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+
+const JP_LETTER = { C: 'ハ', D: 'ニ', E: 'ホ', F: 'ヘ', G: 'ト', A: 'イ', B: 'ロ' };
+
+// ピッチクラス → [主音名, 調号の種類, 個数]。
+// 同じ音でも慣用の綴りがあるので表で持つ（ピッチクラス10の長調は
+// 変ロ長調＝フラット2つであって、嬰イ長調＝シャープ10個ではない）。
+const MAJOR_KEYS = {
+  0: ['C', 'none', 0],
+  1: ['Db', 'flat', 5],
+  2: ['D', 'sharp', 2],
+  3: ['Eb', 'flat', 3],
+  4: ['E', 'sharp', 4],
+  5: ['F', 'flat', 1],
+  6: ['F#', 'sharp', 6],
+  7: ['G', 'sharp', 1],
+  8: ['Ab', 'flat', 4],
+  9: ['A', 'sharp', 3],
+  10: ['Bb', 'flat', 2],
+  11: ['B', 'sharp', 5],
+};
+
+// 短調は平行長調（短3度上）の調号をそのまま使う。
+const MINOR_KEYS = {
+  0: ['C', 'flat', 3],
+  1: ['C#', 'sharp', 4],
+  2: ['D', 'flat', 1],
+  3: ['Eb', 'flat', 6],
+  4: ['E', 'sharp', 1],
+  5: ['F', 'flat', 4],
+  6: ['F#', 'sharp', 3],
+  7: ['G', 'flat', 2],
+  8: ['G#', 'sharp', 5],
+  9: ['A', 'none', 0],
+  10: ['Bb', 'flat', 5],
+  11: ['B', 'sharp', 2],
+};
+
+function pitchClass(midi) {
+  const m = Math.round(Number(midi));
+  if (!Number.isFinite(m)) return 0;
+  return ((m % 12) + 12) % 12;
+}
+
+function keyLabel(tonicName, mode) {
+  const letter = tonicName[0];
+  const sign = tonicName.length > 1 ? (tonicName[1] === '#' ? '嬰' : '変') : '';
+  return `${sign}${JP_LETTER[letter]}${mode === 'minor' ? '短調' : '長調'}`;
+}
+
+/**
+ * 主音のMIDIノート番号と旋法から調を決める。
+ * @param {number} tonicMidi 主音（オクターブは問わない）
+ * @param {'major'|'minor'} mode
+ * @returns {{ tonicName: string, accidental: 'sharp'|'flat'|'none', count: number, label: string }}
+ */
+function keySignature(tonicMidi, mode) {
+  const table = mode === 'minor' ? MINOR_KEYS : MAJOR_KEYS;
+  const [tonicName, accidental, count] = table[pitchClass(tonicMidi)];
+  return { tonicName, accidental, count, label: keyLabel(tonicName, mode) };
+}
+
+// 調号ごとの「どの音名が何半音動くか」。曲中で何度も引くので覚えておく。
+const ALTER_CACHE = new Map();
+
+function keyAlterations(key) {
+  const kind = key?.accidental ?? 'none';
+  const count = Math.max(0, Math.min(7, Math.round(Number(key?.count) || 0)));
+  const cacheKey = `${kind}${count}`;
+  const hit = ALTER_CACHE.get(cacheKey);
+  if (hit) return hit;
+  const map = { C: 0, D: 0, E: 0, F: 0, G: 0, A: 0, B: 0 };
+  if (kind === 'sharp') for (let i = 0; i < count; i++) map[SHARP_ORDER[i]] = 1;
+  if (kind === 'flat') for (let i = 0; i < count; i++) map[FLAT_ORDER[i]] = -1;
+  ALTER_CACHE.set(cacheKey, map);
+  return map;
+}
+
+/** 主音名 'Bb' などからピッチクラスを戻す */
+function tonicPcOf(key) {
+  const name = String(key?.tonicName ?? 'C');
+  const base = LETTER_PC[name[0]] ?? 0;
+  const sign = name.length > 1 ? (name[1] === '#' ? 1 : -1) : 0;
+  return ((base + sign) % 12 + 12) % 12;
+}
+
+/** 主音の1つ下の音名（導音を綴るときに使う） */
+function leadingLetterOf(key) {
+  const name = String(key?.tonicName ?? 'C');
+  const idx = LETTER_INDEX[name[0]] ?? 0;
+  return LETTERS[(idx + 6) % 7];
+}
+
+/**
+ * MIDIノート番号を、その調のなかでの綴りに直す。
+ *
+ * 優先順位:
+ *   0. 調の音階に入っている音       → 臨時記号は書かない（調号が担当）
+ *   0.5 短調の導音                  → 主音の1つ下の音名で綴る（ニ短調なら変ニではなく嬰ハ）
+ *   1. 調号で変化させた音を戻す音   → ナチュラル
+ *   2. それ以外                     → シャープ系ならシャープ、フラット系ならフラット
+ *
+ * @param {number} midi
+ * @param {ReturnType<typeof keySignature>} key
+ * @returns {{ letter: string, octave: number, accidental: ''|'#'|'b'|'n', diatonicIndex: number }}
+ */
+function spellNote(midi, key) {
+  const m = Math.round(Number(midi));
+  const pc = pitchClass(m);
+  const alter = keyAlterations(key);
+  const preferSharp = (key?.accidental ?? 'none') !== 'flat';
+  const tonicPc = tonicPcOf(key);
+  const isLeading = pc === (tonicPc + 11) % 12;
+  const leadingLetter = leadingLetterOf(key);
+
+  let best = null;
+  for (const letter of LETTERS) {
+    for (const a of [0, 1, -1]) {
+      if ((((LETTER_PC[letter] + a) % 12) + 12) % 12 !== pc) continue;
+      const ka = alter[letter];
+      let printed;
+      let rank;
+      if (a === ka) {
+        printed = '';
+        rank = 0;
+      } else if (a === 0) {
+        printed = 'n';
+        rank = 1;
+      } else if (a === 1) {
+        printed = '#';
+        rank = preferSharp ? 2 : 3;
+      } else {
+        printed = 'b';
+        rank = preferSharp ? 3 : 2;
+      }
+      if (rank > 0 && isLeading && letter === leadingLetter) rank = 0.5;
+      if (!best || rank < best.rank) best = { letter, a, printed, rank };
+    }
+  }
+
+  const octave = Math.round((m - best.a - LETTER_PC[best.letter]) / 12) - 1;
+  return {
+    letter: best.letter,
+    octave,
+    accidental: best.printed,
+    diatonicIndex: octave * 7 + LETTER_INDEX[best.letter],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// コードネーム
+//
+// 記号（I / vi / iv）ではなく、compose が書き出した**実際に鳴っている音**から
+// 名前を付ける。音階スタイルが和音の形を変えても、空虚五度で積んでも、
+// 表示と響きが食い違わない。
+// ---------------------------------------------------------------------------
+
+/** 根音から見た音程の並び → コードネームの語尾。 */
+const CHORD_SUFFIX = new Map([
+  ['0,4,7', ''],
+  ['0,3,7', 'm'],
+  ['0,3,6', 'dim'],
+  ['0,4,8', 'aug'],
+  ['0,5,7', 'sus4'],
+  ['0,2,7', 'sus2'],
+  // 第3音を抜いた形（空虚五度）。五声音階のスタイルではこれが主役になる。
+  ['0,7', '5'],
+  ['0,4,7,11', 'maj7'],
+  ['0,4,7,10', '7'],
+  ['0,3,7,10', 'm7'],
+  ['0,3,7,11', 'mMaj7'],
+  ['0,3,6,10', 'm7b5'],
+  ['0,5,7,10', '7sus4'],
+  ['0,2,4,7', 'add9'],
+  ['0,2,3,7', 'madd9'],
+  // 第3音を抜いた7thの和音。ただの 7 と書くと、読んだ人が第3音を弾いてしまう。
+  // 五声音階の旋律の下でそれを弾かれると、抜いた意味がそこで消える。
+  ['0,7,10', '7(no3)'],
+  ['0,7,11', 'maj7(no3)'],
+  ['0,2,7,10', '9(no3)'],
+  ['0,2,4,7,10', '9'],
+  ['0,2,3,7,10', 'm9'],
+  ['0,2,4,7,11', 'maj9'],
+  ['0,2,3,7,11', 'mMaj9'],
+]);
+
+/**
+ * 表に無い並びの受け皿。第3音があれば長短だけ言い、無ければ 5 とする。
+ * 名前を出せないより、粗くても正しい方を出す。
+ */
+function fallbackSuffix(intervals) {
+  if (intervals.includes(3)) return 'm';
+  if (intervals.includes(4)) return '';
+  return '5';
+}
+
+/** ピッチクラスを、その調の綴りで音名にする（F# か Gb かをここで決める）。 */
+function pitchName(pc, key) {
+  const midi = 60 + (((Math.round(Number(pc)) % 12) + 12) % 12);
+  const sp = spellNote(midi, key);
+  const alter = midi - (sp.octave + 1) * 12 - LETTER_PC[sp.letter];
+  const sign = alter > 0 ? '#'.repeat(alter) : alter < 0 ? 'b'.repeat(-alter) : '';
+  return `${sp.letter}${sign}`;
+}
+
+/**
+ * 1小節ぶんのコードネーム。
+ * @param {{ rootPc: number, bassPc: number, pcs: number[] }} chord compose の song.chords の要素
+ * @param {ReturnType<typeof keySignature>} key その小節の調
+ * @returns {string} 'C' / 'Am7' / 'F#m' / 'G/B' / 'D5' など。作れなければ空文字
+ */
+function chordName(chord, key) {
+  const root = Number(chord?.rootPc);
+  const pcs = Array.isArray(chord?.pcs) ? chord.pcs : [];
+  if (!Number.isFinite(root) || pcs.length === 0) return '';
+  const intervals = [...new Set(pcs.map((pc) => (((pc - root) % 12) + 12) % 12))]
+    .sort((a, b) => a - b);
+  const shape = intervals.join(',');
+  const suffix = CHORD_SUFFIX.has(shape) ? CHORD_SUFFIX.get(shape) : fallbackSuffix(intervals);
+  const name = `${pitchName(root, key)}${suffix}`;
+  // 転回形は分数コードで書く。最低音が根音と違うときだけ。
+  const bass = Number(chord?.bassPc);
+  if (!Number.isFinite(bass) || (((bass - root) % 12) + 12) % 12 === 0) return name;
+  return `${name}/${pitchName(bass, key)}`;
+}
+
+// ---------------------------------------------------------------------------
+// 曲の途中の転調
+// ---------------------------------------------------------------------------
+
+/**
+ * 調号として区別が付かないなら同じ調とみなす。
+ * 主音名まで見るのは、同じ調号を別の綴りで呼ぶ調（無いはずだが）を取りこぼさないため。
+ */
+function sameKey(a, b) {
+  return a.accidental === b.accidental && a.count === b.count && a.tonicName === b.tonicName;
+}
+
+/**
+ * 小節ごとの調と、調が変わる位置を求める。
+ *
+ * 決め方は「あとに書いたものが勝つ」の一本道:
+ *   1. 曲全体を song.tonicMidi の調で埋める
+ *   2. tonicMidi を持つセクションで、その開始小節から先を塗り直す
+ *   3. song.modulation があれば atBar から先を toTonicMidi の調で塗り直す（最終決定）
+ *
+ * 転調しない曲（modulation === null、全セクションが曲と同じ主音）では
+ * 全小節が同じ調になり、changes は空になる。旋法は転調しても変わらない。
+ *
+ * @param {object} song composeSong の戻り値
+ * @param {number} bars 小節数
+ * @returns {{ keys: Array<ReturnType<typeof keySignature>>,
+ *             changes: Array<{ bar: number, from: object, to: object }> }}
+ */
+function keyTimeline(song, bars) {
+  const count = Math.max(1, Math.round(Number(bars)) || 1);
+  const mode = song?.mode === 'minor' ? 'minor' : 'major';
+  const keys = new Array(count).fill(keySignature(song?.tonicMidi ?? 60, mode));
+
+  const sections = (Array.isArray(song?.sections) ? song.sections : [])
+    .filter((s) => Number.isFinite(Number(s?.startBar)) && Number.isFinite(Number(s?.tonicMidi)))
+    .map((s) => ({ startBar: Math.round(Number(s.startBar)), tonicMidi: Number(s.tonicMidi) }))
+    .sort((a, b) => a.startBar - b.startBar);
+  for (const s of sections) {
+    const key = keySignature(s.tonicMidi, mode);
+    for (let i = Math.max(0, s.startBar); i < count; i++) keys[i] = key;
+  }
+
+  const mod = song?.modulation;
+  const atBar = Math.round(Number(mod?.atBar));
+  const toTonic = Number(mod?.toTonicMidi);
+  if (mod && Number.isFinite(atBar) && Number.isFinite(toTonic)) {
+    const key = keySignature(toTonic, mode);
+    for (let i = Math.max(0, atBar); i < count; i++) keys[i] = key;
+  }
+
+  const changes = [];
+  for (let i = 1; i < count; i++) {
+    if (!sameKey(keys[i], keys[i - 1])) changes.push({ bar: i, from: keys[i - 1], to: keys[i] });
+  }
+  return { keys, changes };
+}
+
+// ---------------------------------------------------------------------------
+// 音価
+// ---------------------------------------------------------------------------
+
+/** [拍数, 符頭, 付点] を長い順に並べたもの */
+const DURATIONS = [
+  [4, 'whole', 0],
+  [3, 'half', 1],
+  [2, 'half', 0],
+  [1.5, 'quarter', 1],
+  [1, 'quarter', 0],
+  [0.75, 'eighth', 1],
+  [0.5, 'eighth', 0],
+  [0.25, 'sixteenth', 0],
+];
+
+const DUR_EPS = 1e-9;
+
+/**
+ * 拍数を符頭と付点に直す。表に無い長さは「最も近い小さい方」に丸める
+ * （描画が破綻しないことを優先する）。
+ * @param {number} beats
+ * @returns {{ head: 'whole'|'half'|'quarter'|'eighth'|'sixteenth', dots: 0|1 }}
+ */
+function durationSymbol(beats) {
+  const b = Number(beats);
+  if (!Number.isFinite(b)) return { head: 'quarter', dots: 0 };
+  for (const [value, head, dots] of DURATIONS) {
+    if (b >= value - DUR_EPS) return { head, dots };
+  }
+  return { head: 'sixteenth', dots: 0 };
+}
+
+/** durationSymbol と同じ丸めをしたうえで、実際に描く拍数を返す */
+function notatedBeats(beats) {
+  const b = Number(beats);
+  if (!Number.isFinite(b)) return 1;
+  for (const [value] of DURATIONS) {
+    if (b >= value - DUR_EPS) return value;
+  }
+  return 0.25;
+}
+
+// ---------------------------------------------------------------------------
+// 小節線での分割
+// ---------------------------------------------------------------------------
+
+/**
+ * 小節線をまたぐ音をタイで繋げる形に分割する。
+ * 分割後の断片は元の音のプロパティを引き継ぎ、beat / dur だけが書き換わる。
+ * @param {Array<{beat:number,dur:number}>} notes
+ * @param {number} beatsPerBar
+ * @returns {Array<object & { tieToNext: boolean, tieFromPrev: boolean }>}
+ */
+function splitAtBarlines(notes, beatsPerBar) {
+  const bar = Number(beatsPerBar) > 0 ? Number(beatsPerBar) : 4;
+  const out = [];
+  for (const note of notes ?? []) {
+    const start = Number(note.beat);
+    const total = Number(note.dur);
+    if (!Number.isFinite(start) || !Number.isFinite(total) || total <= DUR_EPS) {
+      out.push({ ...note, tieToNext: false, tieFromPrev: false });
+      continue;
+    }
+    let pos = start;
+    let left = total;
+    let fromPrev = false;
+    while (left > DUR_EPS) {
+      const barEnd = (Math.floor(pos / bar + DUR_EPS) + 1) * bar;
+      const dur = Math.min(left, barEnd - pos);
+      left -= dur;
+      out.push({ ...note, beat: pos, dur, tieToNext: left > DUR_EPS, tieFromPrev: fromPrev });
+      pos += dur;
+      fromPrev = true;
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// SVG の小道具
+// ---------------------------------------------------------------------------
+
+// 調名だけは表示言語で書き分ける。他（音名・コードネーム）は記号なので訳さない。
+const { keyLabel: localeKeyLabel } = require('i18n.js');
+
+const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
+
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ESCAPES[c]);
+}
+
+/** 座標は小数3桁まで。0.30000000000000004 のような値を吐かないため */
+function num(value) {
+  const v = Math.round(Number(value) * 1000) / 1000;
+  return Object.is(v, -0) ? '0' : String(v);
+}
+
+function line(x1, y1, x2, y2, attrs = '') {
+  return `<line x1="${num(x1)}" y1="${num(y1)}" x2="${num(x2)}" y2="${num(y2)}"${attrs}/>`;
+}
+
+function path(d, attrs = '') {
+  return `<path d="${d}"${attrs}/>`;
+}
+
+function dot(cx, cy, r) {
+  return `<circle cx="${num(cx)}" cy="${num(cy)}" r="${num(r)}" fill="currentColor" stroke="none"/>`;
+}
+
+// ---------------------------------------------------------------------------
+// 記号の字形（フォントに頼らず全部その場で描く）
+// ---------------------------------------------------------------------------
+
+/**
+ * ト音記号。cy は第2線（ト音＝G4）の高さ。
+ * 渦の中心を G4 に置き、そこから外へ 1.4 回転ぶんの対数螺旋を伸ばす。
+ * 螺旋は式で点を生成するので、手で置いた制御点より形が崩れない。
+ */
+function trebleClef(cx, cy) {
+  const pts = [];
+  const r0 = 11;
+  const r1 = 0.9;
+  const from = 110;
+  const to = -400;
+  const steps = 64;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const deg = from + (to - from) * t;
+    const rad = (deg * Math.PI) / 180;
+    const r = r0 * Math.pow(r1 / r0, t);
+    pts.push(`${num(cx + r * Math.cos(rad))} ${num(cy - r * Math.sin(rad))}`);
+  }
+  const spiral = pts.map((p, i) => (i === 0 ? `M ${p}` : `L ${p}`)).join(' ');
+  const stroke = ' fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
+  // 下の尾 → 縦棒 → 上の巻き → 螺旋の入口、をひと筆で繋ぐ
+  const body = [
+    `M ${num(cx - 6)} ${num(cy + 16.5)}`,
+    `C ${num(cx - 7.5)} ${num(cy + 21)} ${num(cx - 1)} ${num(cy + 22.5)} ${num(cx + 2.5)} ${num(cy + 17)}`,
+    `C ${num(cx + 3.5)} ${num(cy + 8)} ${num(cx + 1)} ${num(cy - 8)} ${num(cx + 2)} ${num(cy - 30)}`,
+    `C ${num(cx + 1)} ${num(cy - 34.5)} ${num(cx - 6)} ${num(cy - 34.5)} ${num(cx - 7)} ${num(cy - 27)}`,
+    `C ${num(cx - 8)} ${num(cy - 20)} ${num(cx - 6.5)} ${num(cy - 14)} ${num(cx - 3.76)} ${num(cy - 10.34)}`,
+  ].join(' ');
+  return `<g class="clef" data-clef="treble">${path(body, stroke)}${path(spiral, stroke)}</g>`;
+}
+
+/** ヘ音記号。cy は第4線（ヘ音＝F3）の高さ */
+function bassClef(x, cy) {
+  const stroke = ' fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
+  const body = [
+    `M ${num(x - 1)} ${num(cy - 3)}`,
+    `C ${num(x + 4)} ${num(cy - 9)} ${num(x + 12)} ${num(cy - 4.5)} ${num(x + 11)} ${num(cy + 3)}`,
+    `C ${num(x + 10)} ${num(cy + 11)} ${num(x + 3)} ${num(cy + 15)} ${num(x - 4)} ${num(cy + 17)}`,
+  ].join(' ');
+  return `<g class="clef" data-clef="bass">${dot(x - 1.5, cy, 3.2)}${path(body, stroke)}`
+    + `${dot(x + 15, cy - 4, 1.5)}${dot(x + 15, cy + 4, 1.5)}</g>`;
+}
+
+/** シャープ。(x, y) は記号の中心 */
+function sharpGlyph(x, y) {
+  const thin = ' fill="none" stroke="currentColor" stroke-width="1"';
+  const thick = ' fill="none" stroke="currentColor" stroke-width="1.9"';
+  return line(x - 1.8, y - 6.5, x - 1.8, y + 5.5, thin)
+    + line(x + 1.8, y - 5.5, x + 1.8, y + 6.5, thin)
+    + line(x - 4.4, y - 1.2, x + 4.4, y - 3.2, thick)
+    + line(x - 4.4, y + 3.8, x + 4.4, y + 1.8, thick);
+}
+
+/** フラット。(x, y) は音符の高さ（玉の中心） */
+function flatGlyph(x, y) {
+  const stroke = ' fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"';
+  const d = `M ${num(x - 2)} ${num(y - 9)} L ${num(x - 2)} ${num(y + 4)}`
+    + ` C ${num(x + 3.5)} ${num(y + 0.5)} ${num(x + 3.5)} ${num(y - 4)} ${num(x - 2)} ${num(y - 1.5)}`;
+  return path(d, stroke);
+}
+
+/** ナチュラル */
+function naturalGlyph(x, y) {
+  const thin = ' fill="none" stroke="currentColor" stroke-width="1"';
+  const thick = ' fill="none" stroke="currentColor" stroke-width="1.8"';
+  return line(x - 2, y - 7.5, x - 2, y + 3.5, thin)
+    + line(x + 2, y - 3.5, x + 2, y + 7.5, thin)
+    + line(x - 2, y - 2, x + 2, y - 3.5, thick)
+    + line(x - 2, y + 3.5, x + 2, y + 2, thick);
+}
+
+function accidentalGlyph(kind, x, y) {
+  const body = kind === '#' ? sharpGlyph(x, y)
+    : kind === 'b' ? flatGlyph(x, y)
+    : kind === 'n' ? naturalGlyph(x, y)
+    : '';
+  return body ? `<g class="accidental" data-acc="${kind}">${body}</g>` : '';
+}
+
+/** 符頭。楕円を -20 度傾ける */
+function noteHead(cx, cy, filled) {
+  const rx = filled ? 5 : 5.2;
+  const ry = filled ? 3.7 : 3.8;
+  const paint = filled
+    ? ' fill="currentColor" stroke="none"'
+    : ' fill="none" stroke="currentColor" stroke-width="1.5"';
+  return `<ellipse class="notehead" cx="${num(cx)}" cy="${num(cy)}" rx="${num(rx)}" ry="${num(ry)}"`
+    + ` transform="rotate(-20 ${num(cx)} ${num(cy)})"${paint}/>`;
+}
+
+/** 全音符は少し横長の空洞。傾きは同じ */
+function wholeHead(cx, cy) {
+  return `<ellipse class="notehead" cx="${num(cx)}" cy="${num(cy)}" rx="6.2" ry="3.9"`
+    + ` transform="rotate(-20 ${num(cx)} ${num(cy)})" fill="none" stroke="currentColor" stroke-width="1.6"/>`;
+}
+
+/**
+ * 旗。(sx, ty) は符尾の先端、dir=1 なら上向き符尾（旗は下へ垂れる）。
+ * 連桁は使わず旗で通す。8分と4分が見分けられれば要件は満たす。
+ */
+function flagGlyph(sx, ty, dir) {
+  const y = (dy) => ty + dir * dy;
+  const d = `M ${num(sx)} ${num(ty)}`
+    + ` C ${num(sx + 8)} ${num(y(4))} ${num(sx + 8.5)} ${num(y(11))} ${num(sx + 1.5)} ${num(y(16))}`
+    + ` C ${num(sx + 6)} ${num(y(10))} ${num(sx + 5.5)} ${num(y(5))} ${num(sx)} ${num(y(2.5))} Z`;
+  return path(d, ' class="flag" fill="currentColor" stroke="none"');
+}
+
+// ---------------------------------------------------------------------------
+// レイアウトの既定値
+// ---------------------------------------------------------------------------
+
+const DEFAULT_LAYOUT = {
+  barWidth: 200,      // 1小節の幅。8分音符8個が並んでも潰れない
+  staffSpace: 8,      // 五線の線間（五線の高さは 32）
+  staffGap: 64,       // ト音記号の第1線とヘ音記号の第5線の間隔
+  // 五線の上に3段ぶん置く: 調名と小節番号(topPad-52)、コードネーム(topPad-30)、
+  // そのうえで高い音の加線が入る余白。メロディーの最高音は五線の上 24px までなので、
+  // コードネームの行（30px 上）とはぶつからない。
+  topPad: 72,
+  bottomPad: 40,
+  leftPad: 6,
+  rightPad: 16,
+  noteInset: 10,      // 小節線に音符がめり込まないよう内側へ寄せる量
+  stemLength: 28,
+  clefWidth: 26,
+  accidentalWidth: 9, // 調号1つあたりの幅
+  keyGap: 12,         // 調号と最初の小節線の間
+};
+
+/**
+ * 楽譜の高さ。曲の中身によらず一定なので、描く前から分かる。
+ * 画面側は再生前からこの高さで枠を取る。あとから伸びると、
+ * 押した直後に再生ボタンが動いてしまう。
+ * @param {object} [options] DEFAULT_LAYOUT を上書きする値
+ * @returns {number}
+ */
+function scoreHeight(options = {}) {
+  const L = { ...DEFAULT_LAYOUT, ...(options || {}) };
+  return L.topPad + 4 * L.staffSpace + L.staffGap + 4 * L.staffSpace + L.bottomPad;
+}
+
+/** 調号の位置。ト音記号での diatonicIndex（ヘ音記号は 14 引く＝2オクターブ下） */
+const SHARP_ROWS = [38, 35, 39, 36, 33, 37, 34];
+const FLAT_ROWS = [34, 37, 33, 36, 32, 35, 31];
+
+/** 曲の途中で調が変わるときの寸法 */
+const KEY_CHANGE_BAR_GAP = 3.5; // 複縦線の2本の間隔
+const KEY_CHANGE_PRE = 9;       // 複縦線から最初の記号までの間
+const KEY_CHANGE_MID = 4;       // 打ち消しのナチュラルと新しい調号の間
+
+/**
+ * 前の調の臨時記号のうち、ナチュラルで打ち消す必要があるものの位置を返す。
+ *
+ * 記譜の標準は「前の調号にあって新しい調号に無い音をナチュラルで消す」。
+ *   シャープ3つ → フラット1つ … 系統が変わるので3つとも消す
+ *   シャープ3つ → シャープ1つ … 減ったぶん（C# G#）だけ消す
+ *   シャープ2つ → シャープ4つ … 増えるだけなので消さない（空配列）
+ *
+ * 位置は前の調号が置かれていた行をそのまま使う（消す対象がそこに居たため）。
+ * @returns {number[]} ト音記号での diatonicIndex の配列。前の調号の順に並ぶ
+ */
+function cancelRows(from, to) {
+  const oldAlter = keyAlterations(from);
+  const newAlter = keyAlterations(to);
+  const letters = from.accidental === 'flat' ? FLAT_ORDER : SHARP_ORDER;
+  const rows = from.accidental === 'flat' ? FLAT_ROWS : SHARP_ROWS;
+  const out = [];
+  for (let i = 0; i < from.count; i++) {
+    if (newAlter[letters[i]] !== oldAlter[letters[i]]) out.push(rows[i]);
+  }
+  return out;
+}
+
+const BEATS_PER_BAR = 4;
+
+// ---------------------------------------------------------------------------
+// 楽譜本体
+// ---------------------------------------------------------------------------
+
+/**
+ * 曲をSVGの楽譜にする。
+ *
+ * @param {object} song composeSong の戻り値
+ * @param {object} [options] DEFAULT_LAYOUT を上書きする値
+ * @returns {{ svg: string, width: number, height: number, barX: number[], beatToX: (beat:number)=>number }}
+ */
+function renderScore(song, options = {}) {
+  const L = { ...DEFAULT_LAYOUT, ...(options || {}) };
+  const step = L.staffSpace / 2;
+
+  const bars = Math.max(1, Math.round(Number(song?.bars)) || 1);
+  const totalBeats = Number(song?.totalBeats) > 0 ? Number(song.totalBeats) : bars * BEATS_PER_BAR;
+
+  // 小節ごとの調。転調しない曲では全部同じ調が並ぶ。
+  const { keys: barKeys, changes } = keyTimeline(song, bars);
+  const key = barKeys[0];
+  const keyAt = (bar) => barKeys[Math.max(0, Math.min(bars - 1, bar))];
+
+  // ---- 横位置 ----
+  const clefX = L.leftPad + 10;
+  const keyX = clefX + L.clefWidth;
+  const originX = keyX + key.count * L.accidentalWidth + L.keyGap;
+
+  // 転調する小節は、複縦線と新しい調号を頭に置くぶんだけ横に広がる。
+  // leadIn[i] は小節 i の「音符が始まるまでの前置き」の幅。
+  const leadIn = new Array(bars).fill(0);
+  const changeAt = new Map();
+  for (const change of changes) {
+    const naturals = cancelRows(change.from, change.to);
+    const span = KEY_CHANGE_PRE
+      + naturals.length * L.accidentalWidth
+      + (naturals.length > 0 && change.to.count > 0 ? KEY_CHANGE_MID : 0)
+      + change.to.count * L.accidentalWidth
+      + L.keyGap;
+    changeAt.set(change.bar, { ...change, naturals, span });
+    leadIn[change.bar] = span;
+  }
+
+  const barX = [];
+  for (let i = 0, x = originX; i <= bars; i++) {
+    barX.push(x);
+    x += L.barWidth + (leadIn[i] ?? 0);
+  }
+  const width = barX[bars] + L.rightPad;
+
+  // 小節 i の音符は [barX[i] + leadIn[i], barX[i+1]] に線形に並ぶ。
+  // 前置きの幅には拍を割り当てない（調号の上に音符が乗らないように）。
+  // beatToX(0) と beatToX(totalBeats) は barX の両端にきっちり一致する。
+  const beatToX = (beat) => {
+    const pos = (Number(beat) || 0) / BEATS_PER_BAR;
+    const i = Math.max(0, Math.min(bars - 1, Math.floor(pos)));
+    const from = barX[i] + leadIn[i];
+    return from + (pos - i) * (barX[i + 1] - from);
+  };
+
+  // ---- 縦位置 ----
+  const trebleTop = L.topPad;
+  const trebleBottom = trebleTop + 4 * L.staffSpace;
+  const bassTop = trebleBottom + L.staffGap;
+  const bassBottom = bassTop + 4 * L.staffSpace;
+  const height = bassBottom + L.bottomPad;
+
+  const TREBLE = { name: 'treble', topY: trebleTop, topIndex: 38, midIndex: 34, bottomIndex: 30 };
+  const BASS = { name: 'bass', topY: bassTop, topIndex: 26, midIndex: 22, bottomIndex: 18 };
+  const yOf = (staff, diatonicIndex) => staff.topY + (staff.topIndex - diatonicIndex) * step;
+
+  const out = [];
+
+  // ---- 五線 ----
+  const staffLine = ' class="staff-line" stroke="currentColor" stroke-width="1"';
+  for (const staff of [TREBLE, BASS]) {
+    for (let i = 0; i < 5; i++) {
+      const y = staff.topY + i * L.staffSpace;
+      out.push(line(L.leftPad, y, barX[bars], y, staffLine));
+    }
+  }
+  out.push(line(L.leftPad, trebleTop, L.leftPad, bassBottom, ' class="system-line" stroke="currentColor" stroke-width="1.6"'));
+
+  // ---- 音部記号と調号 ----
+  out.push(trebleClef(clefX + 8, yOf(TREBLE, 32)));
+  out.push(bassClef(clefX + 4, yOf(BASS, 24)));
+
+  if (key.count > 0) {
+    const rows = key.accidental === 'flat' ? FLAT_ROWS : SHARP_ROWS;
+    const kind = key.accidental === 'flat' ? 'b' : '#';
+    const glyphs = [];
+    for (let i = 0; i < key.count; i++) {
+      const x = keyX + i * L.accidentalWidth + 4;
+      glyphs.push(accidentalGlyph(kind, x, yOf(TREBLE, rows[i])));
+      glyphs.push(accidentalGlyph(kind, x, yOf(BASS, rows[i] - 14)));
+    }
+    out.push(`<g class="key-signature">${glyphs.join('')}</g>`);
+  }
+
+  const labelY = L.topPad - 52;
+  // keySignature が持つ label は日本語。楽譜に描くのは表示言語のほう。
+  const keyText = localeKeyLabel(key.tonicName, song?.mode === 'minor' ? 'minor' : 'major');
+  out.push(`<text class="key-label" x="${num(L.leftPad)}" y="${num(labelY)}"`
+    + ` font-size="11" fill="currentColor" stroke="none">${esc(keyText)}</text>`);
+
+  // ---- 小節線と小節番号 ----
+  for (let i = 0; i < bars; i++) {
+    out.push(line(barX[i], trebleTop, barX[i], bassBottom,
+      ` class="barline" data-bar="${i}" stroke="currentColor" stroke-width="1"`));
+    out.push(`<text class="bar-number" x="${num(barX[i] + 3)}" y="${num(labelY)}"`
+      + ` font-size="10" fill="currentColor" stroke="none">${i + 1}</text>`);
+  }
+
+  // ---- コードネーム ----
+  //
+  // 五線の上に、その小節の和音の名前を置く。前の小節と同じ名前なら書かない
+  // （実際のリードシートと同じで、書き続けると視線が散る）。
+  // 転調をまたぐ小節は調号の前置きぶんだけ右へ逃がす。
+  const chordSvg = [];
+  let lastName = null;
+  for (const chord of Array.isArray(song?.chords) ? song.chords : []) {
+    const bar = Math.round(Number(chord?.bar));
+    if (!Number.isFinite(bar) || bar < 0 || bar >= bars) continue;
+    let name = '';
+    try {
+      name = chordName(chord, keyAt(bar));
+    } catch (err) {
+      // 名前を出せない和音があっても、楽譜そのものは描き切る。
+      name = '';
+    }
+    if (!name || name === lastName) {
+      if (name) lastName = name;
+      continue;
+    }
+    lastName = name;
+    const x = barX[bar] + (leadIn[bar] ?? 0) + 2;
+    chordSvg.push(`<text class="chord-name" data-bar="${bar}" x="${num(x)}"`
+      + ` y="${num(L.topPad - 30)}" font-size="13" font-weight="600"`
+      + ` fill="currentColor" stroke="none">${esc(name)}</text>`);
+  }
+  if (chordSvg.length > 0) out.push(`<g class="chord-names">${chordSvg.join('')}</g>`);
+  // 終止線（細い線＋太い線）
+  out.push(line(barX[bars] - 6, trebleTop, barX[bars] - 6, bassBottom,
+    ` class="barline" data-bar="${bars}" stroke="currentColor" stroke-width="1"`));
+  out.push(line(barX[bars] - 1.5, trebleTop, barX[bars] - 1.5, bassBottom,
+    ` class="barline" data-bar="${bars}" stroke="currentColor" stroke-width="3"`));
+
+  // ---- 転調（複縦線＋打ち消しのナチュラル＋新しい調号） ----
+  //
+  // 小節線はすでに barX[bar] に1本引いてあるので、細い線をもう1本足して複縦線にする
+  // （終止線と違い、2本目も細い＝「ここで調が変わる」の合図）。
+  // 新しい調号は count が 0 でも <g class="key-signature"> を出す。
+  // 「調が変わった」という事実を空の調号でも数えられるようにするため。
+  for (const change of changeAt.values()) {
+    const at = barX[change.bar];
+    const parts = [line(at + KEY_CHANGE_BAR_GAP, trebleTop, at + KEY_CHANGE_BAR_GAP, bassBottom,
+      ` class="barline" data-bar="${change.bar}" stroke="currentColor" stroke-width="1"`)];
+
+    let x = at + KEY_CHANGE_PRE;
+    if (change.naturals.length > 0) {
+      const marks = [];
+      for (let i = 0; i < change.naturals.length; i++) {
+        const gx = x + i * L.accidentalWidth + 4;
+        marks.push(accidentalGlyph('n', gx, yOf(TREBLE, change.naturals[i])));
+        marks.push(accidentalGlyph('n', gx, yOf(BASS, change.naturals[i] - 14)));
+      }
+      parts.push(`<g class="key-cancel">${marks.join('')}</g>`);
+      x += change.naturals.length * L.accidentalWidth + KEY_CHANGE_MID;
+    }
+
+    const rows = change.to.accidental === 'flat' ? FLAT_ROWS : SHARP_ROWS;
+    const kind = change.to.accidental === 'flat' ? 'b' : '#';
+    const marks = [];
+    for (let i = 0; i < change.to.count; i++) {
+      const gx = x + i * L.accidentalWidth + 4;
+      marks.push(accidentalGlyph(kind, gx, yOf(TREBLE, rows[i])));
+      marks.push(accidentalGlyph(kind, gx, yOf(BASS, rows[i] - 14)));
+    }
+    parts.push(`<g class="key-signature" data-bar="${change.bar}">${marks.join('')}</g>`);
+    out.push(`<g class="key-change" data-bar="${change.bar}">${parts.join('')}</g>`);
+  }
+
+  // ---- 音符 ----
+  const noteSvg = [];
+  const tieSvg = [];
+  const occupied = { treble: [], bass: [] };
+  // 段ごと・小節ごとの臨時記号の有効範囲。同じ小節の同じ高さでは1回しか書かない。
+  const activeAccidentals = { treble: new Map(), bass: new Map() };
+
+  const layers = [
+    { name: 'melody', staff: TREBLE, notes: song?.melody, stem: 'auto' },
+    { name: 'accomp', staff: BASS, notes: song?.accomp, stem: 'up' },
+    { name: 'bass', staff: BASS, notes: song?.bass, stem: 'down' },
+  ];
+
+  for (const layer of layers) {
+    const source = prepareLayer(layer.notes, totalBeats);
+    const segments = splitAtBarlines(source, BEATS_PER_BAR);
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      occupied[layer.staff.name].push([seg.beat, seg.beat + seg.dur]);
+      const drawn = drawNote(seg, layer, i, segments);
+      noteSvg.push(drawn.svg);
+      if (drawn.tie) tieSvg.push(drawn.tie);
+    }
+  }
+
+  /** 1つの音（和音なら複数の玉）を描く */
+  function drawNote(seg, layer, index, segments) {
+    const staff = layer.staff;
+    const sym = durationSymbol(seg.dur);
+    const x = beatToX(seg.beat) + L.noteInset;
+    const midis = Array.isArray(seg.midis) && seg.midis.length > 0 ? seg.midis : [seg.midi];
+    // 綴りはその小節の調で行う。転調後は新しい調号が効くので、
+    // 音階内の音には臨時記号が付かない。
+    const bar = Math.floor(seg.beat / BEATS_PER_BAR + DUR_EPS);
+    const barKey = keyAt(bar);
+    const spelled = midis
+      .map((m) => ({ midi: Math.round(Number(m)), ...spellNote(m, barKey) }))
+      .sort((a, b) => a.diatonicIndex - b.diatonicIndex);
+
+    const lowest = spelled[0];
+    const highest = spelled[spelled.length - 1];
+    const stemUp = layer.stem === 'up' ? true
+      : layer.stem === 'down' ? false
+      : (lowest.diatonicIndex + highest.diatonicIndex) / 2 < staff.midIndex;
+
+    const body = [];
+    const ledgerYs = new Set();
+    for (const sp of spelled) {
+      const y = yOf(staff, sp.diatonicIndex);
+      for (let idx = staff.topIndex + 2; idx <= sp.diatonicIndex; idx += 2) ledgerYs.add(yOf(staff, idx));
+      for (let idx = staff.bottomIndex - 2; idx >= sp.diatonicIndex; idx -= 2) ledgerYs.add(yOf(staff, idx));
+      const printed = accidentalToPrint(staff, bar, sp, seg.tieFromPrev);
+      if (printed) body.push(accidentalGlyph(printed, x - 12, y));
+      body.push(sym.head === 'whole' ? wholeHead(x, y) : noteHead(x, y, sym.head !== 'half'));
+      if (sym.dots > 0) {
+        const onLine = ((sp.diatonicIndex % 2) + 2) % 2 === 0;
+        body.push(dot(x + 10, onLine ? y - step : y, 1.6));
+      }
+    }
+    const ledgers = [...ledgerYs].map((y) =>
+      line(x - 8, y, x + 8, y, ' class="ledger" stroke="currentColor" stroke-width="1"'));
+
+    let stemTipY = null;
+    if (sym.head !== 'whole') {
+      const stemX = stemUp ? x + 4.6 : x - 4.6;
+      const from = stemUp ? yOf(staff, lowest.diatonicIndex) : yOf(staff, highest.diatonicIndex);
+      stemTipY = stemUp
+        ? yOf(staff, highest.diatonicIndex) - L.stemLength
+        : yOf(staff, lowest.diatonicIndex) + L.stemLength;
+      body.push(line(stemX, from, stemX, stemTipY, ' class="stem" stroke="currentColor" stroke-width="1.3"'));
+      const dir = stemUp ? 1 : -1;
+      if (sym.head === 'eighth') body.push(flagGlyph(stemX, stemTipY, dir));
+      if (sym.head === 'sixteenth') {
+        body.push(flagGlyph(stemX, stemTipY, dir));
+        body.push(flagGlyph(stemX, stemTipY + dir * 7, dir));
+      }
+    }
+
+    const svg = `<g class="note" data-layer="${layer.name}" data-beat="${num(seg.beat)}"`
+      + ` data-dur="${num(seg.dur)}">${ledgers.join('')}${body.join('')}</g>`;
+
+    // タイ。分割された断片は splitAtBarlines の出力で必ず隣り合う。
+    let tie = null;
+    const next = segments[index + 1];
+    if (seg.tieToNext && next) {
+      const y1 = yOf(staff, lowest.diatonicIndex);
+      const nextBar = Math.floor(next.beat / BEATS_PER_BAR + DUR_EPS);
+      const nextSpelled = spellNote(
+        Array.isArray(next.midis) && next.midis.length > 0 ? Math.min(...next.midis) : next.midi,
+        keyAt(nextBar));
+      const y2 = yOf(staff, nextSpelled.diatonicIndex);
+      const x2 = beatToX(next.beat) + L.noteInset;
+      const bulge = stemUp ? 9 : -9;
+      const d = `M ${num(x + 6)} ${num(y1 + bulge * 0.35)}`
+        + ` Q ${num((x + x2) / 2)} ${num((y1 + y2) / 2 + bulge)} ${num(x2 - 6)} ${num(y2 + bulge * 0.35)}`;
+      tie = path(d, ' class="tie" fill="none" stroke="currentColor" stroke-width="1.2"');
+    }
+    return { svg, tie };
+  }
+
+  /**
+   * 実際に印字する臨時記号を決める。
+   * 同じ小節の同じ高さでは1回だけ書き、直前に効いている変化とずれたときだけ書き直す
+   * （ハ長調で C# のあとに C が来たらナチュラルを書く、という規則）。
+   */
+  function accidentalToPrint(staff, bar, sp, tieFromPrev) {
+    const alter = sp.midi - (sp.octave + 1) * 12 - LETTER_PC[sp.letter];
+    const map = activeAccidentals[staff.name];
+    const mapKey = `${bar}:${sp.diatonicIndex}`;
+    // 臨時記号の有効範囲は小節内だけ。小節が変われば、その小節の調号が既定に戻る。
+    const current = map.has(mapKey) ? map.get(mapKey) : keyAlterations(keyAt(bar))[sp.letter];
+    map.set(mapKey, alter);
+    if (tieFromPrev || alter === current) return '';
+    return alter === 0 ? 'n' : alter > 0 ? '#' : 'b';
+  }
+
+  // ---- 休符 ----
+  const restSvg = [];
+  for (const staff of [TREBLE, BASS]) {
+    for (const rest of restsFor(occupied[staff.name], bars)) {
+      restSvg.push(restGlyph(rest, staff));
+    }
+  }
+
+  function restGlyph(rest, staff) {
+    const midY = yOf(staff, staff.midIndex);
+    const g = [];
+    if (rest.head === 'whole') {
+      const x = beatToX(rest.beat + 2) - 5.5;
+      const y = yOf(staff, staff.topIndex - 2);
+      g.push(`<rect x="${num(x)}" y="${num(y)}" width="11" height="4" fill="currentColor" stroke="none"/>`);
+    } else if (rest.head === 'half') {
+      const x = beatToX(rest.beat) + L.noteInset - 5.5;
+      g.push(`<rect x="${num(x)}" y="${num(midY - 4)}" width="11" height="4" fill="currentColor" stroke="none"/>`);
+    } else if (rest.head === 'quarter') {
+      const x = beatToX(rest.beat) + L.noteInset;
+      const d = `M ${num(x - 3)} ${num(midY - 8.5)} L ${num(x + 2.5)} ${num(midY - 3)}`
+        + ` L ${num(x - 3)} ${num(midY + 1.5)} L ${num(x + 3)} ${num(midY + 7.5)}`
+        + ` C ${num(x - 2)} ${num(midY + 4.5)} ${num(x - 4)} ${num(midY + 8.5)} ${num(x + 1)} ${num(midY + 10.5)}`;
+      g.push(path(d, ' fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"'));
+    } else {
+      // 8分・16分休符。斜めの棒に玉を付ける
+      const x = beatToX(rest.beat) + L.noteInset;
+      const two = rest.head === 'sixteenth';
+      const top = two ? midY - 7 : midY - 5;
+      const bottom = two ? midY + 7 : midY + 5;
+      g.push(line(x + 3, top, x - 3.5, bottom,
+        ' fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"'));
+      g.push(dot(x + 0.5, top + 0.5, 1.8));
+      if (two) g.push(dot(x - 1.5, top + 6, 1.8));
+    }
+    return `<g class="rest" data-staff="${staff.name}" data-beat="${num(rest.beat)}"`
+      + ` data-dur="${num(rest.dur)}">${g.join('')}</g>`;
+  }
+
+  out.push(`<g class="rests">${restSvg.join('')}</g>`);
+  out.push(`<g class="notes">${noteSvg.join('')}</g>`);
+  out.push(`<g class="ties">${tieSvg.join('')}</g>`);
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" class="score" role="img"`
+    + ` viewBox="0 0 ${num(width)} ${num(height)}" width="${num(width)}" height="${num(height)}"`
+    + ` style="color: var(--score-ink, #ddd)" fill="none" stroke="none"`
+    + ` font-family="system-ui, sans-serif">${out.join('')}</svg>`;
+
+  return { svg, width, height, barX, beatToX };
+}
+
+/**
+ * 描く直前の下ごしらえ。
+ *   - 曲の終端からはみ出す音を切り詰める（最後の音は次の曲へ食い込む長さを持つ）
+ *   - 次の音までの間隔で音価を頭打ちにし、表にある長さへ丸める
+ */
+function prepareLayer(notes, totalBeats) {
+  const src = (Array.isArray(notes) ? notes : [])
+    .filter((n) => Number.isFinite(Number(n?.beat)) && Number(n.beat) < totalBeats - DUR_EPS)
+    .slice()
+    .sort((a, b) => a.beat - b.beat);
+  const out = [];
+  for (let i = 0; i < src.length; i++) {
+    const note = src[i];
+    const beat = Number(note.beat);
+    let dur = Number(note.dur);
+    if (!Number.isFinite(dur) || dur <= 0) dur = 0.25;
+    dur = Math.min(dur, totalBeats - beat);
+    const next = src[i + 1];
+    if (next) {
+      const gap = Number(next.beat) - beat;
+      if (gap > DUR_EPS) dur = Math.min(dur, gap);
+    }
+    out.push({ ...note, beat, dur: notatedBeats(dur) });
+  }
+  return out;
+}
+
+/**
+ * 音が鳴っていない区間に置く休符を求める。
+ * 拍のまとまりの厳密な規則までは追わず、「その位置に置ける最大の休符」を
+ * 拍の頭から順に敷き詰める（読んで違和感がない程度で十分）。
+ */
+function restsFor(intervals, bars) {
+  const rests = [];
+  // まず鳴っている区間をひと続きにまとめる
+  const merged = [];
+  for (const [a, b] of intervals.slice().sort((x, y) => x[0] - y[0])) {
+    const last = merged[merged.length - 1];
+    if (last && a <= last[1] + DUR_EPS) last[1] = Math.max(last[1], b);
+    else merged.push([a, b]);
+  }
+
+  for (let bar = 0; bar < bars; bar++) {
+    const start = bar * BEATS_PER_BAR;
+    const end = start + BEATS_PER_BAR;
+    const gaps = [];
+    let pos = start;
+    for (const [a, b] of merged) {
+      if (b <= start + DUR_EPS) continue;
+      if (a >= end - DUR_EPS) break;
+      const from = Math.max(a, start);
+      if (from - pos > DUR_EPS) gaps.push([pos, from]);
+      pos = Math.max(pos, Math.min(b, end));
+    }
+    if (end - pos > DUR_EPS) gaps.push([pos, end]);
+
+    for (const [from, to] of gaps) {
+      if (from <= start + DUR_EPS && to >= end - DUR_EPS) {
+        rests.push({ beat: start, dur: BEATS_PER_BAR, head: 'whole' });
+        continue;
+      }
+      let p = from;
+      let guard = 0;
+      while (to - p > 0.125 + DUR_EPS && guard++ < 32) {
+        let picked = 0;
+        for (const cand of [2, 1, 0.5, 0.25]) {
+          const aligned = Math.abs(p / cand - Math.round(p / cand)) < 1e-6;
+          if (cand <= to - p + DUR_EPS && aligned) {
+            picked = cand;
+            break;
+          }
+        }
+        if (!picked) break;
+        rests.push({ beat: p, dur: picked, head: durationSymbol(picked).head });
+        p += picked;
+      }
+    }
+  }
+  return rests;
+}
+
+// --- exports ---
+exports.keySignature = keySignature;
+exports.spellNote = spellNote;
+exports.pitchName = pitchName;
+exports.chordName = chordName;
+exports.keyTimeline = keyTimeline;
+exports.durationSymbol = durationSymbol;
+exports.splitAtBarlines = splitAtBarlines;
+exports.scoreHeight = scoreHeight;
+exports.renderScore = renderScore;
+};
+
+// ===== src/settings.js =====
+__mods["settings.js"] = function (exports, require) {
+const { instrumentOptions, DEFAULT_INSTRUMENT } = require('instrument.js');
+
+// 表示文字列そのものではなく i18n のキーを持つ。
+// 画面に出すときに ui.js が t() を通す（言語を切り替えても定義は1つのまま）。
+const GROUP_LABELS = {
+  sound: 'group.sound',
+  compose: 'group.compose',
+  humanize: 'group.humanize',
+};
+
+const KEY_OPTIONS = [
+  ['random', 'ランダム'],
+  ['0', 'C'], ['1', 'C#'], ['2', 'D'], ['3', 'D#'], ['4', 'E'], ['5', 'F'],
+  ['6', 'F#'], ['7', 'G'], ['8', 'G#'], ['9', 'A'], ['10', 'A#'], ['11', 'B'],
+];
+
+// 雰囲気とテンポは、聴いて違いがはっきり分かる2つだけを表に出し、
+// 内部の細かい値（長調比率・テンポ範囲）はここで導出する。
+const MOOD_MAP = {
+  bright: { majorRatio: 90 },
+  balanced: { majorRatio: 55 },
+  wistful: { majorRatio: 12 },
+};
+
+const TEMPO_MAP = {
+  slow: { tempoMin: 66, tempoMax: 74 },
+  normal: { tempoMin: 78, tempoMax: 88 },
+  flowing: { tempoMin: 92, tempoMax: 102 },
+};
+
+// 調整可能パラメータの唯一の定義。UIパネルはこの配列から自動生成される。
+//
+// ui: true のものだけを画面に出す。false のものは「耳で決めるべき値」ではなく
+// 「決め切ってよい値」なので、最適と判断した値で固定してある。
+// 出し戻したくなったら ui を true にするだけでよい。
+const PARAM_DEFS = [
+  // ---- 画面に出す3つ ----
+  // 既定は 85。曲そのものが静かなので、つまみまで控えめにすると
+  // スマートフォンの内蔵スピーカーでは聴き取れなくなる。
+  { key: 'masterVolume', group: 'sound', label: 'param.masterVolume', type: 'range', min: 0, max: 100, step: 1, def: 85, unit: '%', apply: 'live', ui: true },
+  { key: 'mood', group: 'compose', label: 'param.mood', type: 'choice', apply: 'next', ui: true, code: 'md', def: 'balanced',
+    hint: 'hint.mood',
+    options: [['bright', 'opt.mood.bright'], ['balanced', 'opt.mood.balanced'], ['wistful', 'opt.mood.wistful']] },
+  { key: 'tempoFeel', group: 'compose', label: 'param.tempoFeel', type: 'choice', apply: 'next', ui: true, code: 'tp', def: 'normal',
+    options: [['slow', 'opt.tempo.slow'], ['normal', 'opt.tempo.normal'], ['flowing', 'opt.tempo.flowing']] },
+  // 楽器。曲の中身は変えず、鳴らす音だけを変える（instrument.js が唯一の定義）。
+  { key: 'instrument', group: 'sound', label: 'param.instrument', type: 'choice', apply: 'next', ui: true, code: 'it',
+    hint: 'hint.instrument',
+    def: DEFAULT_INSTRUMENT.key, options: instrumentOptions() },
+
+  // ---- 以下は固定値。画面には出さない ----
+
+  // 音のバランス。メロディーを最前面に、伴奏とパッドは下支えに徹させる
+  { key: 'melodyVolume', group: 'sound', label: 'param.melodyVolume', type: 'range', min: 0, max: 100, step: 1, def: 100, unit: '%', apply: 'live', ui: false },
+  { key: 'accompVolume', group: 'sound', label: 'param.accompVolume', type: 'range', min: 0, max: 100, step: 1, def: 80, unit: '%', apply: 'live', ui: false },
+  { key: 'padVolume', group: 'sound', label: 'param.padVolume', type: 'range', min: 0, max: 100, step: 1, def: 62, unit: '%', apply: 'live', ui: false },
+  { key: 'reverbAmount', group: 'sound', label: 'param.reverbAmount', type: 'range', min: 0, max: 100, step: 1, def: 48, unit: '%', apply: 'live', ui: false },
+  { key: 'brightness', group: 'sound', label: 'param.brightness', type: 'range', min: 0, max: 100, step: 1, def: 42, unit: '%', apply: 'live', ui: false },
+
+  // 人間らしさ。数値をいじる対象ではないので固定
+  { key: 'timingJitterMs', group: 'humanize', label: 'param.timingJitterMs', type: 'range', min: 0, max: 30, step: 1, def: 12, unit: 'ms', apply: 'next', ui: false },
+  { key: 'velocityJitter', group: 'humanize', label: 'param.velocityJitter', type: 'range', min: 0, max: 25, step: 1, def: 10, unit: '%', apply: 'next', ui: false },
+  { key: 'tenuto', group: 'humanize', label: 'param.tenuto', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'ritardando', group: 'humanize', label: 'param.ritardando', type: 'toggle', def: true, apply: 'next', ui: false },
+  { key: 'gapSeconds', group: 'humanize', label: 'param.gapSeconds', type: 'range', min: 0, max: 10, step: 0.5, def: 3.5, unit: '秒', apply: 'live', ui: false },
+
+  // 作曲。mood / tempoFeel から導出されるか、変える意味が薄いので固定
+  { key: 'tempoMin', group: 'compose', label: 'param.tempoMin', type: 'range', min: 52, max: 92, step: 1, def: 64, unit: 'BPM', apply: 'next', ui: false },
+  { key: 'tempoMax', group: 'compose', label: 'param.tempoMax', type: 'range', min: 52, max: 92, step: 1, def: 74, unit: 'BPM', apply: 'next', ui: false },
+  { key: 'musicKey', group: 'compose', label: 'param.musicKey', type: 'choice', options: KEY_OPTIONS, def: 'random', apply: 'next', ui: false },
+  { key: 'majorRatio', group: 'compose', label: 'param.majorRatio', type: 'range', min: 0, max: 100, step: 5, def: 55, unit: '%', apply: 'next', ui: false },
+  { key: 'songBars', group: 'compose', label: 'param.songBars', type: 'choice', options: [['16', '16小節'], ['32', '32小節'], ['64', '64小節']], def: '32', apply: 'next', ui: false },
+  { key: 'curveStrength', group: 'compose', label: 'param.curveStrength', type: 'range', min: 0, max: 100, step: 5, def: 100, unit: '%', apply: 'next', ui: false },
+  { key: 'maxLeap', group: 'compose', label: 'param.maxLeap', type: 'range', min: 2, max: 6, step: 1, def: 2, unit: '度', apply: 'next', ui: false },
+  { key: 'motifRecall', group: 'compose', label: 'param.motifRecall', type: 'toggle', def: true, apply: 'next', ui: false },
+
+  // ---- 生成器の版 ----
+  //
+  // 選び方や材料を変えると、同じ曲コードから別の曲が出る。共有された URL が
+  // 別の曲を鳴らすのは、この道具では壊れたのと同じことなので、版で分ける。
+  //
+  // 曲コードに桁が無い＝この項目がまだ無かった時代のコード＝初版。
+  // decodeSongCode がそこだけ既定値ではなく LEGACY_VERSION に倒す。
+  // 逆に新しい曲は必ず桁を書く（encodeSongCode の短縮形は初版のときだけ）。
+  //
+  // !!! code を持つので、この定義より後ろに code 付きの項目を足さないこと !!!
+  { key: 'generatorVersion', group: 'compose', label: 'param.generatorVersion', type: 'choice', apply: 'next', ui: false, code: 'gv',
+    def: '2',
+    options: [['1', 'opt.gv.1'], ['2', 'opt.gv.2']] },
+];
+
+/** 画面に出すパラメータだけを返す。UI はこれだけを描く。 */
+function visibleParams() {
+  return PARAM_DEFS.filter((d) => d.ui === true);
+}
+
+function coerce(def, raw) {
+  if (def.type === 'toggle') {
+    return raw === true || raw === 1 || raw === '1' || raw === 'true';
+  }
+  if (def.type === 'choice') {
+    const v = String(raw);
+    return def.options.some(([o]) => o === v) ? v : def.def;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return def.def;
+  return Math.min(def.max, Math.max(def.min, n));
+}
+
+function normalizeSettings(obj) {
+  const src = obj ?? {};
+  const out = {};
+  for (const d of PARAM_DEFS) {
+    out[d.key] = d.key in src ? coerce(d, src[d.key]) : d.def;
+  }
+  if (out.tempoMax < out.tempoMin) {
+    [out.tempoMin, out.tempoMax] = [out.tempoMax, out.tempoMin];
+  }
+  return out;
+}
+
+/**
+ * 画面の選択（雰囲気・テンポ）を、compose.js が読む内部キーへ展開する。
+ * 再生系に渡す前に必ずこれを通すこと。
+ */
+function resolveSettings(obj) {
+  const s = normalizeSettings(obj);
+  return { ...s, ...MOOD_MAP[s.mood], ...TEMPO_MAP[s.tempoFeel] };
+}
+
+function defaultSettings() {
+  return normalizeSettings({});
+}
+
+/**
+ * 曲コード。URL のハッシュに載せるので、短さがそのまま使い勝手になる。
+ *
+ * 形式は `<シード>` または `<シード>.<選択肢の添字を1文字ずつ>`。
+ * 添字は PARAM_DEFS で code を持つ選択肢パラメータの並び順で、36進数1桁。
+ * すべて既定値のときは添字ごと省く（共有される曲の大半がこれに当たる）。
+ *
+ *   既定のまま      #k3f9zq
+ *   雰囲気と楽器を変更  #k3f9zq.204
+ *
+ * !!! 位置で意味が決まるので、code を持つパラメータを途中に挿入しないこと !!!
+ * 追加するときは必ず末尾に足す（古い URL の添字がずれる）。
+ */
+// 桁が足りない曲コードが指す版。初版の曲コードには gv の桁が無い。
+const LEGACY_VERSION = '1';
+
+const CODE_DEFS = () => PARAM_DEFS.filter((d) => d.code && d.type === 'choice');
+
+function optionIndex(def, value) {
+  const i = def.options.findIndex(([o]) => o === String(value));
+  return i < 0 ? def.options.findIndex(([o]) => o === def.def) : i;
+}
+
+function composeParamKeys() {
+  return CODE_DEFS().map((d) => d.key);
+}
+
+function encodeSongCode(seed, settings) {
+  const s = normalizeSettings(settings);
+  const defs = CODE_DEFS();
+  const digits = defs.map((d) => optionIndex(d, s[d.key]));
+  // 全部が既定値なら添字を書かない。いちばん短い形にする。
+  // ただし「既定値」の基準は**初版**の値。桁の無いコードは初版として解かれるので、
+  // 版2の曲で桁を省くと、自分の曲コードが別の曲を指すことになる。
+  const shortDef = (d) => (d.key === 'generatorVersion' ? LEGACY_VERSION : d.def);
+  if (digits.every((v, i) => v === optionIndex(defs[i], shortDef(defs[i])))) return String(seed);
+  return `${seed}.${digits.map((v) => v.toString(36)).join('')}`;
+}
+
+/**
+ * 曲コードを解く。古い形式（`s=...&md=...`）も読めるようにしてある。
+ * 共有済みの URL を壊さないため。
+ */
+function decodeSongCode(str) {
+  const text = String(str ?? '').replace(/^#/, '').trim();
+
+  // --- 旧形式 ---
+  if (text.includes('=')) {
+    const map = new Map();
+    for (const kv of text.split('&')) {
+      const i = kv.indexOf('=');
+      if (i <= 0) continue;
+      map.set(kv.slice(0, i), kv.slice(i + 1));
+    }
+    const raw = {};
+    for (const d of PARAM_DEFS) {
+      if (d.code && map.has(d.code)) raw[d.key] = map.get(d.code);
+    }
+    const old = map.get('s');
+    // 旧形式のコードは、生成器が1つしか無かった時代のもの。
+    if (!('generatorVersion' in raw)) raw.generatorVersion = LEGACY_VERSION;
+    return {
+      seed: old && /^[0-9a-z]+$/i.test(old) ? old : null,
+      settings: normalizeSettings(raw),
+    };
+  }
+
+  // --- 現行形式 ---
+  const dot = text.indexOf('.');
+  const seed = dot < 0 ? text : text.slice(0, dot);
+  const digits = dot < 0 ? '' : text.slice(dot + 1);
+  const raw = {};
+  CODE_DEFS().forEach((d, i) => {
+    const ch = digits[i];
+    if (ch === undefined) {
+      // 桁が無い＝その項目がまだ無かった時代のコード。生成器の版だけは
+      // 既定値（＝最新）ではなく初版に倒す。共有済みの URL を守るため。
+      if (d.key === 'generatorVersion') raw[d.key] = LEGACY_VERSION;
+      return;
+    }
+    const n = parseInt(ch, 36);
+    if (Number.isFinite(n) && n >= 0 && n < d.options.length) raw[d.key] = d.options[n][0];
+  });
+  return {
+    seed: seed && /^[0-9a-z]+$/i.test(seed) ? seed : null,
+    settings: normalizeSettings(raw),
+  };
+}
+
+// --- exports ---
+exports.visibleParams = visibleParams;
+exports.coerce = coerce;
+exports.normalizeSettings = normalizeSettings;
+exports.resolveSettings = resolveSettings;
+exports.defaultSettings = defaultSettings;
+exports.composeParamKeys = composeParamKeys;
+exports.encodeSongCode = encodeSongCode;
+exports.decodeSongCode = decodeSongCode;
+exports.GROUP_LABELS = GROUP_LABELS;
+exports.PARAM_DEFS = PARAM_DEFS;
+exports.LEGACY_VERSION = LEGACY_VERSION;
+};
+
+// ===== src/elegyPlayer.js =====
+__mods["elegyPlayer.js"] = function (exports, require) {
+// 「別れ」のページの入口。楽譜を描き、押されたら鳴らす。
+// ここは out/elegy.html からのみ使う（本体のアプリとは別）。
+const { createEngine } = require('synth.js');
+const { buildPerformance } = require('perform.js');
+const { renderScore } = require('notation.js');
+const { defaultSettings } = require('settings.js');
+
+const song = JSON.parse(document.getElementById('song').textContent);
+const settings = {
+  ...defaultSettings(), instrument: 'piano', reverbAmount: 55, brightness: 38,
+};
+
+try {
+  document.getElementById('score').innerHTML = renderScore(song, settings).svg;
+} catch (err) {
+  console.warn('楽譜を描けなかった', err);
+}
+
+let ctx = null;
+let engine = null;
+let busy = false;
+const btn = document.getElementById('play');
+
+btn.addEventListener('click', async () => {
+  if (busy) return;
+  busy = true;
+  btn.disabled = true;
+  btn.textContent = '再生中';
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  if (!engine) engine = createEngine(ctx, settings);
+  const { events, durationSec } = buildPerformance(song, settings);
+  const t0 = ctx.currentTime + 0.3;
+  for (const e of events) {
+    if (e.kind === 'pad') engine.playPad(t0 + e.at, e.midis, e.dur, e.vel);
+    else engine.playNote(t0 + e.at, e.midi, e.dur, e.vel, e.layer);
+  }
+  window.setTimeout(() => {
+    busy = false;
+    btn.disabled = false;
+    btn.textContent = 'もう一度';
+  }, (durationSec + 1.5) * 1000);
+});
+};
+
+// --- 起動 ---
+__req("main.js");
+})();
+</script>
+</html>
