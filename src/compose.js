@@ -2024,8 +2024,16 @@ export function composeSong(seed, data, settings) {
           // 頭の音を落とし、その長さを次の音の前の余白にする（前から伸びてくる形）
           cells[b] = cell.slice(1);
         } else {
-          // 頭の音を半拍〜1拍うしろへずらす
-          const shift = cell[1].beat - cell[0].beat >= 1 ? 1 : 0.5;
+          // 頭の音をうしろへずらす。
+          //
+          // !!! ずらす幅は、次の音との隙間より必ず小さくすること !!!
+          // ここを「隙間が1拍以上なら1拍」と書いていたら、隙間がちょうど1拍の
+          // ときに次の音と**同じ位置**へ移動し、旋律の音が2つ同時に鳴っていた。
+          // 全音でぶつかった2音が重なれば当然濁る。実際に耳で「不協和音」と
+          // 指摘されたのはこれ。
+          const gap = cell[1].beat - cell[0].beat;
+          const shift = gap > 1 ? 1 : (gap > 0.5 ? 0.5 : 0);
+          if (shift === 0) continue;
           cells[b] = [{ beat: cell[0].beat + shift, dur: Math.max(0.25, cell[0].dur - shift) },
             ...cell.slice(1)];
         }

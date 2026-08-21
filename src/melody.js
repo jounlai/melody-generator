@@ -232,21 +232,52 @@ export function composePhrase(spec) {
     for (let i = 0; i < degs.length; i += 1) {
       const cellNote = cell[i];
       if (!cellNote) continue;
-      // 長い音（1.5拍以上）と、小節線をまたぐ音の両方を見る。
-      // またぐ音は短くても次の和音の上で鳴り続けるので、そこで濁る。
+      // 非和声音を許す長さの上限。
+      //
+      // 1.5拍以上だけを見ていたら、1拍まるごと鳴る非和声音が素通りしていた
+      // （実例: IV 和音の上で G が拍2から1拍、A# が拍0.5から1.5拍）。
+      // 1拍あれば耳ははっきり「外れた音」と聴く。通過音として流せるのは
+      // 半拍までなので、そこを境にする。
+      //
+      // またぐ音は短くても次の和音の上で鳴り続けるので、長さに関わらず見る。
       const crossesBar = cellNote.beat + cellNote.dur > 4;
-      if (cellNote.dur < 1.5 && !crossesBar) continue;
+      if (cellNote.dur < 1 && !crossesBar) continue;
       if (isChordTone(degs[i], mode, chords[b])) {
         // この小節には乗っている。またぐ先も見る。
         const nextChord = chords[b + 1];
         if (!crossesBar || !nextChord || isChordTone(degs[i], mode, nextChord)) continue;
       }
+      // 順次で解決するなら掛留として許す……が、それは**掛留を置くと決めた小節**
+      // だけにする。
+      //
+      // どこでも許していたら、1.5拍の非和声音が「解決するから」で素通りして
+      // いた（実例: IV 和音の上で A# が 1.5拍、G が強拍で1拍）。分類としては
+      // 掛留でも、それだけ長く保持すると解決より濁りのほうが主役になる。
+      // 掛留は1セクションに数か所、陰りの和音の上でだけ効かせる。
       const nx = degs[i + 1];
       const resolves = nx !== undefined && Math.abs(nx - degs[i]) === 1
         && isChordTone(nx, mode, chords[b]);
-      if (resolves) continue;
+      if (resolves && suspendBars.has(b)) continue;
       degs[i] = nearestChordTone(degs[i], mode, chords[b], lo, hi,
         crossesBar ? chords[b + 1] : null);
+    }
+
+    // 3.7 同音の連続を散らす。
+    //
+    // 非和声音を和声音へ寄せる工程は、寄せ先が同じ音になりやすい。実際に
+    // G# G# G# G# と潰れた小節が出て、同音の連続が 20.5% まで増えた
+    // （版1は 4.9%）。動きの無い線は、濁っていなくても旋律に聴こえない。
+    //
+    // 続いた2つ目を、隣の和声音（無ければ隣の音階音）へずらす。
+    // 意図して置いた同音連打（1回だけの繰り返し）は残す。
+    for (let i = 2; i < degs.length; i += 1) {
+      if (degs[i] !== degs[i - 1] || degs[i - 1] !== degs[i - 2]) continue;
+      const tones = chordToneDegrees(chords[b], mode, lo, hi)
+        .filter((d) => d !== degs[i])
+        .sort((x, y) => Math.abs(x - degs[i]) - Math.abs(y - degs[i]));
+      if (tones.length > 0) degs[i] = tones[0];
+      else if (degs[i] + 1 <= hi) degs[i] += 1;
+      else if (degs[i] - 1 >= lo) degs[i] -= 1;
     }
 
     for (let i = 0; i < cell.length; i += 1) {
