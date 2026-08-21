@@ -717,6 +717,19 @@ export function fragmentCandidates(melodies, ctx) {
  * 舞い上がりを終止より先に掛けるのは、クライマックスの1スロットだけの話だから。
  * そこで最優先なのは「どう頂点へ届いたか」で、終止音の好みはその次でいい。
  */
+/**
+ * 断片が全体としてどちらへ進むか。最初の音と最後の音の差の符号。
+ *
+ * Huron の言う「方向の慣性」——旋律は方向転換より、同じ方向へ進み続けるほうが
+ * 多い——は、断片の中では守られていても、断片の**継ぎ目**で崩れる。実測では
+ * 同方向へ進み続ける割合が 41.4% しかなく、研究が言う 50%超 を下回っていた。
+ * 2小節ごとに向きが変わると、線が長く伸びずにジグザグして聴こえる。
+ */
+function fragmentDirection(m) {
+  const d = (m?.endDeg ?? 0) - (m?.startDeg ?? 0);
+  return Math.sign(d);
+}
+
 function narrowCandidates(candidates, ctx) {
   let out = candidates;
   // 絞り込みの下限。割り込むなら絞らない。既に下限を下回っているときは、
@@ -739,6 +752,12 @@ function narrowCandidates(candidates, ctx) {
   }
   // 曲の出だしだけは、拍0から鳴り出す断片を採る。
   // 弱起の断片で始まると、聴き手はどこが1拍目か掴めないまま曲に入ることになる。
+  // 方向の慣性。前の断片が進んでいた向きへ、続けて進む断片を優先する。
+  // 対比を作る b の役割と、下降で締める A'' は除く（そこは向きを変えるのが仕事）。
+  if (ctx.keepDirection) {
+    const same = out.filter((m) => fragmentDirection(m) === ctx.keepDirection);
+    out = take(same);
+  }
   // 曲の出だしと頂点の形だけは下限を掛けない。1曲に1スロットしか無く、
   // そこで妥協すると「どこが1拍目か」「そこで初めて届いた」が消える。
   if (ctx.preferDownbeat) {
@@ -1082,6 +1101,123 @@ function cadenceRank(endDeg, tiers) {
  *
  * @returns {{offset:number, fragment:object}|null}
  */
+// ---------------------------------------------------------------------------
+// 動機の変形
+//
+// Margulis『On Repeat』が言うとおり、反復こそが音楽を音楽にする。実際の歌は
+// ひとつの動機を展開して1曲を作るが、この生成系は実測で1曲16スロットのうち
+// 10.1個を「その場でカタログから引いた別の着想」で埋めていた。無関係な断片を
+// 10個並べたものは、1つ1つがどれだけ整っていても旋律として記憶に残らない。
+//
+// そこで移調（既にある）に加えて、動機を「同じものの変形」と聴かせられる
+// 手立てを増やす。どれも古典的な動機労作の技法で、耳は変形されても元の形を
+// 追える。
+//
+//   反転      上行と下行を入れ替える。輪郭は鏡像だが動きの量は同じ
+//   拡大      音価を2倍にして半分の音数にする。ゆっくり歌い直す
+//   断片化    前半1小節だけを取り、それを繰り返す
+//
+// リズムを保つ変形（反転）がいちばん元の形に近く聴こえるので優先し、
+// 拡大・断片化はそれで乗らないときに使う。
+// ---------------------------------------------------------------------------
+
+/** 上行と下行を入れ替える。最初の音を軸にした鏡像。リズムはそのまま。 */
+export function invertFragment(fragment) {
+  const src = Array.isArray(fragment?.notes) ? fragment.notes : [];
+  if (src.length < 2) return null;
+  const base = src[0].deg;
+  const notes = src.map((n) => ({ ...n, deg: base - (n.deg - base) }));
+  if (notes.some((n) => n.deg < DEG_MIN || n.deg > DEG_MAX)) return null;
+  return reshape(fragment, notes, 'inv');
+}
+
+/** 音価を2倍に。入りきらない音は落とすので、ゆっくり歌い直した形になる。 */
+export function augmentFragment(fragment) {
+  const src = Array.isArray(fragment?.notes) ? fragment.notes : [];
+  if (src.length < 3) return null;
+  const notes = [];
+  for (const n of src) {
+    const beat = n.beat * 2;
+    if (beat >= 8) break;
+    notes.push({ ...n, beat, dur: Math.min(n.dur * 2, 8 - beat) });
+  }
+  if (notes.length < 2) return null;
+  return reshape(fragment, notes, 'aug');
+}
+
+/** 前半1小節だけを取り、後半でもう一度鳴らす。動機を畳みかける形。 */
+export function fragmentFragment(fragment) {
+  const src = Array.isArray(fragment?.notes) ? fragment.notes : [];
+  const head = src.filter((n) => n.beat < 4);
+  if (head.length < 2) return null;
+  const notes = [...head.map((n) => ({ ...n })), ...head.map((n) => ({ ...n, beat: n.beat + 4 }))];
+  return reshape(fragment, notes, 'frag');
+}
+
+/** 変形後の音符列から、選択に要る指標を計算し直す。 */
+// 反転すると輪郭は鏡像になる。ラベルを元のままにしておくと、対比を作る b の
+// 絞り込み（avoidContour）が「違う輪郭」だと誤認する。上行と下行は入れ替わり、
+// 山なりは谷になるので、語彙に無い形は wave（起伏あり）へ倒す。
+const INVERTED_CONTOUR = {
+  ascend: 'descend', descend: 'ascend', arch: 'wave', wave: 'wave',
+  answer: 'question', question: 'answer',
+};
+
+function reshape(fragment, notes, tag) {
+  const degs = notes.map((n) => n.deg);
+  const peakDeg = Math.max(...degs);
+  const lo = Math.min(...degs);
+  const peakNote = notes.find((n) => n.deg === peakDeg);
+  const tags = (fragment.tags ?? []).filter((t) => {
+    if (t === PENTATONIC_TAG.major) return degs.every((d) => ![4, 7].includes(scaleDegreeOf(d)));
+    if (t === PENTATONIC_TAG.minor) return degs.every((d) => ![2, 6].includes(scaleDegreeOf(d)));
+    return true;
+  });
+  return {
+    ...fragment,
+    contour: tag === 'inv'
+      ? (INVERTED_CONTOUR[fragment.contour] ?? 'wave')
+      : fragment.contour,
+    id: `${fragment.id}~${tag}`,
+    notes,
+    startDeg: notes[0].deg,
+    endDeg: notes[notes.length - 1].deg,
+    range: [lo, peakDeg],
+    span: peakDeg - lo,
+    peakDeg,
+    peakBeat: peakNote ? peakNote.beat : 0,
+    peakCount: degs.filter((d) => d === peakDeg).length,
+    tags,
+    fit: { major: [[], []], minor: [[], []] },
+    sus: { major: [[], []], minor: [[], []] },
+  };
+}
+
+// 変形の優先順。元の形にいちばん近いものから試す。
+const VARIANTS = [
+  { tag: 'same', make: (f) => f },
+  { tag: 'inv', make: invertFragment },
+  { tag: 'frag', make: fragmentFragment },
+  { tag: 'aug', make: augmentFragment },
+];
+
+/**
+ * 動機を変形しながら、このスロットの和音に乗る形を探す。
+ * 変形なし（移調だけ）で乗るならそれを使う。乗らないときだけ変形へ広げる。
+ */
+export function deriveVariant(motif, ctx, opts = {}) {
+  const order = opts.variants
+    ? opts.variants.map((t) => VARIANTS.find((v) => v.tag === t)).filter(Boolean)
+    : VARIANTS;
+  for (const v of order) {
+    const shaped = v.make(motif);
+    if (!shaped) continue;
+    const got = deriveFragment(shaped, ctx, opts);
+    if (got) return { ...got, variant: v.tag };
+  }
+  return null;
+}
+
 export function deriveFragment(anchor, ctx, opts = {}) {
   if (!anchor || !Array.isArray(anchor.notes) || anchor.notes.length === 0) return null;
   const offsets = opts.offsets ?? PHRASE_OFFSETS;
@@ -1489,8 +1625,11 @@ export function composeSong(seed, data, settings) {
   const chordPlan = [];    // 小節ごとの和音記号。配置と発音は全セクションを組んだあとにやる
   const melody = [];
   const motif = [];        // A で選ばれた断片（再登場のコピー元）
+  // 曲全体の動機。A の1スロット目で決まり、以降のスロットはこれの変形で埋める。
+  let songMotif = null;
   const breathSlots = [];  // 息継ぎを置ける「A / A' のフレーズ末スロット」
   let prevEndDeg = null;   // 直前の断片の終わりの音。曲の最初だけ null
+  let prevDirection = 0;   // 直前の断片が進んでいた向き（方向の慣性に使う）
 
   for (let s = 0; s < SECTION_PLAN.length; s++) {
     const plan = SECTION_PLAN[s];
@@ -1556,6 +1695,9 @@ export function composeSong(seed, data, settings) {
         chordAIdx: chordIndex(mode, chordA),
         chordBIdx: chordIndex(mode, chordB),
         prevEndDeg,
+        // 前の断片が進んでいた向き。b（対比が仕事）と A''（下降で締める）では
+        // 継がせない。それ以外は継いで、線を2小節で切らずに伸ばす。
+        keepDirection: (role.name === 'b' || s === 3) ? 0 : prevDirection,
         tension: curve.tension,
         maxPeak,
         minPeak: curve.minPeak,
@@ -1637,7 +1779,24 @@ export function composeSong(seed, data, settings) {
             { ...opts, offsets: phraseOffsets(s, role.name, true) });
           if (wider && wider.fragment.peakDeg >= ctx.rise) derived = wider;
         }
-        // 3. 移調では乗らないとき。同じリズム型の別の断片で「続き」に聴かせる。
+        // 3. 移調では乗らないとき。
+        //
+        // 従来はここで「同じリズム型の別の断片」(phraseTwin)を引いていたが、
+        // それは結局その場で引いてきた別の着想で、実測でスロットの28%を占めていた。
+        // 先に**この楽節の起点そのものを変形して**乗せられないか試す。
+        // 反転や断片化なら、和音が変わっても同じ動機として聴こえる。
+        if (!derived) {
+          const alt = deriveVariant(anchor, ctx, {
+            offsets: phraseOffsets(s, role.name, true),
+            endDegrees: ctx.endDegrees,
+            rise: ctx.rise,
+            variants: ['inv', 'frag', 'aug'],
+          });
+          if (alt) {
+            derived = alt;
+            source = `shape:${alt.variant}`;
+          }
+        }
         let twin = derived ? null : phraseTwin(anchor, melodies, ctx);
         // 3'. a'' は閉じるための楽節。移調がトニックに着地できないなら、
         //     着地できるリズム一致の断片のほうを採る。ここだけは「同じ音形」より
@@ -1661,12 +1820,39 @@ export function composeSong(seed, data, settings) {
           fragment = derived.fragment;
           derivedFrom = role.anchor;
           offset = derived.offset;
-          source = 'transpose';
+          if (!source.startsWith('shape:')) source = 'transpose';
           if (role.name === "a'") phraseOffset[role.anchor] = derived.offset;
         } else if (twin) {
           fragment = twin;
           derivedFrom = role.anchor;
           source = 'rhythm';
+        }
+      }
+
+      // 4.5 曲の動機の変形。
+      //
+      // ここが「一曲一動機」の要。従来はセクションをまたぐと新しい断片を引き直して
+      // いて、実測で1曲16スロットのうち10.1個が無関係な着想だった。実際の歌は
+      // ひとつの動機を展開して1曲を作る（Margulis『On Repeat』）。
+      //
+      // b の役割は対比を作る側なので、輪郭が変わる変形（反転・断片化）から試す。
+      // それ以外は元の形に近い順（そのまま→反転→断片化→拡大）。
+      // クライマックスと曲の1音目だけは除く。頂点は音高の条件が最優先で、
+      // 曲の1音目はそれ自身が動機だから。
+      if (!fragment && songMotif && !isClimax && !(s === 0 && k === 0)) {
+        const variants = role.name === 'b'
+          ? ['inv', 'frag', 'same', 'aug']
+          : ['same', 'inv', 'frag', 'aug'];
+        const got = deriveVariant(songMotif, ctx, {
+          offsets: phraseOffsets(s, role.name === 'b' ? "a'" : role.name, true),
+          endDegrees: ctx.endDegrees,
+          rise: ctx.rise,
+          variants,
+        });
+        if (got) {
+          fragment = got.fragment;
+          offset = got.offset;
+          source = `motif:${got.variant}`;
         }
       }
 
@@ -1677,6 +1863,7 @@ export function composeSong(seed, data, settings) {
       }
       slotFragments[k] = fragment;
       if (s === 0) motif[k] = fragment;
+      if (songMotif === null) songMotif = fragment;
 
       const slotStartBeat = (startBar + 2 * k) * 4;
       const slotTonics = [tonicAtBar(startBar + 2 * k), tonicAtBar(startBar + 2 * k + 1)];
@@ -1693,6 +1880,7 @@ export function composeSong(seed, data, settings) {
         breath: false,
       });
       prevEndDeg = fragment.endDeg;
+      prevDirection = Math.sign((fragment.endDeg ?? 0) - (fragment.startDeg ?? 0));
 
       // 息継ぎを置ける場所を控えておく。実際に置くのは全セクションを組んだあと。
       //  - A / A' のフレーズ末スロット（＝もともと息が切れる場所）
