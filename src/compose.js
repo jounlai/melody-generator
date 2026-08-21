@@ -638,7 +638,12 @@ const FLOWING_TIERS = [
 //
 // 版1は下限1、すなわち「該当があれば必ず採る」で、従来と1ビットも変わらない。
 // 共有済みの曲コードは版1として解かれるので、同じ曲がそのまま鳴る。
-const NARROW_FLOOR = { 1: 1, 2: 48 };
+// 48 まで緩めたら、終止と対比の条件が効かなくなって旋律の形が崩れた。
+// 多様性は材料の側（版2の断片999件）で稼げるようになったので、選び方は締め直す。
+const NARROW_FLOOR = { 1: 1, 2: 16 };
+
+// 版2でテンポの上限を広げる幅。78〜88 の11通りが 78〜118 の41通りになる。
+const V2_TEMPO_SPREAD = 30;
 
 export function narrowFloorFor(version) {
   return NARROW_FLOOR[String(version)] ?? NARROW_FLOOR[1];
@@ -789,13 +794,20 @@ function narrowCandidates(candidates, ctx) {
     const sus = out.filter((m) => hasSus(m, ctx));
     if (sus.length > 0) out = sus;
   }
-  // ペンタトニックは下限を掛けない。「断片が口ずさめるかどうかは、ほぼ
-  // ペンタトニックかどうかで決まる」——ここを多様性と引き換えにすると、
-  // 曲は増えるが歌えなくなる。実測でも下限を掛けるとペンタ率が
-  // 84.9% → 62% まで落ちた。多様性は他の段で稼ぐ。
+  // ペンタトニックの扱いは版で正反対になる。
+  //
+  // 版1（1955年以前のコーパス）では「口ずさめるかどうかはほぼペンタかどうかで
+  // 決まる」ので、下限を掛けずに最優先する。
+  //
+  // 版2は逆。元にした曲（手元の MIDI 347曲）でペンタトニックだった楽節は
+  // 26.9% しかなく、度数4を10.8%・度数7を10.3% 使っている。その2つの度数が
+  // その時代の色そのものなので、ここでペンタを最優先すると、せっかく取った
+  // 語彙を選抜が捨てて童謡の響きへ戻る（実際に「童謡風にしか聴こえない」に
+  // なった）。版2では下限を掛けて、ペンタは「あれば少し寄せる」程度に留める。
   if (ctx.preferPenta) {
     const penta = out.filter((m) => hasPentatonic(m, ctx.mode));
-    if (penta.length > 0) out = penta;
+    if (floor > 1) out = take(penta);
+    else if (penta.length > 0) out = penta;
   }
   // 登り坂の出だしは、天井いっぱいの断片を引かない。
   // ゼクエンツは音形ごと平行移動するので、元が天井に着いていると上へ動かせず、
@@ -1425,7 +1437,15 @@ export function composeSong(seed, data, settings) {
   // ここから下の乱数の消費順は変えない：
   // mode → tempo → tonic → 転調するか → 上げ幅 → P1 → P2 → 各スロット。
   const mode = rng() * 100 < cfg.majorRatio ? 'major' : 'minor';
-  const tempo = randInt(rng, cfg.tempoMin, cfg.tempoMax);
+  // 版2はテンポの幅を広げる。
+  //
+  // 版1は 78〜88 の11通りしかなく、全曲がほぼ同じ速さで鳴っていた。伴奏の型を
+  // いくら増やしても、速さと刻みが同じなら「拍がほぼ一緒」に聴こえる。
+  // 元にした MIDI からは学べない（346曲すべてが既定値の120で、実際の速さが
+  // 入っていない）ので、ポップスのバラードから中速までを覆う幅を手で置く。
+  // 下は設定の tempoMin をそのまま使い、上へ広げる。
+  const tempoSpan = narrowFloor > 1 ? V2_TEMPO_SPREAD : 0;
+  const tempo = randInt(rng, cfg.tempoMin, cfg.tempoMax + tempoSpan);
   const tonicMidi = chooseTonic(rng, cfg.musicKey);
 
   // 転調の抽選。転調しない曲でも上げ幅を必ず引く（曲によって乱数の消費数が変わると、

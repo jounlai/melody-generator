@@ -177,21 +177,61 @@ export const RHYTHMS = [...MOTIF_RHYTHMS, ...FREE_RHYTHMS];
 // 等分でない型は FREE_RHYTHMS_V2 として通しで書き下ろす側に回る。
 // ---------------------------------------------------------------------------
 
-// 前半と後半の音数が等しい型。内部反復とゼクエンツはここから作る。
-const MOTIF_V2_SOURCE = [
-  cell([[0, 1], [1, 0.5], [1.5, 1.5], [3.5, 1], [4.5, 0.5], [5, 1], [6, 1.5], [7.5, 0.5]]), // 食い
-  cell([[0.5, 0.5], [1, 1], [2, 1], [3.5, 1], [4.5, 0.5], [5, 1.5], [6.5, 0.5], [7, 1]]), // 弱起+食い
-  cell([[0, 2], [2, 1], [3.5, 1.5], [5, 1], [6, 1.5], [7.5, 0.5]]), // 白玉+食い
-  cell([[0, 1.5], [1.5, 0.5], [2, 2], [4, 1.5], [5.5, 0.5], [6, 2]]), // 付点+伸ばし
-  cell([[0, 1], [1, 0.5], [1.5, 1], [2.5, 1.5], [4, 1], [5, 0.5], [5.5, 1], [6.5, 1.5]]),
-  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3.5, 1], [4.5, 1.5], [6, 0.5], [6.5, 1], [7.5, 0.5]]), // 食い
-  cell([[0, 0.5], [0.5, 1], [1.5, 1], [2.5, 1.5], [4, 0.5], [4.5, 1], [5.5, 1], [6.5, 1.5]]),
-  cell([[0, 2], [2, 1.5], [3.5, 1], [4.5, 2], [6.5, 1], [7.5, 0.5]]), // 白玉+食い
-  cell([[0.5, 1], [1.5, 1], [2.5, 0.5], [3.5, 1.5], [5, 1], [6, 1], [7, 0.5], [7.5, 0.5]]), // 弱起+食い
-  cell([[0, 1], [1, 1], [2, 1.5], [3.5, 1.5], [5, 1], [6, 1], [7, 0.5], [7.5, 0.5]]), // 食い
-  cell([[0, 0.5], [0.5, 1.5], [2, 1], [3, 1], [4, 0.5], [4.5, 1.5], [6, 1], [7, 1]]),
-  cell([[0, 1.5], [1.5, 1], [2.5, 1], [3.5, 1], [4.5, 1.5], [6, 1], [7, 0.5], [7.5, 0.5]]), // 食い
+// 1小節ぶんの形。mirror で後半へそのまま写す。
+//
+// !!! ここを通しの2小節で書いてはいけない !!!
+// 一度それをやって「メロディに聴こえない、音符の羅列だ」という結果になった。
+// 実測では隣り合う小節のリズムが一致する率が 43.6%（版1）から 9.6% まで落ちていた。
+// 同じ形が返ってくることが旋律を旋律にしているので、モチーフ側は必ず mirror で作る。
+//
+// 食いを持つ型は、1小節目の最後の音が小節線をまたぐ形で書く。写した後半の
+// 最後の音は2小節目からはみ出すので、mirrorClamped が末尾だけ詰める
+// （打点の並びは前後半で完全に一致したまま残る）。
+const MOTIF_V2_BARS = [
+  cell([[0, 1], [1, 0.5], [1.5, 1.5], [3, 1]]),
+  cell([[0, 1.5], [1.5, 0.5], [2, 2]]), // 付点＋伸ばし
+  cell([[0, 1], [1, 1.5], [2.5, 0.5], [3, 1]]),
+  cell([[0, 2], [2, 0.5], [2.5, 0.5], [3, 1]]), // 白玉
+  cell([[0, 0.5], [0.5, 0.5], [1, 1], [2, 2]]), // 同音連打からの伸ばし
+  cell([[0, 1], [1, 1], [2, 1.5], [3.5, 0.5]]),
+  cell([[0, 1.5], [1.5, 1], [2.5, 0.5], [3, 1]]),
+  cell([[0, 1], [2, 0.5], [2.5, 1.5]]), // 休符
+  cell([[0, 0.5], [0.5, 1.5], [2, 1], [3, 1]]),
+  cell([[0.5, 0.5], [1, 1.5], [2.5, 0.5], [3, 1]]), // 弱起
+  cell([[0, 2], [2, 1], [3, 0.5], [3.5, 0.5]]), // 白玉
+  cell([[0, 1], [1, 0.5], [1.5, 0.5], [2, 2]]),
+  cell([[0, 1.5], [1.5, 0.5], [2, 1], [3, 1]]),
+  cell([[0, 0.5], [0.5, 1], [1.5, 0.5], [2, 2]]),
+  cell([[0.5, 1], [1.5, 0.5], [2, 2]]), // 弱起＋伸ばし
+  cell([[0, 1], [1, 1], [2, 0.5], [2.5, 1.5]]),
+
+  // --- 16分を含む1小節。反復の側にも置かないと16分が曲に出てこない ---
+  // 通し型にだけ置いたら、モチーフ率0.85 に引かれて実測 1.7% しか鳴らなかった。
+  cell([[0, 0.75], [0.75, 0.25], [1, 1], [2, 2]]),
+  cell([[0, 1], [1, 0.75], [1.75, 0.25], [2, 2]]),
+  cell([[0, 0.5], [0.5, 0.25], [0.75, 0.25], [1, 1], [2, 2]]),
+  cell([[0, 1.5], [1.5, 0.25], [1.75, 0.25], [2, 2]]),
+  cell([[0, 2], [2, 0.75], [2.75, 0.25], [3, 1]]),
+  cell([[0, 1], [1, 1], [2, 0.75], [2.75, 0.25], [3, 1]]),
+  cell([[0, 0.75], [0.75, 0.25], [1, 1.5], [2.5, 0.5], [3, 1]]),
 ];
+
+// 後半へ写す。モチーフ側の1小節は必ず4拍以内で閉じるので、実際には詰めは起きない
+// （表を足したときの保険として残す）。
+//
+// !!! モチーフ側に食い（小節線をまたぐ音）を書いてはいけない !!!
+// 1小節目の最後を 3.5拍から 4.5拍まで伸ばすと、写した後半の頭（4.0拍）と音が重なる。
+// 食いは「頭の音が半拍早く出る」ものなので、頭と食いの両方は鳴らない。
+// 食いは通し型（FREE_V2_SOURCE）の側だけで書く。
+function mirrorClamped(bar) {
+  const out = mirror(bar);
+  const last = out[out.length - 1];
+  const over = last.b + last.d - 2 * BAR;
+  if (over > 0) last.d -= over;
+  return out;
+}
+
+const MOTIF_V2_SOURCE = MOTIF_V2_BARS.map(mirrorClamped);
 
 // 通しで書き下ろす型。前半と後半で音数が違ってよい。
 const FREE_V2_SOURCE = [
@@ -227,6 +267,20 @@ const FREE_V2_SOURCE = [
   cell([[0, 0.5], [0.5, 1.5], [2, 1], [3.5, 1.5], [5, 1], [6, 1.5], [7.5, 0.5]]), // 食い
   cell([[0, 1], [1, 1.5], [2.5, 0.5], [3, 1], [4, 1.5], [5.5, 0.5], [6, 1], [7, 1]]),
   cell([[0.5, 0.5], [1, 1], [2, 1.5], [3.5, 1], [4.5, 1.5], [6, 1], [7, 1]]), // 弱起+食い
+
+  // --- 16分の裏を持つ型 ---
+  //
+  // 90年代以降の J-POP は16分が土台にある。8分の格子だけで書くと、どれだけ
+  // 型を増やしても「拍がほぼ一緒」に聴こえる（実測: こちらの打点は表64.4% /
+  // 8分裏35.6% / 16分裏 0.0%）。16分は装飾なので、1型あたり2〜3音までに留める。
+  cell([[0, 1], [1, 0.75], [1.75, 0.25], [2, 1], [3, 1], [4, 1.5], [5.5, 0.5], [6, 2]]),
+  cell([[0, 0.5], [0.5, 0.25], [0.75, 0.25], [1, 1], [2, 2], [4, 1], [5, 0.5], [5.5, 2.5]]),
+  cell([[0, 1.5], [1.5, 0.25], [1.75, 0.25], [2, 1], [3, 1], [4, 2], [6, 2]]),
+  cell([[0, 1], [1, 1], [2, 0.75], [2.75, 0.25], [3.5, 1.5], [5, 1], [6, 2]]), // 食い
+  cell([[0.75, 0.25], [1, 1], [2, 0.75], [2.75, 0.25], [3, 1], [4, 1.5], [5.5, 0.5], [6, 2]]),
+  cell([[0, 0.75], [0.75, 0.25], [1, 1.5], [2.5, 0.5], [3.5, 1.5], [5, 1], [6, 2]]), // 食い
+  cell([[0, 1], [1, 0.5], [1.5, 0.25], [1.75, 0.25], [2, 2], [4, 1], [5, 1], [6, 2]]),
+  cell([[0, 1.5], [1.5, 0.5], [2, 0.75], [2.75, 0.25], [3, 1], [4, 0.75], [4.75, 0.25], [5, 3]]),
 ];
 
 // 前半と後半の音数が等しいかで振り分ける。手で分類すると必ずずれるので機械で。
@@ -251,8 +305,18 @@ export const MOTIF_RATE = 0.65;
 export function pickRhythm(rng, tables = null) {
   const motif = tables?.motif ?? MOTIF_RHYTHMS;
   const free = tables?.free ?? FREE_RHYTHMS;
-  return rng() < MOTIF_RATE ? pick(rng, motif) : pick(rng, free);
+  const rate = tables?.motifRate ?? MOTIF_RATE;
+  return rng() < rate ? pick(rng, motif) : pick(rng, free);
 }
+
+// 版2でモチーフ型を引く割合。
+//
+// 版1のカタログは 70.3% の断片が前後半で同じ打点を持つ。版2を 0.65 のまま
+// 焼いたら 38.1% にしかならず、「メロディに聴こえない、音符の羅列だ」という
+// 結果になった。同じ形が返ってくることが旋律を旋律にしている。
+// 版2は通し型の割合が版1より多い（食いをそちらに寄せたため）ので、
+// 引く側の割合で埋め合わせる。
+export const MOTIF_RATE_V2 = 0.85;
 
 // ---------------------------------------------------------------------------
 // 旋律型ライブラリ(コーパス由来)
@@ -296,6 +360,30 @@ const LEAP_FORMULAS = [
 export const CORPUS_FORMULAS = PATTERNS.formulas.map(toFormula);
 export const FORMULAS = [...CORPUS_FORMULAS, ...LEAP_FORMULAS.map(toFormula)];
 
+// ---------------------------------------------------------------------------
+// 版2の旋律型 — 手元の MIDI から取った統計
+//
+// tools/extractFromMidi.js が作る。入力の MIDI は git 管理外で、ここに入るのは
+// 音程差の並びの出現頻度だけ（6音まで）。曲は復元できない。
+//
+// 既存コーパス（1955年以前の名旋律125曲）との違いがそのまま版2の狙い:
+//   同音連打からの動き [0,0,1] [0,0,-1] が上位に来る。コーパスでは同音が3.0%
+//   しかなく、J-POP の節回しの核が語彙に無かった。
+//
+// リズム細胞は**使わない**。上位が [0.25,0.25]（16分の等分割）で、これを
+// 取り込むと音価が均一化する。既存コーパスの rhythmCells を使わないのと同じ理由。
+// 取り込むのは音程の語彙だけで、リズムは RHYTHMS_V2 に手で書いてある。
+const MIDI_PATTERNS = JSON.parse(
+  readFileSync(resolve(HERE, 'data/midiPatterns.json'), 'utf8'),
+);
+export const MIDI_FORMULAS = [
+  ...MIDI_PATTERNS.formulas.map(toFormula),
+  // 跳躍上行から順次で埋め戻す形は、抽出の「きれいな楽節」の条件（跳躍15%以下）
+  // で落ちやすい。泣ける断片の中核なので、版1と同じ手書きの型を足す。
+  ...LEAP_FORMULAS.map(toFormula),
+];
+export const MIDI_CADENCES = MIDI_PATTERNS.cadences.map(toFormula);
+
 // フレーズを閉じるための型。2小節目を「着地」で終える経路で使う。
 // コーパスの終止形は下降で着地する形が支配的で、これが「閉じた」感じを作る。
 export const CADENCES = PATTERNS.cadences.map(toFormula);
@@ -306,13 +394,26 @@ export const CADENCES = PATTERNS.cadences.map(toFormula);
 export const SOARS = (PATTERNS.soars ?? []).map(toFormula);
 
 // 長さ別の索引。層化抽選のために先に作っておく。
-const BY_LEN = new Map();
-for (const f of FORMULAS) {
-  if (!BY_LEN.has(f.len)) BY_LEN.set(f.len, []);
-  BY_LEN.get(f.len).push(f);
+function indexByLen(list) {
+  const map = new Map();
+  for (const f of list) {
+    if (!map.has(f.len)) map.set(f.len, []);
+    map.get(f.len).push(f);
+  }
+  const lengths = [...map.keys()].sort((a, b) => a - b);
+  return { map, lengths, min: lengths[0] };
 }
-export const FORMULA_LENGTHS = [...BY_LEN.keys()].sort((a, b) => a - b);
-const MIN_FORMULA_LEN = FORMULA_LENGTHS[0];
+
+const V1_INDEX = indexByLen(FORMULAS);
+const V2_INDEX = indexByLen(MIDI_FORMULAS);
+const BY_LEN = V1_INDEX.map;
+export const FORMULA_LENGTHS = V1_INDEX.lengths;
+const MIN_FORMULA_LEN = V1_INDEX.min;
+
+/** 版に応じた旋律型の索引。tables に formulas を積んで渡す。 */
+function formulaIndex(tables) {
+  return tables?.formulas === 'v2' ? V2_INDEX : V1_INDEX;
+}
 
 // 度数列にコーパスの型が(相対形で)含まれるかを判定するための索引。
 const CORPUS_KEYS = new Set(CORPUS_FORMULAS.map((f) => f.id));
@@ -341,13 +442,13 @@ const EXACT_BIAS = 3;
  * - 残りが3音以上になる長さ: 次も型で埋められる
  * どちらも無ければ null(呼び出し側が最短の型を途中で切って埋める)。
  */
-function pickLength(rng, room) {
+function pickLength(rng, room, idx = V1_INDEX) {
   const exact = [];
   const chain = [];
-  for (const len of FORMULA_LENGTHS) {
+  for (const len of idx.lengths) {
     if (len > room) break;
     if (len === room) exact.push(len);
-    else if (room - len + 1 >= MIN_FORMULA_LEN) chain.push(len);
+    else if (room - len + 1 >= idx.min) chain.push(len);
   }
   if (exact.length === 0 && chain.length === 0) return null;
 
@@ -385,9 +486,10 @@ function weightedPick(rng, list, allow) {
  * 全部弾いてしまうときだけ順に外す(候補ゼロで生成が止まるほうが害が大きい)。
  * 乱数の消費は pickLength の1回 + weightedPick の1回で固定。
  */
-function drawFormula(rng, room, state) {
-  const len = pickLength(rng, room);
-  const bucket = BY_LEN.get(len ?? MIN_FORMULA_LEN);
+function drawFormula(rng, room, state, tables) {
+  const idx = formulaIndex(tables);
+  const len = pickLength(rng, room, idx);
+  const bucket = idx.map.get(len ?? idx.min);
   const fresh = (f) => !state.used.has(f.id);
   const rising = (f) => f.fall > -3;
 
@@ -406,14 +508,14 @@ export function newDrawState() {
  * 型を継ぎ足すときは前の型の終点を次の型の起点として共有する。
  * 返り値の used は採用した型の id(統計とテスト用)。
  */
-export function formulaLine(rng, n, state = newDrawState()) {
+export function formulaLine(rng, n, state = newDrawState(), tables = null) {
   const rel = [0];
   const used = [];
   let guard = 0;
 
   while (rel.length < n && guard++ < 6) {
     const room = n - rel.length + 1; // 起点を共有するぶん +1
-    const f = drawFormula(rng, room, state);
+    const f = drawFormula(rng, room, state, tables);
     used.push(f.id);
     state.used.add(f.id);
     // 長い下降形を1つ使ったら、この断片ではもう引かない。
@@ -438,9 +540,11 @@ export function formulaLine(rng, n, state = newDrawState()) {
  * 音数が足りなければ頭を削り、余るぶんは手前を旋律型で埋める。
  * 下降形の連続禁止はここには効かせない(終止形は下降で着地するのが本来の姿)。
  */
-export function cadenceLine(rng, n, state = newDrawState()) {
-  const cad = weightedPick(rng, CADENCES, (f) => !state.used.has(f.id))
-    ?? weightedPick(rng, CADENCES, () => true);
+export function cadenceLine(rng, n, state = newDrawState(), tables = null) {
+  // 終止形も版で分ける。閉じ方はその時代の語法がいちばん出るところ。
+  const cadences = tables?.formulas === 'v2' ? MIDI_CADENCES : CADENCES;
+  const cad = weightedPick(rng, cadences, (f) => !state.used.has(f.id))
+    ?? weightedPick(rng, cadences, () => true);
   const steps = cad.steps;
   const id = `cad:${cad.id}`;
   state.used.add(cad.id);
@@ -451,7 +555,7 @@ export function cadenceLine(rng, n, state = newDrawState()) {
     return { rel: tail.map((s) => s - base), used: [id] };
   }
 
-  const head = formulaLine(rng, n - steps.length + 1, state);
+  const head = formulaLine(rng, n - steps.length + 1, state, tables);
   const base = head.rel[head.rel.length - 1];
   const rel = head.rel.concat(steps.slice(1).map((s) => base + s - steps[0]));
   return { rel, used: [...head.used, id] };
@@ -465,7 +569,7 @@ export function cadenceLine(rng, n, state = newDrawState()) {
  * 音数が足りないときは降りる音を諦める(それでも「跳んで、降り始める」形は残る)。
  * 余るぶんは手前を旋律型で埋め、跳ぶ直前まで助走させる。
  */
-export function soarLine(rng, n, state = newDrawState()) {
+export function soarLine(rng, n, state = newDrawState(), tables = null) {
   const soar = weightedPick(rng, SOARS, (f) => !state.used.has(f.id))
     ?? weightedPick(rng, SOARS, () => true);
   const steps = soar.steps;
@@ -477,7 +581,7 @@ export function soarLine(rng, n, state = newDrawState()) {
     return { rel: steps.slice(0, n), used: [id] };
   }
 
-  const head = formulaLine(rng, n - steps.length + 1, state);
+  const head = formulaLine(rng, n - steps.length + 1, state, tables);
   const base = head.rel[head.rel.length - 1];
   const rel = head.rel.concat(steps.slice(1).map((s) => base + s - steps[0]));
   return { rel, used: [...head.used, id] };
@@ -527,11 +631,24 @@ const SNAP_MOVES = {
 // 生成の配分。30%は7音すべてを使う断片として残す(陰影と多様性のため)。
 export const PENTA_RATES = { major: 0.45, minor: 0.25, none: 0.3 };
 
+// 版2の配分。手元の MIDI 347曲の実測に合わせる。
+//
+// !!! ここが「なんだか童謡にしか聴こえない」の正体だった !!!
+// 元の曲でペンタトニックだった楽節は 26.9% しかなく、度数4を10.8%、度数7を
+// 10.3% 使っている。その2つの度数こそ現代の曲の色なのに、版1の配分（7割を
+// ペンタへ寄せる）を版2にも掛けたせいで、せっかく MIDI から取った語彙を
+// 生成の直後に塗り潰していた。実測では版2のカタログの 86.5% が
+// ペンタトニックになっていた（元は 26.9%）。
+// 元の実測は 26.9% だが、あれは伴奏混じりの自動抽出の数字で、旋律だけを
+// 採譜した値ではない。そこへ振り切ったら「聞けたものではない」になった。
+// 版1(0.70)と実測(0.27)の中間に置く。度数4と7は残しつつ、歌える線を保つ。
+export const PENTA_RATES_V2 = { major: 0.28, minor: 0.17, none: 0.55 };
+
 /** 'major' | 'minor' | null をこの配分で引く */
-export function drawPenta(rng) {
+export function drawPenta(rng, rates = PENTA_RATES) {
   const r = rng();
-  if (r < PENTA_RATES.major) return 'major';
-  if (r < PENTA_RATES.major + PENTA_RATES.minor) return 'minor';
+  if (r < rates.major) return 'major';
+  if (r < rates.major + rates.minor) return 'minor';
   return null;
 }
 
@@ -874,7 +991,7 @@ function formulaCandidate(rng, kind, contour, wantSus, tables) {
   // 1小節目: 旋律型を継ぎ足して埋め、跳躍の連続だけならしてから音階へ寄せる。
   // state は断片1件ぶんの抽選状態(同じ型の再利用禁止・下降形の連続禁止)を持ち回る。
   const state = newDrawState();
-  const first = formulaLine(rng, n1, state);
+  const first = formulaLine(rng, n1, state, tables);
   const used = first.used.slice();
   const start = placeStart(first.rel, drawStart(rng), kind);
   let head = snapKeepingShape(smoothLeaps(first.rel.map((r) => r + start)), kind);
@@ -894,7 +1011,7 @@ function formulaCandidate(rng, kind, contour, wantSus, tables) {
   } else {
     // 2小節目は着地(終止形)か、別の型。前の音から近いところに置く。
     const endStable = mode === 'cadence';
-    const second = endStable ? cadenceLine(rng, n2, state) : formulaLine(rng, n2, state);
+    const second = endStable ? cadenceLine(rng, n2, state, tables) : formulaLine(rng, n2, state, tables);
     used.push(...second.used);
     const near = clampDeg(head[head.length - 1] + (endStable ? 1 : randInt(rng, -1, 2)));
     const tailStart = placeStart(second.rel, near, kind, endStable);
@@ -926,7 +1043,7 @@ function soarCandidate(rng, kind, contour, wantSus, tables) {
 
   // 舞い上がりは1小節目に置く。2小節目は降りてきた先から着地させる。
   // (2小節目に置くと、跳んだ直後に断片が終わって降り切れない)
-  const first = soarLine(rng, n1, state);
+  const first = soarLine(rng, n1, state, tables);
   const used = first.used.slice();
 
   // 跳ぶ前の音をどこに置くか。高く置くほど頂点が高くなる。
@@ -939,7 +1056,7 @@ function soarCandidate(rng, kind, contour, wantSus, tables) {
   const head = snapKeepingShape(smoothLeaps(first.rel.map((r) => r + start)), kind);
 
   const endStable = mode === 'cadence';
-  const second = endStable ? cadenceLine(rng, n2, state) : formulaLine(rng, n2, state);
+  const second = endStable ? cadenceLine(rng, n2, state, tables) : formulaLine(rng, n2, state, tables);
   used.push(...second.used);
   // 2小節目は頂点より下に置く。頂点に並ぶと「届いた一回」が消える。
   const near = clampDeg(head[head.length - 1] - randInt(rng, 0, 2));
@@ -1004,7 +1121,7 @@ function contourCandidate(rng, kind, contour, wantSus, tables) {
 }
 
 export function generateCandidate(rng, tables = null) {
-  const kind = drawPenta(rng);
+  const kind = drawPenta(rng, tables?.pentaRates ?? PENTA_RATES);
   const route = drawRoute(rng);
   const contour = pick(rng, CONTOUR_NAMES);
   const wantSus = rng() < 0.35;

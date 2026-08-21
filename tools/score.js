@@ -36,6 +36,18 @@ const LEAP_THEN_STEP = { min: 0.6, bonus: 10 };
 // ペンタトニックは大衆性の核心なので最大の加点。
 // {1,3,5} だけの断片は major/minor 両方のタグを持つが、加点は一度だけ。
 const PENTA_BONUS = 16;
+// 版2ではペンタトニックを加点しない。元にした曲の 73% はペンタではなく、
+// 度数4と7を使うことがその時代の色そのもの。ここで加点すると、選抜が
+// ペンタばかりを拾って童謡に寄る。
+const PENTA_BONUS_V2 = 8;
+
+// 同音連打の上限。
+//
+// 手元の MIDI から取った語彙では同音が 9.2%（既存コーパスは 3.0%）。J-POP の
+// 節回しの核ではあるが、**歌詞があって初めて活きる**。歌詞の無いピアノ曲では
+// 同じ音の連打は「動かない線」にしかならず、実測でも評価関数の点が落ちた。
+// 3割を超える断片は器楽としては退屈なので減点する。
+const SAME_NOTE = { max: 0.3, penalty: 30 };
 
 // 輪郭そのものへの加減点。wave はふらふらして覚えにくく、
 // question は宙に浮いて終わるので歌として弱い。
@@ -72,7 +84,7 @@ function rhythmScore(list, m) {
   return score;
 }
 
-export function scoreFragment(notes, meta) {
+export function scoreFragment(notes, meta, opts = null) {
   const list = Array.isArray(notes) ? notes : [];
   const m = meta || analyzeFragment(list);
   const intervals = Array.isArray(m.intervals) ? m.intervals : [];
@@ -129,7 +141,13 @@ export function scoreFragment(notes, meta) {
   for (const tag of tags) {
     if (BONUS[tag]) score += BONUS[tag];
   }
-  if (tags.includes('penta-major') || tags.includes('penta-minor')) score += PENTA_BONUS;
+  // 同音の割合。器楽では動きの無さとして効いてしまう。
+  if (intervals.length > 0) {
+    const same = intervals.filter((v) => v === 0).length / intervals.length;
+    if (same > SAME_NOTE.max) score -= SAME_NOTE.penalty;
+  }
+  const pentaBonus = opts?.version === 2 ? PENTA_BONUS_V2 : PENTA_BONUS;
+  if (tags.includes('penta-major') || tags.includes('penta-minor')) score += pentaBonus;
   score += CONTOUR_ADJ[m.contour] ?? 0;
 
   return round1(score);

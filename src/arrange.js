@@ -156,16 +156,51 @@ export const ACCOMP_PATTERNS = {
   },
   // サビ。和音を8分で押す。いちばん厚い
   pulse8: { vel: 0.22, steps: PULSE8 },
+  // 低音を2拍伸ばし、上声も2拍で受ける。sustain の次に薄い
+  halfBroken: {
+    vel: 0.30,
+    steps: [{ beat: 0, voice: 'low', dur: 2 }, { beat: 2, voice: 'upper', dur: 2 }],
+  },
+  // 裏拍に和音を置く。表が空くぶん前へ引っ張られる
+  offbeat: {
+    vel: 0.28,
+    steps: [
+      { beat: 0, voice: 'low', dur: 0.5 }, { beat: 0.5, voice: 'upper', dur: 1 },
+      { beat: 1.5, voice: 'upper', dur: 0.5 }, { beat: 2, voice: 'low', dur: 0.5 },
+      { beat: 2.5, voice: 'upper', dur: 1 }, { beat: 3.5, voice: 'upper', dur: 0.5 },
+    ],
+  },
+  // 付点。歌謡曲の揺れを2分割で作る
+  dotted: {
+    vel: 0.31,
+    steps: [
+      { beat: 0, voice: 'low', dur: 1.5 }, { beat: 1.5, voice: 'upper', dur: 0.5 },
+      { beat: 2, voice: 'low', dur: 1 }, { beat: 3, voice: 'upper', dur: 1 },
+    ],
+  },
+  // 4分の和音刻み。pulse8 より軽く、サビの入口に使える
+  pulse4: {
+    vel: 0.26,
+    steps: [0, 1, 2, 3].map((beat) => ({ beat, voice: 'all', dur: 1 })),
+  },
 };
 
 // セクションごとの伴奏型の候補。組は [前半, 後半]。
 // A メロは薄く、サビで一気に厚く、最後は収める——70〜80年代バラードの定石。
 // 折り返し（セクションの半分）で型が1段上がる。A'' だけは逆に下げて着地させる。
 export const ACCOMP_PLAN = [
-  [['sustain', 'brokenHalf'], ['sustain', 'broken']],                // A   提示
-  [['brokenHalf', 'broken'], ['broken', 'arp8']],                    // A'  高まり
-  [['arp8', 'pulse8'], ['broken', 'syncope'], ['arp8', 'syncope']],  // B   サビ
-  [['broken', 'brokenHalf'], ['arp8', 'brokenHalf']],                // A'' 着地
+  // A 提示。薄く入る
+  [['sustain', 'halfBroken'], ['sustain', 'brokenHalf'], ['sustain', 'broken'],
+    ['halfBroken', 'brokenHalf'], ['halfBroken', 'broken'], ['sustain', 'dotted']],
+  // A' 高まり
+  [['brokenHalf', 'broken'], ['broken', 'arp8'], ['dotted', 'arp8'],
+    ['brokenHalf', 'dotted'], ['broken', 'offbeat'], ['halfBroken', 'broken']],
+  // B サビ。いちばん厚い
+  [['arp8', 'pulse8'], ['broken', 'syncope'], ['arp8', 'syncope'],
+    ['offbeat', 'pulse8'], ['arp8', 'pulse4'], ['syncope', 'pulse8'], ['dotted', 'syncope']],
+  // A'' 着地。ここだけ薄くなる方向
+  [['broken', 'brokenHalf'], ['arp8', 'brokenHalf'], ['broken', 'halfBroken'],
+    ['arp8', 'broken'], ['offbeat', 'broken'], ['pulse4', 'brokenHalf'], ['broken', 'sustain']],
 ];
 
 // ---------------------------------------------------------------------------
@@ -191,14 +226,47 @@ export const BASS_PATTERNS = {
     vel: 0.5,
     steps: [{ beat: 0, kind: 'root', dur: 3.5 }, { beat: 3.5, kind: 'next', dur: 0.5 }],
   },
+  // 根音を2回。踏み直すだけだが、全音符より土台が前へ出る
+  pedal: {
+    vel: 0.5,
+    steps: [{ beat: 0, kind: 'root', dur: 2 }, { beat: 2, kind: 'root', dur: 2 }],
+  },
+  // 5度を裏拍へ。歌謡曲のベースの揺れ
+  fifthOff: {
+    vel: 0.5,
+    steps: [{ beat: 0, kind: 'root', dur: 1.5 }, { beat: 1.5, kind: 'fifth', dur: 1.5 },
+      { beat: 3, kind: 'root', dur: 1 }],
+  },
+  // オクターブで往復。サビの厚み
+  octaveBounce: {
+    vel: 0.48,
+    steps: [{ beat: 0, kind: 'root', dur: 1 }, { beat: 1, kind: 'octave', dur: 1 },
+      { beat: 2, kind: 'root', dur: 1 }, { beat: 3, kind: 'octave', dur: 1 }],
+  },
+  // 先取りに5度を挟む
+  fifthAnticipate: {
+    vel: 0.5,
+    steps: [{ beat: 0, kind: 'root', dur: 2 }, { beat: 2, kind: 'fifth', dur: 1.5 },
+      { beat: 3.5, kind: 'next', dur: 0.5 }],
+  },
 };
 
 // セクションごとのベース型の候補。伴奏と同じく [前半, 後半]。
 export const BASS_PLAN = [
-  [['whole', 'whole'], ['whole', 'rootFifth']],                          // A
-  [['rootFifth', 'rootFifth'], ['whole', 'rootOctave']],                 // A'
-  [['rootOctave', 'anticipate'], ['rootFifth', 'drive'], ['anticipate', 'anticipate']], // B
-  [['whole', 'rootFifth'], ['whole', 'whole']],                          // A''
+  // A 提示
+  [['whole', 'whole'], ['whole', 'rootFifth'], ['whole', 'pedal'],
+    ['pedal', 'rootFifth'], ['whole', 'fifthOff'], ['pedal', 'pedal']],
+  // A' 高まり
+  [['rootFifth', 'rootFifth'], ['whole', 'rootOctave'], ['pedal', 'rootOctave'],
+    ['rootFifth', 'fifthOff'], ['fifthOff', 'rootOctave'], ['rootFifth', 'octaveBounce']],
+  // B サビ。先取りをここに集める
+  [['rootOctave', 'anticipate'], ['rootFifth', 'drive'], ['anticipate', 'anticipate'],
+    ['octaveBounce', 'anticipate'], ['rootOctave', 'fifthAnticipate'],
+    ['drive', 'anticipate'], ['fifthOff', 'octaveBounce']],
+  // A'' 着地
+  [['whole', 'rootFifth'], ['whole', 'whole'], ['pedal', 'whole'],
+    ['rootFifth', 'whole'], ['rootOctave', 'pedal'], ['fifthOff', 'whole'],
+    ['pedal', 'rootFifth']],
 ];
 
 const BASS_VEL = 0.5;

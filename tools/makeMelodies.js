@@ -24,7 +24,7 @@ import { analyzeFragment } from './analyze.js';
 import { scoreFragment } from './score.js';
 import {
   generateCandidate, containsFormula, FORMULAS, CADENCES, RHYTHMS,
-  MOTIF_RHYTHMS_V2, FREE_RHYTHMS_V2, RHYTHMS_V2,
+  MOTIF_RHYTHMS_V2, FREE_RHYTHMS_V2, RHYTHMS_V2, MOTIF_RATE_V2, PENTA_RATES_V2,
 } from './generate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -44,7 +44,15 @@ const SEED = 20260816;
 // ---------------------------------------------------------------------------
 const VERSION = process.env.MELODIES_VERSION === '2' ? 2 : 1;
 const TABLES = VERSION === 2
-  ? { motif: MOTIF_RHYTHMS_V2, free: FREE_RHYTHMS_V2 }
+  ? {
+    motif: MOTIF_RHYTHMS_V2,
+    free: FREE_RHYTHMS_V2,
+    motifRate: MOTIF_RATE_V2,
+    pentaRates: PENTA_RATES_V2,
+    // 旋律型も版2の語彙（手元の MIDI から取った統計）へ切り替える。
+    // ここを切り替えないと、リズムだけ現代で音の運びは1955年以前のままになる。
+    formulas: 'v2',
+  }
   : null;
 // 候補数。緊張度1の断片と sigh、そして answer 輪郭は出現率が数%以下なので、
 // これだけ引かないと下限を満たすだけの母数が集まらない。
@@ -173,12 +181,30 @@ const GOALS = [
   // 「跳んだら順次で埋め戻す」。歌える線とそうでない線を分ける最大の要因。
   { key: 'leap-then-step', min: 560, test: fillsLeaps },
   // 大衆性の核心。ペンタトニックは耳なじみの最大の要因。
-  { key: 'penta-major', min: 400, test: hasTag('penta-major') },
-  { key: 'penta-minor', min: 250, test: hasTag('penta-minor') },
+  // ペンタトニックの下限。版1は「大衆性の核心」として7割近くを要求していたが、
+  // 版2の元にした曲は 26.9% しかペンタでない。同じ数字を課すと、MIDI から取った
+  // 語彙を選抜が捨ててペンタばかり拾う（実測でカタログの86.5%がペンタになった）。
+  { key: 'penta-major', min: VERSION === 2 ? 260 : 400, test: hasTag('penta-major') },
+  { key: 'penta-minor', min: VERSION === 2 ? 140 : 250, test: hasTag('penta-minor') },
+  // 逆に版2は「ペンタでない断片」に下限を置く。度数4と7を使うことが
+  // 現代の曲の色なので、ここが痩せると童謡へ逆戻りする。
+  ...(VERSION === 2
+    ? [{
+      key: 'non-penta',
+      min: 380,
+      test: (c) => !c.meta.tags.includes('penta-major') && !c.meta.tags.includes('penta-minor'),
+    }]
+    : []),
   // 動機として成立しているか。後半が前半の平行移動・完全反復であること。
   // 内部反復はモチーフ型の数に比例する。版2のモチーフ型は12（版1は30）。
-  { key: 'inner-sequence', min: VERSION === 2 ? 120 : 300, test: hasTag('inner-sequence') },
-  { key: 'inner-repeat', min: VERSION === 2 ? 50 : 120, test: hasTag('inner-repeat') },
+  // 内部反復は「同じ形が返ってくる」ことそのもの。ここを痩せさせると
+  // 旋律が音符の羅列になる（版2で一度そうなった）。
+  // 版2は 1小節あたりの音数が少ないぶんゼクエンツが成立しにくく、
+  // モチーフ率を 0.85 まで上げても 188 が上限。実測に合わせて下限を置く。
+  { key: 'inner-sequence', min: VERSION === 2 ? 180 : 300, test: hasTag('inner-sequence') },
+  // 版2は通し型（16分を含む型を足したぶん）が増えたので、完全反復は少し薄くなる。
+  // ゼクエンツ(inner-sequence)のほうが反復の主役なので、こちらは実測に合わせる。
+  { key: 'inner-repeat', min: VERSION === 2 ? 100 : 120, test: hasTag('inner-repeat') },
   { key: 'inner-motif', min: 50, test: hasTag('inner-motif') },
   // 「泣ける」の中核。跳躍上行のあとの順次下降。
   { key: 'sigh', min: 100, test: hasTag('sigh') },
@@ -203,9 +229,12 @@ const GOALS = [
       // 食い。候補の段階では 63.6% が持っているが、層化抽出を通すと 267 件
       // （26.7%）まで落ちる。下限はその実測より少し下に置いて、痩せたときだけ
       // 引っかかる形にする。数字を満たすために抽出そのものを歪めない。
+      // 食いと反復は直接トレードする（反復型は小節線をまたげない：またぐと
+      // 写した後半の頭と音が重なる）。旋律が旋律に聴こえることのほうが上なので、
+      // モチーフ率を優先して食いの下限を下げた。
       {
         key: 'anticipation',
-        min: 250,
+        min: 180,
         test: (c) => c.notes.some((n) => n.beat < 4 && n.beat + n.dur > 4),
       },
     ]
@@ -397,7 +426,7 @@ function collect() {
       formulas,
       slots: slotsOf(fit),
       rhythmKey: rhythmKeyOf(notes),
-      score: scoreFragment(notes, meta),
+      score: scoreFragment(notes, meta, { version: VERSION }),
     };
 
     pool.total++;
