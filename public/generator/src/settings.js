@@ -88,8 +88,8 @@ export const PARAM_DEFS = [
     options: [['1', 'opt.gv.1'], ['2', 'opt.gv.2']] },
   // 既存の曲コードを壊さないため、コード付きの新項目は必ず末尾へ足す。
   { key: 'composerEngine', group: 'compose', label: 'param.composerEngine', type: 'choice', apply: 'next', ui: true, code: 'ce',
-    hint: 'hint.composerEngine', def: 'codex5',
-    options: [['codex', 'opt.engine.codex'], ['claude', 'opt.engine.claude'], ['codex2', 'opt.engine.codex2'], ['codex3', 'opt.engine.codex3'], ['codex4', 'opt.engine.codex4'], ['codex5', 'opt.engine.codex5']] },
+    hint: 'hint.composerEngine', def: 'codex6',
+    options: [['codex', 'opt.engine.codex'], ['claude', 'opt.engine.claude'], ['codex2', 'opt.engine.codex2'], ['codex3', 'opt.engine.codex3'], ['codex4', 'opt.engine.codex4'], ['codex5', 'opt.engine.codex5'], ['codex6', 'opt.engine.codex6']] },
 ];
 
 /** 画面に出すパラメータだけを返す。UI はこれだけを描く。 */

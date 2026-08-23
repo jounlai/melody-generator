@@ -80,6 +80,7 @@ const MESSAGES = {
     'opt.engine.codex3': 'Codex 第3版（主題型）',
     'opt.engine.codex4': 'Codex 第4版（回帰型）',
     'opt.engine.codex5': 'Codex 第5版（哀歌型）',
+    'opt.engine.codex6': 'Codex 第6版（歌メロ先行型）',
     'opt.engine.claude': 'Claude 現行版',
 
     'inst.piano': 'ピアノ',
@@ -173,6 +174,7 @@ const MESSAGES = {
     'opt.engine.codex3': 'Codex v3 (motif-led)',
     'opt.engine.codex4': 'Codex v4 (return-led)',
     'opt.engine.codex5': 'Codex v5 (lament-led)',
+    'opt.engine.codex6': 'Codex v6 (melody-first)',
     'opt.engine.claude': 'Claude original',
 
     'inst.piano': 'Piano',
@@ -266,6 +268,7 @@ const MESSAGES = {
     'opt.engine.codex3': 'Codex 第3版（主题型）',
     'opt.engine.codex4': 'Codex 第4版（回归型）',
     'opt.engine.codex5': 'Codex 第5版（哀歌型）',
+    'opt.engine.codex6': 'Codex 第6版（旋律先行型）',
     'opt.engine.claude': 'Claude 原版',
 
     'inst.piano': '钢琴',
