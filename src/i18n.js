@@ -75,7 +75,7 @@ const MESSAGES = {
     'opt.tempo.slow': 'ゆっくり',
     'opt.tempo.normal': 'ふつう',
     'opt.tempo.flowing': '少し速め',
-    'opt.engine.codex': 'Codex 歌唱旋律',
+    'opt.engine.codex': 'Codex 試作版（不採用）',
     'opt.engine.claude': 'Claude 現行版',
 
     'inst.piano': 'ピアノ',
@@ -164,7 +164,7 @@ const MESSAGES = {
     'opt.tempo.slow': 'Slow',
     'opt.tempo.normal': 'Moderate',
     'opt.tempo.flowing': 'Flowing',
-    'opt.engine.codex': 'Codex vocal melody',
+    'opt.engine.codex': 'Codex prototype (rejected)',
     'opt.engine.claude': 'Claude original',
 
     'inst.piano': 'Piano',
@@ -253,7 +253,7 @@ const MESSAGES = {
     'opt.tempo.slow': '缓慢',
     'opt.tempo.normal': '适中',
     'opt.tempo.flowing': '稍快',
-    'opt.engine.codex': 'Codex 歌唱旋律',
+    'opt.engine.codex': 'Codex 试作版（未采用）',
     'opt.engine.claude': 'Claude 原版',
 
     'inst.piano': '钢琴',
