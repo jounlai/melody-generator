@@ -83,10 +83,13 @@ export const PARAM_DEFS = [
   // decodeSongCode がそこだけ既定値ではなく LEGACY_VERSION に倒す。
   // 逆に新しい曲は必ず桁を書く（encodeSongCode の短縮形は初版のときだけ）。
   //
-  // !!! code を持つので、この定義より後ろに code 付きの項目を足さないこと !!!
   { key: 'generatorVersion', group: 'compose', label: 'param.generatorVersion', type: 'choice', apply: 'next', ui: false, code: 'gv',
     def: '2',
     options: [['1', 'opt.gv.1'], ['2', 'opt.gv.2']] },
+  // 既存の曲コードを壊さないため、コード付きの新項目は必ず末尾へ足す。
+  { key: 'composerEngine', group: 'compose', label: 'param.composerEngine', type: 'choice', apply: 'next', ui: true, code: 'ce',
+    hint: 'hint.composerEngine', def: 'codex',
+    options: [['codex', 'opt.engine.codex'], ['claude', 'opt.engine.claude']] },
 ];
 
 /** 画面に出すパラメータだけを返す。UI はこれだけを描く。 */
@@ -166,7 +169,11 @@ export function encodeSongCode(seed, settings) {
   // 全部が既定値なら添字を書かない。いちばん短い形にする。
   // ただし「既定値」の基準は**初版**の値。桁の無いコードは初版として解かれるので、
   // 版2の曲で桁を省くと、自分の曲コードが別の曲を指すことになる。
-  const shortDef = (d) => (d.key === 'generatorVersion' ? LEGACY_VERSION : d.def);
+  const shortDef = (d) => {
+    if (d.key === 'generatorVersion') return LEGACY_VERSION;
+    if (d.key === 'composerEngine') return 'claude';
+    return d.def;
+  };
   if (digits.every((v, i) => v === optionIndex(defs[i], shortDef(defs[i])))) return String(seed);
   return `${seed}.${digits.map((v) => v.toString(36)).join('')}`;
 }
@@ -193,6 +200,7 @@ export function decodeSongCode(str) {
     const old = map.get('s');
     // 旧形式のコードは、生成器が1つしか無かった時代のもの。
     if (!('generatorVersion' in raw)) raw.generatorVersion = LEGACY_VERSION;
+    if (!('composerEngine' in raw)) raw.composerEngine = 'claude';
     return {
       seed: old && /^[0-9a-z]+$/i.test(old) ? old : null,
       settings: normalizeSettings(raw),
@@ -210,6 +218,7 @@ export function decodeSongCode(str) {
       // 桁が無い＝その項目がまだ無かった時代のコード。生成器の版だけは
       // 既定値（＝最新）ではなく初版に倒す。共有済みの URL を守るため。
       if (d.key === 'generatorVersion') raw[d.key] = LEGACY_VERSION;
+      if (d.key === 'composerEngine') raw[d.key] = 'claude';
       return;
     }
     const n = parseInt(ch, 36);

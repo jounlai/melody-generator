@@ -64,6 +64,8 @@ const MESSAGES = {
     'param.instrument': '楽器',
     'param.mood': '曲の雰囲気',
     'param.tempoFeel': 'テンポ',
+    'param.composerEngine': '作曲エンジン',
+    'hint.composerEngine': '現行版を残したまま、新しい歌唱旋律エンジンと切り替えます',
     'hint.instrument': '曲の作りはそのまま、鳴らす楽器だけが変わります',
     'hint.mood': '長調と短調のどちらを多く引くか',
 
@@ -73,6 +75,8 @@ const MESSAGES = {
     'opt.tempo.slow': 'ゆっくり',
     'opt.tempo.normal': 'ふつう',
     'opt.tempo.flowing': '少し速め',
+    'opt.engine.codex': 'Codex 歌唱旋律',
+    'opt.engine.claude': 'Claude 現行版',
 
     'inst.piano': 'ピアノ',
     'inst.epiano': 'エレクトリックピアノ',
@@ -98,7 +102,7 @@ const MESSAGES = {
     'foot.algorithm': 'アルゴリズム解説',
     'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
     'foot.company': 'ヒューロン株式会社',
-    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+    'foot.built': 'Built with Anthropic Claude and OpenAI Codex',
 
     'key.major': '長調',
     'key.minor': '短調',
@@ -149,6 +153,8 @@ const MESSAGES = {
     'param.instrument': 'Instrument',
     'param.mood': 'Mood',
     'param.tempoFeel': 'Tempo',
+    'param.composerEngine': 'Composer',
+    'hint.composerEngine': 'Switch between the original engine and the new vocal-phrase engine',
     'hint.instrument': 'Only the sound changes; the music itself stays the same',
     'hint.mood': 'How often major keys are drawn over minor',
 
@@ -158,6 +164,8 @@ const MESSAGES = {
     'opt.tempo.slow': 'Slow',
     'opt.tempo.normal': 'Moderate',
     'opt.tempo.flowing': 'Flowing',
+    'opt.engine.codex': 'Codex vocal melody',
+    'opt.engine.claude': 'Claude original',
 
     'inst.piano': 'Piano',
     'inst.epiano': 'Electric piano',
@@ -183,7 +191,7 @@ const MESSAGES = {
     'foot.algorithm': 'How it works',
     'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
     'foot.company': 'Heuron Inc.',
-    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+    'foot.built': 'Built with Anthropic Claude and OpenAI Codex',
 
     'key.major': 'major',
     'key.minor': 'minor',
@@ -234,6 +242,8 @@ const MESSAGES = {
     'param.instrument': '乐器',
     'param.mood': '曲风',
     'param.tempoFeel': '速度',
+    'param.composerEngine': '作曲引擎',
+    'hint.composerEngine': '在原版与新的歌唱旋律引擎之间切换',
     'hint.instrument': '乐曲本身不变，只改变演奏的乐器',
     'hint.mood': '大调与小调的抽取比例',
 
@@ -243,6 +253,8 @@ const MESSAGES = {
     'opt.tempo.slow': '缓慢',
     'opt.tempo.normal': '适中',
     'opt.tempo.flowing': '稍快',
+    'opt.engine.codex': 'Codex 歌唱旋律',
+    'opt.engine.claude': 'Claude 原版',
 
     'inst.piano': '钢琴',
     'inst.epiano': '电钢琴',
@@ -267,7 +279,7 @@ const MESSAGES = {
     'foot.algorithm': '旋律生成算法说明',
     'foot.created': 'Created by Jounlai Cho (cho@heuron.com)',
     'foot.company': 'Heuron 株式会社',
-    'foot.built': 'Built with Anthropic Claude (Claude Code)',
+    'foot.built': 'Built with Anthropic Claude and OpenAI Codex',
 
     'key.major': '大调',
     'key.minor': '小调',

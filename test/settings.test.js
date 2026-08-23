@@ -116,13 +116,14 @@ test('シードだけの短い曲コードは、初版の既定値を指す', ()
   // URL のハッシュに載るので短さがそのまま使い勝手になる……のだが、
   // 桁を省いてよいのは初版の既定値のときだけ。桁の無いコードは初版として
   // 解かれるので、最新の生成器の曲で桁を省くと、自分のコードが別の曲を指す。
-  const v1 = { ...defaultSettings(), generatorVersion: '1' };
+  const v1 = { ...defaultSettings(), generatorVersion: '1', composerEngine: 'claude' };
   assert.equal(encodeSongCode('k3f9zq', v1), 'k3f9zq');
 
   // 共有済みの短いコードは、いまも初版の既定値として解ける。
   const back = decodeSongCode('k3f9zq');
   assert.equal(back.seed, 'k3f9zq');
   assert.equal(back.settings.generatorVersion, '1');
+  assert.equal(back.settings.composerEngine, 'claude');
   assert.equal(back.settings.mood, defaultSettings().mood);
 
   // 最新の生成器の曲は必ず桁を書く。
@@ -168,11 +169,11 @@ test('composeParamKeys は作曲系のキーだけを返す', () => {
   assert.ok(!keys.includes('masterVolume'));
 });
 
-test('画面に出すのは4項目だけ', () => {
+test('画面に出すのは5項目だけ', () => {
   const vis = visibleParams();
-  assert.equal(vis.length, 4, `画面に出す項目が4つでない: ${vis.map((d) => d.key).join(',')}`);
+  assert.equal(vis.length, 5, `画面に出す項目が5つでない: ${vis.map((d) => d.key).join(',')}`);
   assert.deepEqual(vis.map((d) => d.key).sort(),
-    ['instrument', 'masterVolume', 'mood', 'tempoFeel']);
+    ['composerEngine', 'instrument', 'masterVolume', 'mood', 'tempoFeel']);
 });
 
 test('全パラメータが ui 真偽値を持つ', () => {
@@ -191,10 +192,10 @@ test('曲コードに載るのは画面に出す作曲パラメータと、生�
   const gv = PARAM_DEFS.find((d) => d.key === 'generatorVersion');
   assert.ok(gv?.code, '生成器の版が曲コードに載っていない');
   assert.equal(gv.ui, false, '生成器の版は画面に出さない');
-  // !!! 版は必ず末尾 !!! 途中に入れると、共有済みのコードの添字がずれる。
+  // 既存の4桁を動かさず、新しいエンジン選択はその後ろへ足す。
   const coded = PARAM_DEFS.filter((d) => d.code && d.type === 'choice');
-  assert.equal(coded[coded.length - 1].key, 'generatorVersion',
-    '生成器の版が曲コードの末尾にない');
+  assert.deepEqual(coded.slice(-2).map((d) => d.key),
+    ['generatorVersion', 'composerEngine']);
 });
 
 test('resolveSettings は雰囲気を長調比率へ展開する', () => {
