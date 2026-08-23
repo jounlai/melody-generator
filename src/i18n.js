@@ -76,6 +76,7 @@ const MESSAGES = {
     'opt.tempo.normal': 'ふつう',
     'opt.tempo.flowing': '少し速め',
     'opt.engine.codex': 'Codex 試作版（不採用）',
+    'opt.engine.codex2': 'Codex 第2版（選抜型）',
     'opt.engine.claude': 'Claude 現行版',
 
     'inst.piano': 'ピアノ',
@@ -165,6 +166,7 @@ const MESSAGES = {
     'opt.tempo.normal': 'Moderate',
     'opt.tempo.flowing': 'Flowing',
     'opt.engine.codex': 'Codex prototype (rejected)',
+    'opt.engine.codex2': 'Codex v2 (critic-selected)',
     'opt.engine.claude': 'Claude original',
 
     'inst.piano': 'Piano',
@@ -254,6 +256,7 @@ const MESSAGES = {
     'opt.tempo.normal': '适中',
     'opt.tempo.flowing': '稍快',
     'opt.engine.codex': 'Codex 试作版（未采用）',
+    'opt.engine.codex2': 'Codex 第2版（筛选型）',
     'opt.engine.claude': 'Claude 原版',
 
     'inst.piano': '钢琴',
