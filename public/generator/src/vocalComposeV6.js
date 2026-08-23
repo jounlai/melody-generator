@@ -294,7 +294,7 @@ function refineProgression(base, sectionNotes, song) {
   });
 }
 
-function chooseHarmony(song, melody) {
+export function chooseHarmony(song, melody) {
   const aNotes = melody.filter((note) => note.section === 0);
   const aPrimeNotes = melody.filter((note) => note.section === 1);
   const bridgeNotes = melody.filter((note) => note.section === 2);
@@ -365,7 +365,7 @@ function arrangementPattern(section, localBar) {
   return localBar % 2 ? 'dotted' : 'broken';
 }
 
-function arrange(song, symbols, melody) {
+export function arrange(song, symbols, melody) {
   const chords = [];
   const accomp = [];
   const bass = [];
@@ -410,7 +410,7 @@ function arrange(song, symbols, melody) {
   return { chords, accomp, bass, pad, accompPatterns, bassPatterns };
 }
 
-function harmonyFit(song, melody, chords) {
+export function harmonyFit(song, melody, chords) {
   let matched = 0;
   let total = 0;
   for (const note of melody) {
