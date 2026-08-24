@@ -22,6 +22,7 @@ import { composeVocalSongV5 } from './vocalComposeV5.js';
 import { composeVocalSongV6 } from './vocalComposeV6.js';
 import { composeVocalSongV7 } from './vocalComposeV7.js';
 import { composeVocalSongV8 } from './vocalComposeV8.js';
+import { composeVocalSongV9 } from './vocalComposeV9.js';
 import { buildPerformance } from './perform.js';
 
 /** スケジューラの起動間隔。短いほど正確だが、25ms あれば先読み幅で十分吸収できる */
@@ -165,7 +166,9 @@ export function createPlayer(audioCtx, engine, data, getSettings) {
     engine.applySettings(settings);
     const nextSong = settings.composerEngine === 'claude'
       ? composeClaudeSong(seed, data, settings)
-      : (settings.composerEngine === 'codex8'
+      : (settings.composerEngine === 'codex9'
+        ? composeVocalSongV9(seed, data, settings, composeClaudeSong)
+        : settings.composerEngine === 'codex8'
         ? composeVocalSongV8(seed, data, settings, composeClaudeSong)
         : settings.composerEngine === 'codex7'
         ? composeVocalSongV7(seed, data, settings, composeClaudeSong)

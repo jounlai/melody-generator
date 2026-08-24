@@ -375,7 +375,7 @@ export function arrange(song, symbols, melody) {
   let previousVoicing = null;
   let previousBass = null;
 
-  for (let bar = 0; bar < 32; bar += 1) {
+  for (let bar = 0; bar < song.bars; bar += 1) {
     const symbol = symbols[bar];
     const barMelody = melody.filter((note) => Math.floor(note.beat / 4) === bar);
     const ceiling = Math.min(...barMelody.map((note) => note.midi), song.tonicMidi + 19) - 2;

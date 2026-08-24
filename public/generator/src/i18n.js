@@ -82,7 +82,8 @@ const MESSAGES = {
     'opt.engine.codex5': 'Codex 第5版（哀歌型）',
     'opt.engine.codex6': 'Codex 第6版（歌メロ先行型）',
     'opt.engine.codex7': 'Codex 第7版（余白型）',
-    'opt.engine.codex8': 'Codex 第8版（歌の構文型）',
+    'opt.engine.codex8': 'Codex 第8版（試作・歌の構文型）',
+    'opt.engine.codex9': 'Codex 第9版（歌唱フレーズ型）',
     'opt.engine.claude': 'Claude 現行版',
 
     'inst.piano': 'ピアノ',
@@ -178,7 +179,8 @@ const MESSAGES = {
     'opt.engine.codex5': 'Codex v5 (lament-led)',
     'opt.engine.codex6': 'Codex v6 (melody-first)',
     'opt.engine.codex7': 'Codex v7 (space-led)',
-    'opt.engine.codex8': 'Codex v8 (song-sentence)',
+    'opt.engine.codex8': 'Codex v8 (draft song-sentence)',
+    'opt.engine.codex9': 'Codex v9 (lyric-phrase)',
     'opt.engine.claude': 'Claude original',
 
     'inst.piano': 'Piano',
@@ -274,7 +276,8 @@ const MESSAGES = {
     'opt.engine.codex5': 'Codex 第5版（哀歌型）',
     'opt.engine.codex6': 'Codex 第6版（旋律先行型）',
     'opt.engine.codex7': 'Codex 第7版（留白型）',
-    'opt.engine.codex8': 'Codex 第8版（歌句结构型）',
+    'opt.engine.codex8': 'Codex 第8版（试作・歌句结构型）',
+    'opt.engine.codex9': 'Codex 第9版（歌唱乐句型）',
     'opt.engine.claude': 'Claude 原版',
 
     'inst.piano': '钢琴',
