@@ -52,8 +52,8 @@ export const PARAM_DEFS = [
 
   // 音のバランス。メロディーを最前面に、伴奏とパッドは下支えに徹させる
   { key: 'melodyVolume', group: 'sound', label: 'param.melodyVolume', type: 'range', min: 0, max: 100, step: 1, def: 100, unit: '%', apply: 'live', ui: false },
-  { key: 'accompVolume', group: 'sound', label: 'param.accompVolume', type: 'range', min: 0, max: 100, step: 1, def: 80, unit: '%', apply: 'live', ui: false },
-  { key: 'padVolume', group: 'sound', label: 'param.padVolume', type: 'range', min: 0, max: 100, step: 1, def: 62, unit: '%', apply: 'live', ui: false },
+  { key: 'accompVolume', group: 'sound', label: 'param.accompVolume', type: 'range', min: 0, max: 100, step: 1, def: 90, unit: '%', apply: 'live', ui: false },
+  { key: 'padVolume', group: 'sound', label: 'param.padVolume', type: 'range', min: 0, max: 100, step: 1, def: 66, unit: '%', apply: 'live', ui: false },
   { key: 'reverbAmount', group: 'sound', label: 'param.reverbAmount', type: 'range', min: 0, max: 100, step: 1, def: 48, unit: '%', apply: 'live', ui: false },
   { key: 'brightness', group: 'sound', label: 'param.brightness', type: 'range', min: 0, max: 100, step: 1, def: 42, unit: '%', apply: 'live', ui: false },
 

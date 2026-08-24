@@ -28,6 +28,11 @@ const FINAL_RHYTHM = {
   dur: [0.35, 0.35, 0.35, 0.35, 0.2, 1.25],
 };
 
+const CLIMAX_RHYTHM = {
+  at: [0.5, 1, 1.25, 2, 3, 3.25, 3.5],
+  dur: [0.45, 0.22, 0.68, 0.9, 0.22, 0.22, 0.5],
+};
+
 // The arrays contain scale degrees around the upper tonic (8).  A string such
 // as "13b" is a chromatic inflection: the borrowed minor-subdominant colour.
 const VERSES = [
@@ -107,15 +112,24 @@ function barNotes(tokens, bar, song, rhythm, section, velocity) {
   if (tokens.length !== rhythm.at.length || tokens.length !== rhythm.dur.length) {
     throw new Error(`bar ${bar}: pitch/rhythm length mismatch`);
   }
-  return tokens.map((token, sourceIndex) => ({
-    midi: degreeToMidi(song.tonicMidi, token),
-    beat: bar * 4 + rhythm.at[sourceIndex],
-    dur: rhythm.dur[sourceIndex],
-    vel: velocity,
-    section,
-    sourceBar: bar % 8,
-    sourceIndex,
-  }));
+  const midis = tokens.map((token) => degreeToMidi(song.tonicMidi, token));
+  return tokens.map((token, sourceIndex) => {
+    const nextAt = rhythm.at[sourceIndex + 1];
+    // A singer connects syllables inside a phrase.  Keep a small articulation
+    // only for repeated pitches; real silence belongs between phrases.
+    const connected = nextAt === undefined
+      ? rhythm.dur[sourceIndex]
+      : (nextAt - rhythm.at[sourceIndex]) * (midis[sourceIndex + 1] === midis[sourceIndex] ? 0.92 : 0.97);
+    return {
+      midi: midis[sourceIndex],
+      beat: bar * 4 + rhythm.at[sourceIndex],
+      dur: Math.max(rhythm.dur[sourceIndex], connected),
+      vel: velocity,
+      section,
+      sourceBar: bar % 8,
+      sourceIndex,
+    };
+  });
 }
 
 function returningVerse(verse) {
@@ -136,11 +150,13 @@ function composeLine(verse, song) {
     const pitches = section === 0
       ? verse[localBar]
       : (section === 1 ? DEVELOPMENT[localBar] : returnVerse[localBar]);
-    const rhythm = section === 2 && localBar === 7 ? FINAL_RHYTHM : RHYTHMS[localBar];
+    const rhythm = section === 2 && localBar === 7
+      ? FINAL_RHYTHM
+      : (section === 1 && localBar === 6 ? CLIMAX_RHYTHM : RHYTHMS[localBar]);
     const velocity = section === 0 ? 0.63 : (section === 1 ? 0.71 : 0.57);
     line.push(...barNotes(pitches, bar, song, rhythm, section, velocity));
   }
-  const climax = line.find((note) => note.beat === 14 * 4 + RHYTHMS[6].at[3]);
+  const climax = line.find((note) => note.beat === 14 * 4 + CLIMAX_RHYTHM.at[3]);
   if (climax) {
     climax.dur = Math.max(0.9, climax.dur);
     climax.vel = 0.84;
@@ -188,9 +204,9 @@ function objectiveDescription(song, melody, chords) {
 function rebalance(arranged) {
   return {
     ...arranged,
-    accomp: arranged.accomp.map((note) => ({ ...note, vel: note.vel * 0.72 })),
-    bass: arranged.bass.map((note) => ({ ...note, vel: note.vel * 0.82 })),
-    pad: arranged.pad.map((note) => ({ ...note, vel: note.vel * 0.58 })),
+    accomp: arranged.accomp.map((note) => ({ ...note, vel: note.vel * 0.95 })),
+    bass: arranged.bass.map((note) => ({ ...note, vel: note.vel * 0.78 })),
+    pad: arranged.pad.map((note) => ({ ...note, vel: note.vel * 0.72 })),
   };
 }
 

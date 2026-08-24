@@ -45,3 +45,20 @@ test('v9 varies only between complete authored verses and remains deterministic'
   }
   assert.equal(openings.size, 3);
 });
+
+test('v9 connects notes inside a sung phrase and breathes only at its edges', () => {
+  const song = composeVocalSongV9('legato', data, settings, composeSong);
+  for (let bar = 0; bar < song.bars; bar += 1) {
+    const line = song.melody.filter((note) => Math.floor(note.beat / 4) === bar);
+    for (let index = 0; index < line.length - 1; index += 1) {
+      const gap = line[index + 1].beat - (line[index].beat + line[index].dur);
+      assert.ok(gap <= 0.081, `bar ${bar}, note ${index}: internal gap ${gap}`);
+    }
+  }
+  const phraseBreaths = Array.from({ length: song.bars - 1 }, (_, bar) => {
+    const line = song.melody.filter((note) => Math.floor(note.beat / 4) === bar);
+    const next = song.melody.find((note) => Math.floor(note.beat / 4) === bar + 1);
+    return next.beat - (line.at(-1).beat + line.at(-1).dur);
+  });
+  assert.ok(phraseBreaths.filter((gap) => gap >= 0.2).length >= 12);
+});
